@@ -18,14 +18,15 @@ The operating system for Dawn Patrol Co., which builds AI receptionists for smal
 
 ## Stack
 
-Next.js 15 (App Router, server actions) · TypeScript · Prisma (SQLite for development, Postgres for production) · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail REST) · ElevenLabs Conversational AI REST.
+Next.js 15 (App Router, server actions) · TypeScript · Prisma + Postgres · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail REST) · ElevenLabs Conversational AI REST.
 
 ## Quick start
 
 ```bash
 cp .env.example .env          # set AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD at minimum
+docker compose up -d db       # local Postgres (or point DATABASE_URL at any Postgres)
 npm install
-npx prisma db push            # create the database
+npx prisma db push            # create the tables
 npm run db:seed               # admin user, starter prompts, Starter/Growth/Pro plans
 SEED_DEMO=1 npm run db:seed   # optional: sample prospects + a demo client with calls
 npm run dev                   # http://localhost:3000
@@ -70,7 +71,7 @@ Dawn Patrol Co — CRM/
 ```
 
 ### Outreach tracking
-- **Gmail:** `GET /api/cron/outreach-sync` with `Authorization: Bearer $CRON_SECRET`. `vercel.json` schedules it every 30 min (Vercel Pro; on Hobby, set it to daily or use any external cron). You can also run `npm run jobs:outreach-sync`, or use **Sync Gmail now** on the Outreach page.
+- **Gmail:** `GET /api/cron/outreach-sync` with `Authorization: Bearer $CRON_SECRET`. `vercel.json` schedules it daily so the deploy works on any Vercel plan; on Pro change it to `*/30 * * * *`. You can also run `npm run jobs:outreach-sync`, or use **Sync Gmail now** on the Outreach page.
 - **Sequencers / Zapier:** `POST /api/webhooks/outreach` with header `x-webhook-secret: $OUTREACH_WEBHOOK_SECRET`. The body is one event or an array:
   ```json
   {"id":"evt_1","event":"email_sent","email":"owner@acme.com","company":"Acme","website":"acme.com","subject":"…","createIfMissing":true}
@@ -104,10 +105,7 @@ Dawn Patrol Co — CRM/
 
 ## Deploying
 
-1. Change `provider` in `prisma/schema.prisma` to `postgresql` and set `DATABASE_URL`.
-2. Set every variable in `.env.example`. `APP_URL` must be the public URL, because tracking pixels, OAuth and webhooks depend on it.
-3. Run `npx prisma db push && npm run db:seed`.
-4. Deploy (Vercel, Render, Fly…). The build runs `prisma generate` automatically.
+Step-by-step guide for Vercel + Neon on www.dawnpatrol-tech.com: **[DEPLOY.md](DEPLOY.md)**. On Vercel, each build applies the schema and runs the idempotent seed (`vercel-build`), so there are no manual database steps.
 
 ## Code map
 

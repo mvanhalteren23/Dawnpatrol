@@ -17,14 +17,14 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   if (sp.stage) where.stage = sp.stage;
   else if (sp.view === "prospects") where.stage = { in: PROSPECT_STAGES };
   else if (sp.view === "clients") where.stage = { in: CLIENT_STAGES };
-  if (sp.tag) where.tags = { contains: sp.tag };
+  if (sp.tag) where.tags = { contains: sp.tag, mode: "insensitive" };
   if (sp.q) {
     where.OR = [
-      { name: { contains: sp.q } },
-      { domain: { contains: sp.q } },
-      { city: { contains: sp.q } },
-      { industry: { contains: sp.q } },
-      { contacts: { some: { OR: [{ email: { contains: sp.q } }, { lastName: { contains: sp.q } }] } } },
+      { name: { contains: sp.q, mode: "insensitive" } },
+      { domain: { contains: sp.q, mode: "insensitive" } },
+      { city: { contains: sp.q, mode: "insensitive" } },
+      { industry: { contains: sp.q, mode: "insensitive" } },
+      { contacts: { some: { OR: [{ email: { contains: sp.q, mode: "insensitive" } }, { lastName: { contains: sp.q, mode: "insensitive" } }] } } },
     ];
   }
   const orderBy: Prisma.AccountOrderByWithRelationInput =

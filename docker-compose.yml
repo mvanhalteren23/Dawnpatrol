@@ -1,0 +1,14 @@
+# Local Postgres for development: `docker compose up -d db`
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: dawnpatrol
+      POSTGRES_PASSWORD: dawnpatrol
+      POSTGRES_DB: dawnpatrol
+    ports:
+      - "5432:5432"
+    volumes:
+      - dawnpatrol-db:/var/lib/postgresql/data
+volumes:
+  dawnpatrol-db:

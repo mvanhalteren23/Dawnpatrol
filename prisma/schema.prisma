@@ -1,15 +1,16 @@
 // Dawn Patrol Co. — CRM + client portal
-// SQLite for local dev. For production switch provider to "postgresql" and point
-// DATABASE_URL at your Postgres instance (no other changes needed: enums are
-// modelled as strings, JSON payloads as text).
+// Postgres everywhere (local dev: `docker compose up -d db`; production: Neon/Supabase/
+// Vercel Postgres). Enums are modelled as strings and JSON payloads as text.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Pooled hosts (Neon, Supabase) need a direct connection for schema changes; defaults to DATABASE_URL.
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------

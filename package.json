@@ -11,7 +11,8 @@
     "test": "vitest run",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "jobs:outreach-sync": "tsx scripts/sync-outreach.ts"
+    "jobs:outreach-sync": "tsx scripts/sync-outreach.ts",
+    "vercel-build": "prisma generate && prisma db push --skip-generate && tsx prisma/seed.ts && next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
@@ -43,5 +44,8 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

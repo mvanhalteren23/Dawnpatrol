@@ -1,6 +1,9 @@
 import { requireAdmin } from "@/lib/auth";
 import { NavLink } from "@/components/ui";
 
+// Claude research, prospecting and KB drafting run in after() from this segment's server actions.
+export const maxDuration = 300;
+
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
   const session = await requireAdmin();
   return (
