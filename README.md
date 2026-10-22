@@ -14,6 +14,7 @@ The operating system for Dawn Patrol Co., which builds AI receptionists for smal
 | **Google Drive folder system** | Each account gets its own folder, filed under `01 Prospects`. It moves to `02 Clients` when the account converts, which adds the contracts, knowledge-base, call-log and billing folders. |
 | **Billing** | Plans, Stripe Checkout links, a Stripe customer portal and webhooks that sync subscriptions and invoices. Manual (ACH) clients count toward MRR too. Subscription status moves the account stage: active → Onboarding/Active, past due → Past due, canceled → Churned. |
 | **AI receptionist + RAG** | Per-client receptionist settings and a categorised knowledge base. Claude can draft the knowledge base from the client's website; drafts stay inactive until you approve them. The knowledge base syncs to ElevenLabs (agent and documents), has a search endpoint for an ElevenLabs webhook tool, and has an export for Claude. A test-call chat answers through Claude using the same knowledge. |
+| **Demo line** | One shared Twilio number with a directory. A prospect calls, enters their extension, and the CRM hands the call to the ElevenLabs demo agent built for their business. The call is logged on their account and moves the stage to Engaged. Outreach prompts can include `{{demo_phone}}` and `{{demo_extension}}`. |
 | **Client portal** | Clients log in to see calls answered, bookings and leads waiting on them. They can edit their own knowledge base, test their receptionist and view invoices or manage payment. |
 
 ## Stack

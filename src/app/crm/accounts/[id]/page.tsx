@@ -171,12 +171,15 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             {account.receptionists.map((r) => (
               <Link key={r.id} href={`/crm/receptionists/${r.id}`} className="mb-2 block rounded-lg border border-slate-200 p-3 text-sm hover:bg-slate-50 hover:no-underline">
                 <div className="flex items-center justify-between"><span className="font-medium text-slate-900">{r.name} — {r.businessName}</span><StatusBadge status={r.syncStatus} /></div>
-                <div className="text-xs text-slate-500">{r._count.knowledge} KB items · {r._count.calls} calls</div>
+                <div className="text-xs text-slate-500">{r._count.knowledge} KB items · {r._count.calls} calls{r.demoExtension ? ` · demo ext ${r.demoExtension}` : ""}</div>
               </Link>
             ))}
-            <form action={createReceptionist.bind(null, account.id)} className="flex gap-2">
-              <input name="name" placeholder="Receptionist name (e.g. Ava)" className="input" />
-              <button className="btn-secondary whitespace-nowrap">+ Receptionist</button>
+            <form action={createReceptionist.bind(null, account.id)} className="space-y-2">
+              <div className="flex gap-2">
+                <input name="name" placeholder="Receptionist name (e.g. Ava)" className="input" />
+                <button className="btn-secondary whitespace-nowrap">+ Receptionist</button>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="demo" defaultChecked={!isClient} /> Demo for this prospect — give it an extension on the demo line</label>
             </form>
           </div>
 

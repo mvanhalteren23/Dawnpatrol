@@ -65,6 +65,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <Status ok={elevenLabsConfigured()} />
         </div>
         <div className="flex items-start justify-between gap-4">
+          <div><div className="font-medium">Twilio demo line</div><div className="text-xs text-slate-500">Voice webhook for {process.env.TWILIO_DEMO_NUMBER || "the demo number"}: <code>{app}/api/voice/demo</code>. Manage extensions on the <a href="/crm/demo-line">Demo line</a> page.</div></div>
+          <Status ok={Boolean(process.env.TWILIO_AUTH_TOKEN)} />
+        </div>
+        <div className="flex items-start justify-between gap-4">
           <div><div className="font-medium">Stripe</div><div className="text-xs text-slate-500">Webhook: <code>{app}/api/webhooks/stripe</code> (checkout.session.completed, customer.subscription.*, invoice.*)</div></div>
           <Status ok={stripeConfigured()} />
         </div>

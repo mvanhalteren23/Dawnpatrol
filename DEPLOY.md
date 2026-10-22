@@ -51,8 +51,17 @@ Then click **Deploy**.
 
 1. In ElevenLabs, open **Agents Platform → Settings → Webhooks** (post-call webhook). Set the URL to `https://www.dawnpatrol-tech.com/api/webhooks/elevenlabs` and enable transcription events.
 2. Copy the secret it shows into `ELEVENLABS_WEBHOOK_SECRET`, then redeploy (**Deployments → ⋯ → Redeploy**).
-3. In the CRM, open a client's account and click **+ Receptionist**. Fill in the knowledge base, then click **Sync to ElevenLabs**. This creates the agent.
-4. In ElevenLabs, open **Phone Numbers**, select your Twilio number (+1 778-650-4870, "Demo") and assign it to the new agent.
+3. In the CRM, open an account and click **+ Receptionist**. Fill in the knowledge base, then click **Sync to ElevenLabs**. This creates the agent.
+
+## 5b. Demo line (+1 778-650-4870)
+
+The demo number is a directory: callers enter an extension and reach the demo receptionist for that prospect.
+
+1. Add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_DEMO_NUMBER=+17786504870` in Vercel, then redeploy.
+2. In Twilio Console, go to **Phone Numbers → Active numbers → +1 778-650-4870 → Voice configuration**. Set **A call comes in** to **Webhook**, `https://www.dawnpatrol-tech.com/api/voice/demo`, **HTTP POST**. Enter it exactly: Twilio signs that URL, and the CRM rejects requests whose signature doesn't match.
+3. In ElevenLabs **Phone Numbers**, leave this number **unassigned**. Assigning an agent there points the number back at ElevenLabs and bypasses the directory.
+4. For each prospect: on their account, add a receptionist with **Demo for this prospect** ticked (it gets the next free extension, starting at 101). Click **Draft KB from website**, approve the drafts, then click **Sync to ElevenLabs**.
+5. **CRM → Demo line** lists every extension, whether its agent is ready, and its demo calls.
 
 ## 6. Connect Google (Drive folders + Gmail tracking)
 

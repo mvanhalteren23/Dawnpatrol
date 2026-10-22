@@ -95,3 +95,25 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
 export async function markDirty(receptionistId: string) {
   await db.receptionist.updateMany({ where: { id: receptionistId, syncStatus: { not: "NEVER" } }, data: { syncStatus: "DIRTY" } });
 }
+
+/**
+ * Hand an in-progress Twilio call to an ElevenLabs agent. ElevenLabs answers with TwiML that
+ * streams the call to the agent; we return it to Twilio as-is.
+ */
+export async function registerTwilioCall(agentId: string, from: string, to: string): Promise<string> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
+  const res = await fetch(`${BASE}/twilio/register-call`, {
+    method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: agentId, from_number: from, to_number: to, direction: "inbound" }),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`ElevenLabs ${res.status} on register-call: ${body.slice(0, 300)}`);
+  if (body.trimStart().startsWith("<")) return body;
+  // Some API versions wrap the TwiML in JSON.
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  const xml = Object.values(parsed).find((v): v is string => typeof v === "string" && v.trimStart().startsWith("<"));
+  if (!xml) throw new Error("ElevenLabs register-call returned no TwiML");
+  return xml;
+}

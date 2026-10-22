@@ -39,7 +39,8 @@ export async function POST(req: Request) {
       summary: data.analysis?.transcript_summary ?? "",
       transcript: transcriptText(data),
       outcome,
-      followUpNeeded,
+      // Demo-line calls are prospects trying the product, not the client's customers.
+      followUpNeeded: receptionist.demoExtension ? false : followUpNeeded,
     },
     update: {},
   });

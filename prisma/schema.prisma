@@ -255,6 +255,8 @@ model Receptionist {
   elevenLabsAgentId String?
   elevenLabsKbDocs  String  @default("[]") // JSON [{category, docId}]
   ragToken          String  @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
+  // Demo line: callers to the shared demo number enter this extension to reach this agent.
+  demoExtension     String? @unique
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
   syncError         String?
   lastSyncedAt      DateTime?

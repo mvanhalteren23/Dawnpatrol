@@ -24,6 +24,8 @@ import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/c
 import { accountVariables, renderPrompt } from "@/lib/prompts";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
+import { cleanDigits, nextFreeExtension } from "@/lib/twilio";
+import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 
 function back(path: string, params?: Record<string, string>): never {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -230,7 +232,13 @@ export async function draftEmail(accountId: string, form: FormData) {
   if (!prompt) back(`/crm/accounts/${accountId}`, { error: "Choose an outreach prompt" });
   const contactId = str(form, "contactId");
   const contact = account.contacts.find((c) => c.id === contactId);
-  const vars = accountVariables({ ...account, contacts: contact ? [contact] : account.contacts });
+  const demoExtension = await demoExtensionForAccount(accountId);
+  const demo = await demoLineConfig();
+  const vars = {
+    ...accountVariables({ ...account, contacts: contact ? [contact] : account.contacts }),
+    demo_phone: demoExtension && demo.number ? formatPhone(demo.number) : "",
+    demo_extension: demoExtension ?? "",
+  };
   try {
     const draft = await draftOutreachEmail(renderPrompt(prompt.template, vars), account.research[0]?.output ?? "");
     const run = await db.researchRun.create({
@@ -405,6 +413,7 @@ export async function createReceptionist(accountId: string, form: FormData) {
       name: str(form, "name") || "Receptionist",
       businessName: str(form, "businessName") || account.name,
       ragToken: randomBytes(24).toString("base64url"),
+      demoExtension: form.get("demo") === "on" ? await freeExtension() : null,
     },
   });
   back(`/crm/receptionists/${r.id}`);
@@ -412,6 +421,12 @@ export async function createReceptionist(accountId: string, form: FormData) {
 
 export async function updateReceptionist(id: string, form: FormData) {
   await requireAdmin();
+  const ext = cleanDigits(str(form, "demoExtension"));
+  if (ext) {
+    const taken = await db.receptionist.findFirst({ where: { demoExtension: ext, id: { not: id } } });
+    if (taken) back(`/crm/receptionists/${id}`, { error: `Extension ${ext} is already used by ${taken.businessName}` });
+    if (ext.length < 2 || ext.length > 6) back(`/crm/receptionists/${id}`, { error: "Extensions are 2–6 digits" });
+  }
   await db.receptionist.update({
     where: { id },
     data: {
@@ -428,6 +443,7 @@ export async function updateReceptionist(id: string, form: FormData) {
       bookingUrl: optStr(form, "bookingUrl"),
       extraInstructions: str(form, "extraInstructions"),
       elevenLabsAgentId: optStr(form, "elevenLabsAgentId"),
+      demoExtension: ext || null,
     },
   });
   await markDirty(id);
@@ -544,4 +560,35 @@ export async function disconnectGoogle() {
   const { deleteSetting } = await import("@/lib/settings");
   await deleteSetting("google.refresh_token");
   back("/crm/settings", { notice: "Google disconnected" });
+}
+
+// --- Demo line ---------------------------------------------------------------------
+
+async function freeExtension(): Promise<string> {
+  const taken = await db.receptionist.findMany({ where: { demoExtension: { not: null } }, select: { demoExtension: true } });
+  return nextFreeExtension(taken.map((t) => t.demoExtension));
+}
+
+export async function assignDemoExtension(receptionistId: string) {
+  await requireAdmin();
+  await db.receptionist.update({ where: { id: receptionistId }, data: { demoExtension: await freeExtension() } });
+  back("/crm/demo-line", { notice: "Extension assigned" });
+}
+
+export async function clearDemoExtension(receptionistId: string) {
+  await requireAdmin();
+  await db.receptionist.update({ where: { id: receptionistId }, data: { demoExtension: null } });
+  back("/crm/demo-line", { notice: "Removed from the demo directory" });
+}
+
+export async function saveDemoLineSettings(form: FormData) {
+  await requireAdmin();
+  const { setSetting, deleteSetting } = await import("@/lib/settings");
+  const greeting = str(form, "greeting");
+  if (greeting) await setSetting("demo.greeting", greeting);
+  else await deleteSetting("demo.greeting");
+  const fallback = str(form, "fallbackReceptionistId");
+  if (fallback) await setSetting("demo.fallbackReceptionistId", fallback);
+  else await deleteSetting("demo.fallbackReceptionistId");
+  back("/crm/demo-line", { notice: "Demo line settings saved" });
 }

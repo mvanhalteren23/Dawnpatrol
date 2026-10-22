@@ -26,6 +26,8 @@ export const PROMPT_VARIABLES: { key: string; description: string }[] = [
   { key: "employees", description: "Employee count" },
   { key: "notes", description: "Account notes" },
   { key: "contacts", description: "Known contacts (name — title — email)" },
+  { key: "demo_phone", description: "Outreach: the demo line number (blank if this account has no demo yet)" },
+  { key: "demo_extension", description: "Outreach: this account's demo extension (blank if none)" },
   { key: "criteria", description: "Prospecting: free-text criteria entered at run time" },
   { key: "count", description: "Prospecting: number of prospects requested" },
   { key: "today", description: "Today's date" },
@@ -112,6 +114,6 @@ Only include real businesses you found on the web with a working website. Exclud
     description: "Short personalised first-touch email.",
     template: `Write a short (under 120 words) first-touch cold email to {{contacts}} at {{company}} ({{industry}}, {{location}}).
 Angle: every unanswered call is a lost job. Dawn Patrol Co. builds AI receptionists that answer 24/7, book appointments and text the owner a summary.
-Reference one specific detail about their business. One clear call to action: a 15-minute demo. No hype, no emojis. Return a subject line and body.`,
+Reference one specific detail about their business. One clear call to action. If a demo line is given ({{demo_phone}}, extension {{demo_extension}}), invite them to call it and hear their own AI receptionist answer as their business; otherwise offer a 15-minute demo. No hype, no emojis. Return a subject line and body.`,
   },
 ];
