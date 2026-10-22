@@ -5,7 +5,7 @@ It takes about 20 minutes. Every build applies the database schema and seeds the
 
 ## 1. Create the project on Vercel
 
-1. Sign in at vercel.com with GitHub. Use the **Pro** plan: Claude research runs up to 5 minutes, and Gmail sync every 30 minutes needs Pro crons.
+1. Sign in at vercel.com with GitHub. You can start on the free **Hobby** plan with Neon's free tier (see "Starting free, upgrading later" at the end).
 2. **Add New → Project → Import** `mvanhalteren23/Dawnpatrol`.
 3. Merge the branch `ccr-7d97a892-a45wpz` into `main` first, or choose it as the production branch under Settings → Git.
 4. Framework preset: **Next.js**. Leave the build command blank; `vercel-build` in `package.json` is used automatically.
@@ -89,3 +89,15 @@ The demo number is a directory: callers enter an extension and reach the demo re
 ## Gmail sync schedule
 
 `vercel.json` runs the Gmail sync once a day, because Vercel's Hobby plan rejects anything more frequent. On Pro, change the schedule to `*/30 * * * *`. **Sync Gmail now** on the Outreach page works any time.
+
+## Starting free, upgrading later
+
+Hobby + Neon free runs everything, with these limits:
+
+- **Gmail sync runs once a day.** Use **Sync Gmail now** on the Outreach page between runs.
+- **Long Claude runs can be cut off.** Research and prospect searches are allowed up to 300 seconds (`maxDuration` in `src/app/crm/layout.tsx`). If a deploy rejects that value on your plan, lower it to `60`. Large prospect searches may then stop early, so ask for 5–10 prospects at a time.
+- **Vercel's terms say Hobby is for non-commercial use.** Treat it as the pilot setup and upgrade before paying clients depend on it.
+
+**Upgrading Vercel:** go to **Settings → Billing → Upgrade to Pro**. The project, domain, environment variables and database all stay as they are. Afterwards, change the schedule in `vercel.json` to `*/30 * * * *` and push.
+
+**Upgrading Neon:** upgrade in the Neon console if you outgrow the free storage or compute. The connection strings don't change.
