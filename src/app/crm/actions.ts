@@ -555,6 +555,18 @@ export async function seedDefaultPrompts() {
   back("/crm/settings", { notice: `Added ${n} starter prompts` });
 }
 
+export async function changePassword(form: FormData) {
+  const session = await requireAdmin();
+  const user = await db.user.findUniqueOrThrow({ where: { id: session.sub } });
+  const bcrypt = (await import("bcryptjs")).default;
+  if (!(await bcrypt.compare(str(form, "current"), user.passwordHash))) back("/crm/settings", { error: "Current password is incorrect" });
+  const next = str(form, "next");
+  if (next.length < 10) back("/crm/settings", { error: "New password must be at least 10 characters" });
+  if (next !== str(form, "confirm")) back("/crm/settings", { error: "New passwords don't match" });
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(next) } });
+  back("/crm/settings", { notice: "Password changed" });
+}
+
 export async function disconnectGoogle() {
   await requireAdmin();
   const { deleteSetting } = await import("@/lib/settings");

@@ -8,7 +8,7 @@ import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
 import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
-import { disconnectGoogle, saveGoal, seedDefaultPrompts } from "../actions";
+import { changePassword, disconnectGoogle, saveGoal, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Settings" />
       <Flash params={await searchParams} />
+
+      <div className="card">
+        <h2 className="mb-3">Your password</h2>
+        <form action={changePassword} className="grid grid-cols-3 gap-3">
+          <Field label="Current password"><input name="current" type="password" autoComplete="current-password" className="input" required /></Field>
+          <Field label="New password (10+ characters)"><input name="next" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
+          <Field label="Confirm new password"><input name="confirm" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
+          <div className="col-span-3"><button className="btn-secondary">Change password</button></div>
+        </form>
+      </div>
 
       <div className="card">
         <h2 className="mb-3">Growth goal</h2>
