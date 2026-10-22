@@ -1,0 +1,325 @@
+// Dawn Patrol Co. — CRM + client portal
+// SQLite for local dev. For production switch provider to "postgresql" and point
+// DATABASE_URL at your Postgres instance (no other changes needed: enums are
+// modelled as strings, JSON payloads as text).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Users & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         String    @default("CLIENT") // ADMIN | CLIENT
+  accountId    String? // set for CLIENT users (portal access)
+  account      Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  ownedAccounts Account[]      @relation("AccountOwner")
+  activities    Activity[]
+  prompts       SavedPrompt[]
+  imports       ImportJob[]
+}
+
+// ---------------------------------------------------------------------------
+// CRM: accounts move from prospect -> paying client on one record
+// ---------------------------------------------------------------------------
+
+model Account {
+  id         String  @id @default(cuid())
+  name       String
+  domain     String? @unique // normalised, used for de-duplication and email matching
+  website    String?
+  phone      String?
+  industry   String?
+  city       String?
+  state      String?
+  employees  Int?
+  // PROSPECT | CONTACTED | ENGAGED | DEMO | PROPOSAL | ONBOARDING | ACTIVE | PAST_DUE | CHURNED | LOST
+  stage      String  @default("PROSPECT")
+  source     String  @default("manual") // manual | import | claude | inbound
+  fitScore   Int? // 0-100, from Claude research or manual
+  tags       String  @default("") // comma separated
+  notes      String  @default("")
+  estMissedCallsPerWeek Int?
+  avgJobValueCents      Int?
+
+  ownerId String?
+  owner   User?   @relation("AccountOwner", fields: [ownerId], references: [id])
+
+  driveFolderId  String?
+  driveFolderUrl String?
+
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  convertedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  contacts      Contact[]
+  activities    Activity[]
+  research      ResearchRun[]
+  subscription  Subscription?
+  invoices      Invoice[]
+  receptionists Receptionist[]
+  driveFolders  DriveFolder[]
+  users         User[]
+
+  @@index([stage])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  firstName String?
+  lastName  String?
+  title     String?
+  email     String?
+  phone     String?
+  linkedin  String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  activities Activity[]
+
+  @@index([email])
+}
+
+// Every touch — manual, synced from Gmail, pushed by a webhook, or system generated.
+model Activity {
+  id          String    @id @default(cuid())
+  accountId   String
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  // EMAIL | CALL | SMS | LINKEDIN | MEETING | NOTE | TASK | STAGE_CHANGE | RESEARCH | BILLING
+  type        String
+  direction   String? // OUTBOUND | INBOUND
+  subject     String?
+  body        String?
+  source      String    @default("manual") // manual | gmail | webhook | system | crm-send
+  externalId  String?   @unique // gmail message id / webhook event id — idempotency
+  threadId    String?
+  openCount   Int       @default(0)
+  firstOpenedAt DateTime?
+  clickCount  Int       @default(0)
+  repliedAt   DateTime?
+  dueAt       DateTime? // tasks
+  completedAt DateTime?
+  occurredAt  DateTime  @default(now())
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+
+  @@index([accountId, occurredAt])
+  @@index([type, dueAt])
+}
+
+// ---------------------------------------------------------------------------
+// Claude prospecting & research
+// ---------------------------------------------------------------------------
+
+model SavedPrompt {
+  id          String   @id @default(cuid())
+  name        String
+  kind        String // RESEARCH | PROSPECTING | OUTREACH
+  description String   @default("")
+  template    String // supports {{variables}} — see src/lib/prompts.ts
+  isDefault   Boolean  @default(false)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs ResearchRun[]
+}
+
+model ResearchRun {
+  id         String       @id @default(cuid())
+  kind       String // RESEARCH | PROSPECTING | OUTREACH | KB_DRAFT
+  accountId  String?
+  account    Account?     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  promptId   String?
+  prompt     SavedPrompt? @relation(fields: [promptId], references: [id], onDelete: SetNull)
+  input      String
+  output     String       @default("") // markdown
+  resultJson String? // structured extraction (JSON text)
+  status     String       @default("RUNNING") // RUNNING | DONE | FAILED
+  error      String?
+  model      String?
+  tokensIn   Int?
+  tokensOut  Int?
+  driveFileId  String?
+  driveFileUrl String?
+  createdAt  DateTime     @default(now())
+  finishedAt DateTime?
+}
+
+model ImportJob {
+  id          String   @id @default(cuid())
+  filename    String
+  total       Int      @default(0)
+  created     Int      @default(0)
+  updated     Int      @default(0)
+  skipped     Int      @default(0)
+  errors      String   @default("[]")
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  priceCents      Int
+  setupFeeCents   Int      @default(0)
+  includedMinutes Int      @default(0)
+  features        String   @default("") // newline separated
+  stripePriceId   String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  accountId            String    @unique
+  account              Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  planId               String?
+  plan                 Plan?     @relation(fields: [planId], references: [id])
+  status               String    @default("INCOMPLETE") // TRIALING | ACTIVE | PAST_DUE | CANCELED | INCOMPLETE
+  mrrCents             Int       @default(0)
+  billingMethod        String    @default("stripe") // stripe | manual
+  stripeCustomerId     String?
+  stripeSubscriptionId String?   @unique
+  currentPeriodEnd     DateTime?
+  startedAt            DateTime?
+  canceledAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model Invoice {
+  id              String    @id @default(cuid())
+  accountId       String
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stripeInvoiceId String?   @unique
+  number          String?
+  amountCents     Int
+  status          String // DRAFT | OPEN | PAID | VOID | UNCOLLECTIBLE
+  dueDate         DateTime?
+  paidAt          DateTime?
+  hostedUrl       String?
+  createdAt       DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// AI receptionist + RAG knowledge base
+// ---------------------------------------------------------------------------
+
+model Receptionist {
+  id              String  @id @default(cuid())
+  accountId       String
+  account         Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name            String  @default("Receptionist")
+  businessName    String
+  greeting        String  @default("")
+  persona         String  @default("Warm, concise, professional.")
+  voiceId         String?
+  language        String  @default("en")
+  timezone        String  @default("America/New_York")
+  businessHours   String  @default("")
+  escalationPhone String?
+  escalationRules String  @default("")
+  bookingUrl      String?
+  extraInstructions String @default("")
+  // ElevenLabs
+  elevenLabsAgentId String?
+  elevenLabsKbDocs  String  @default("[]") // JSON [{category, docId}]
+  ragToken          String  @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
+  syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
+  syncError         String?
+  lastSyncedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  knowledge KnowledgeItem[]
+  calls     CallLog[]
+}
+
+model KnowledgeItem {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  // FAQ | SERVICE | PRICING | HOURS | LOCATION | POLICY | STAFF | SCRIPT | OTHER
+  category       String       @default("FAQ")
+  title          String
+  content        String
+  tags           String       @default("")
+  isActive       Boolean      @default(true)
+  updatedBy      String? // email of last editor (admin or client)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([receptionistId, category])
+}
+
+model CallLog {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  externalId     String       @unique // ElevenLabs conversation_id
+  callerNumber   String?
+  callerName     String?
+  startedAt      DateTime
+  durationSec    Int          @default(0)
+  summary        String       @default("")
+  transcript     String       @default("")
+  // BOOKED | MESSAGE_TAKEN | ANSWERED | TRANSFERRED | MISSED_OPPORTUNITY | SPAM | UNKNOWN
+  outcome        String       @default("UNKNOWN")
+  followUpNeeded Boolean      @default(false)
+  followedUpAt   DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Google Drive folder system
+// ---------------------------------------------------------------------------
+
+model DriveFolder {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  purpose   String // ROOT | RESEARCH | OUTREACH | CONTRACTS | KNOWLEDGE_BASE | CALL_LOGS | BILLING
+  driveId   String
+  url       String
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, purpose])
+}
+
+// Key/value store: Google OAuth refresh token, Gmail sync cursor, goals, top-level Drive folder ids.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

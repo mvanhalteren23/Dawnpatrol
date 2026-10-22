@@ -1,0 +1,26 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { apiSession } from "@/lib/auth";
+import { canAccessReceptionist } from "@/lib/access";
+import { buildReceptionistPrompt, compileKnowledgeBase } from "@/lib/rag";
+import { receptionistReply } from "@/lib/claude";
+
+export const maxDuration = 60;
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!(await canAccessReceptionist(await apiSession(), id))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = (await req.json()) as { messages?: { role: string; content: string }[] };
+  const messages = (body.messages ?? [])
+    .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .slice(-30)
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 4000) }));
+  if (!messages.length || messages[0]!.role !== "user") return NextResponse.json({ error: "Start with a caller message" }, { status: 400 });
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id }, include: { knowledge: true } });
+  try {
+    const reply = await receptionistReply(buildReceptionistPrompt(r), compileKnowledgeBase(r.knowledge, r.businessName), messages);
+    return NextResponse.json({ reply });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
+}
