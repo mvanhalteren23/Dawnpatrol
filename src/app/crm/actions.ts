@@ -473,7 +473,8 @@ export async function updateBooking(id: string, form: FormData) {
       bookingMinNoticeHours: int("bookingMinNoticeHours", 0, 336, 2),
       bookingDaysAhead: int("bookingDaysAhead", 1, 60, 14),
       bookingBufferMinutes: int("bookingBufferMinutes", 0, 120, 0),
-      bookingMeetingType: str(form, "bookingMeetingType") === "google_meet" ? "google_meet" : "phone",
+      bookingMeetingType: ["google_meet", "caller_choice"].includes(str(form, "bookingMeetingType")) ? str(form, "bookingMeetingType") : "phone",
+      bookingQuestions: str(form, "bookingQuestions"),
       bookingAddsToCrm: form.get("bookingAddsToCrm") === "on",
     },
   });

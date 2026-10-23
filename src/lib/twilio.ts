@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-// Twilio webhook helpers (pure; unit tested).
+// Twilio helpers: webhook signing and TwiML (pure; unit tested), plus outbound SMS.
 
 /**
  * X-Twilio-Signature: base64(HMAC-SHA1(authToken, fullUrl + each POST param name+value, sorted by name)).
@@ -41,6 +41,29 @@ export function gatherExtension(prompt: string, action: string, onEmpty: string)
 }
 
 /** Digits only, "#"/"*" stripped. */
+/** Send an SMS through the Twilio REST API. From = TWILIO_SMS_FROM, else the demo number. */
+export async function sendSms(to: string, body: string): Promise<void> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_SMS_FROM || process.env.TWILIO_DEMO_NUMBER;
+  if (!sid || !token || !from) throw new Error("Twilio SMS is not configured");
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ To: toE164(to), From: from, Body: body }),
+  });
+  if (!res.ok) throw new Error(`Twilio ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+/** North American numbers spoken as 10 or 11 digits -> +1XXXXXXXXXX; anything with a + is kept. */
+export function toE164(phone: string): string {
+  const digits = cleanDigits(phone);
+  if (phone.trim().startsWith("+")) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return `+${digits}`;
+}
+
 export function cleanDigits(input: string | null | undefined): string {
   return (input ?? "").replace(/[^0-9]/g, "");
 }

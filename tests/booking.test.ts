@@ -64,3 +64,19 @@ describe("receptionist prompt booking section", () => {
     expect(on).toContain("Free missed-call audit, 20 minutes");
   });
 });
+
+describe("booking helpers", () => {
+  it("lists pre-booking questions and the meeting choice in the prompt", async () => {
+    const { buildReceptionistPrompt } = await import("../src/lib/rag");
+    const p = buildReceptionistPrompt({ name: "Mike", businessName: "Dawn Patrol", greeting: "", persona: "", timezone: "America/Vancouver", businessHours: "", escalationRules: "", extraInstructions: "", bookingEnabled: true, bookingMeetingType: "caller_choice", bookingQuestions: "What do customers call about?\n\nHow should missed calls be handled?" });
+    expect(p).toContain("  - What do customers call about?\n  - How should missed calls be handled?");
+    expect(p).toContain("meeting_type");
+  });
+
+  it("formats North American numbers for SMS", async () => {
+    const { toE164 } = await import("../src/lib/twilio");
+    expect(toE164("604-966-8897")).toBe("+16049668897");
+    expect(toE164("1 (778) 650-4870")).toBe("+17786504870");
+    expect(toE164("+44 20 7946 0958")).toBe("+442079460958");
+  });
+});

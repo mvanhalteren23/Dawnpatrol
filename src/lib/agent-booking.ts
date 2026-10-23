@@ -2,7 +2,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Receptionist } from "@prisma/client";
 import { db } from "./db";
-import { googleConnection } from "./google";
+import { connectedEmail, googleConnection } from "./google";
+import { sendSms } from "./twilio";
 import { busyIntervals, createEvent } from "./calendar";
 import { candidateSlots, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
@@ -55,15 +56,23 @@ export async function availability(r: Receptionist, input: { preferred_date?: st
 
 export type BookingInput = {
   start_iso?: string;
+  meeting_type?: string;
   caller_name?: string;
   caller_phone?: string;
   caller_email?: string;
   business_name?: string;
   business_type?: string;
-  town?: string;
   interest?: string;
+  answers?: string;
+  wants_text?: boolean | string;
   notes?: string;
 };
+
+/** The caller picks when the receptionist allows either; otherwise the receptionist's setting wins. */
+export function meetingTypeFor(setting: string, requested?: string): "phone" | "google_meet" {
+  if (setting === "caller_choice") return requested === "google_meet" ? "google_meet" : "phone";
+  return setting === "google_meet" ? "google_meet" : "phone";
+}
 
 export async function book(r: Receptionist, input: BookingInput, now = new Date()) {
   const notReady = await ready(r);
@@ -71,6 +80,10 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const start = new Date(input.start_iso ?? "");
   if (Number.isNaN(start.getTime())) return { booked: false, message: "start_iso is missing or invalid. Call get_available_times and use one of its start_iso values." };
   if (!input.caller_name?.trim() || !input.caller_phone?.trim()) return { booked: false, message: "Ask for the caller's name and best phone number before booking." };
+  const meetingType = meetingTypeFor(r.bookingMeetingType, input.meeting_type);
+  const email = input.caller_email?.includes("@") ? input.caller_email.trim() : null;
+  if (meetingType === "google_meet" && !email) return { booked: false, message: "A Google Meet needs the caller's email for the invite. Ask for it (spell it back), then book again." };
+  const wantsText = input.wants_text === true || input.wants_text === "true";
 
   // The slot must still be a valid opening (rules + calendar), so a stale or invented time can't book.
   const rules = slotRules(r);
@@ -92,10 +105,11 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     input.caller_email ? `Email: ${input.caller_email.trim()}` : null,
     input.business_name ? `Business: ${input.business_name.trim()}` : null,
     input.business_type ? `Business type: ${input.business_type.trim()}` : null,
-    input.town ? `Location: ${input.town.trim()}` : null,
     input.interest ? `Interested in: ${input.interest.trim()}` : null,
+    input.answers?.trim() ? `\nBefore the call:\n${input.answers.trim()}` : null,
+    `\nWants a text: ${wantsText ? "yes" : "no"}`,
     input.notes ? `Notes: ${input.notes.trim()}` : null,
-    r.bookingMeetingType === "phone" ? `\nCall them at ${input.caller_phone.trim()}.` : null,
+    meetingType === "phone" ? `\nCall them at ${input.caller_phone.trim()}.` : "\nGoogle Meet (link in the invite).",
   ].filter(Boolean).join("\n");
 
   const event = await createEvent({
@@ -105,8 +119,8 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     timezone: r.timezone,
     summary: `${r.bookingTitle} — ${who}`,
     description: details,
-    attendeeEmail: input.caller_email?.includes("@") ? input.caller_email.trim() : null,
-    googleMeet: r.bookingMeetingType === "google_meet",
+    attendeeEmail: email,
+    googleMeet: meetingType === "google_meet",
     requestId: randomUUID(),
   });
 
@@ -114,12 +128,21 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     await addLead(input, `${r.bookingTitle}: ${label}`, `${details}\n\nCalendar: ${event.htmlLink}`).catch((e) => console.error("Booking CRM lead failed", e));
   }
 
+  let texted = false;
+  if (wantsText) {
+    const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await connectedEmail()].filter(Boolean).join(" or email ");
+    const how = meetingType === "google_meet" ? `Google Meet — the link is in your calendar invite${email ? ` (${email})` : ""}` : `we'll call you at ${input.caller_phone.trim()}`;
+    const text = `${r.businessName}: you're booked for a ${r.bookingTitle.toLowerCase()} on ${label} (${r.bookingSlotMinutes} min, ${how}).${input.interest ? ` We'll cover: ${input.interest.trim()}.` : ""} To reschedule or cancel, ${changeBy}.`;
+    texted = await sendSms(input.caller_phone, text).then(() => true, (e) => { console.error("Booking text failed", e); return false; });
+  }
+
   return {
     booked: true,
+    texted,
     start_iso: start.toISOString(),
     label,
     meet_link: event.meetLink,
-    message: `Booked for ${label} (${r.timezone}). Read the time back to the caller${event.meetLink ? " and tell them the video link is in their calendar invite" : input.caller_email ? " and tell them a calendar invite is on its way to their email" : ""}${r.bookingMeetingType === "phone" ? `. We'll call them at ${input.caller_phone.trim()}` : ""}.`,
+    message: `Booked for ${label} (${r.timezone}). Read the time back to the caller${meetingType === "google_meet" ? " and tell them the Google Meet link is in their calendar invite" : email ? " and tell them a calendar invite is on its way to their email" : ""}${meetingType === "phone" ? `. We'll call them at ${input.caller_phone.trim()}` : ""}.${wantsText ? (texted ? " A confirmation text is on its way." : " The confirmation text couldn't be sent; tell them they'll get the details by email or a call instead.") : ""}`,
   };
 }
 
@@ -136,7 +159,7 @@ async function addLead(input: BookingInput, subject: string, body: string) {
     (await db.account.findFirst({ where: { name: { equals: name, mode: "insensitive" } } }));
   if (!account) {
     account = await db.account.create({
-      data: { name, domain, phone: input.caller_phone, industry: input.business_type ?? null, city: input.town ?? null, source: "inbound", notes: input.interest ?? "" },
+      data: { name, domain, phone: input.caller_phone, industry: input.business_type ?? null, source: "inbound", notes: input.interest ?? "" },
     });
   }
 

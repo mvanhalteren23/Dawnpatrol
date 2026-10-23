@@ -31,17 +31,23 @@ export type ReceptionistProfile = {
   bookingTitle?: string;
   bookingSlotMinutes?: number;
   bookingMeetingType?: string;
+  bookingQuestions?: string;
   extraInstructions: string;
 };
 
 function bookingSection(r: ReceptionistProfile): string {
   if (!r.bookingEnabled) return "";
-  const how = r.bookingMeetingType === "google_meet" ? "a Google Meet video call (the link goes in their calendar invite)" : "a phone call — the team calls them at the number they give";
+  const how =
+    r.bookingMeetingType === "caller_choice" ? "a phone call or a Google Meet video call — ask which they prefer and pass it as meeting_type"
+    : r.bookingMeetingType === "google_meet" ? "a Google Meet video call (the link goes in their calendar invite)"
+    : "a phone call — the team calls them at the number they give";
+  const questions = (r.bookingQuestions ?? "").split("\n").map((q) => q.trim()).filter(Boolean);
   return `
 Booking (${r.bookingTitle || "appointment"}, ${r.bookingSlotMinutes ?? 30} minutes, ${how}):
 - You can see the real calendar. When the caller wants to book, call get_available_times (pass the day they asked for as YYYY-MM-DD and morning/afternoon/evening if they said one). Offer two or three of the returned times in plain speech, e.g. "I have Tuesday at 10 or Wednesday at 2 — would either work?"
 - Never offer or confirm a time that didn't come from get_available_times. If it says nothing fits, offer the next times it returns.
-- Before booking, get their full name and best phone number (read it back), plus an email if they'd like a calendar invite. Then call book_appointment with the chosen start_iso exactly as returned.
+- Before booking, get their full name, best phone number and email (spell the email back). Ask whether they'd like a confirmation text and pass wants_text.${questions.length ? `\n- Also ask these, one at a time, and pass the answers in "answers":\n${questions.map((q) => `  - ${q}`).join("\n")}` : ""}
+- Then call book_appointment with the chosen start_iso exactly as returned.
 - After it succeeds, read the day and time back and say what happens next. If a tool fails or says booking is unavailable, take two preferred times and promise the team will confirm.
 `;
 }
@@ -89,7 +95,8 @@ ${r.businessHours || "Not provided — say the team will confirm availability."}
 
 Core rules:
 - Answer only from the knowledge base. If something isn't covered, say you'll have the team confirm, and take a message. Never invent prices, availability or policies.
-- On every call capture: caller name, best callback number, reason for calling, and urgency. Confirm the number back.
+- On every call capture: caller name, best callback number, reason for calling, and urgency.
+- Read phone numbers back once, quickly, in groups with no pauses between digits (e.g. "seven seven eight, six five oh, four eight seven oh"), then ask "Is that right?"
 - If the caller wants service, try to book: ${r.bookingEnabled ? "use the booking tools below" : r.bookingUrl ? `offer to book via ${r.bookingUrl} or collect preferred times` : "collect two preferred times and promise a confirmation"}.
 - Keep answers short and conversational — this is a phone call. One question at a time.
 - Escalation: ${r.escalationRules || "If the caller is upset, has an emergency, or asks for a person, offer to transfer or take an urgent message."}${r.escalationPhone ? ` Transfer number: ${r.escalationPhone}.` : ""}

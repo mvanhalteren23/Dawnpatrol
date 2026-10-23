@@ -33,7 +33,7 @@ type ToolIds = Record<string, string>;
 const str = (description: string) => ({ type: "string", description });
 
 /** Webhook tools that let the agent read the calendar and book (see src/lib/agent-booking.ts). */
-export function bookingTools(r: { id: string; ragToken: string; timezone: string }) {
+export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string }) {
   const base = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/agent-tools/${r.id}`;
   const headers = { Authorization: `Bearer ${r.ragToken}` };
   return {
@@ -69,13 +69,19 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
           type: "object",
           properties: {
             start_iso: str("The start_iso of the chosen slot, copied exactly from get_available_times."),
+            ...(r.bookingMeetingType === "caller_choice"
+              ? { meeting_type: { type: "string", description: "How the caller wants to meet: a phone call or a Google Meet video call", enum: ["phone", "google_meet"] } }
+              : {}),
             caller_name: str("Caller's full name."),
             caller_phone: str("Best callback number, confirmed back to the caller."),
-            caller_email: str("Caller's email for the calendar invite, if they gave one."),
+            caller_email: str("Caller's email for the calendar invite, spelled back to confirm. Required for a Google Meet."),
             business_name: str("Caller's business name, if they have one."),
             business_type: str("Type of business or service, if mentioned."),
-            town: str("Caller's town or city, if mentioned."),
             interest: str("What they want to talk about or the service they're interested in."),
+            ...(r.bookingQuestions.trim()
+              ? { answers: str("The caller's answers to the pre-booking questions, one 'Question: answer' line each.") }
+              : {}),
+            wants_text: { type: "boolean", description: "True if the caller wants a confirmation text with the booking details." },
             notes: str("Anything else the team should know before the call."),
           },
           required: ["start_iso", "caller_name", "caller_phone"],
@@ -86,7 +92,7 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
 }
 
 /** Create or update the booking tools; returns the tool ids to attach to the agent. */
-async function syncBookingTools(r: { id: string; ragToken: string; timezone: string; bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
+async function syncBookingTools(r: Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
   const existing = safeJson<ToolIds>(r.elevenLabsToolIds, {});
   if (!r.bookingEnabled) return existing; // keep the tools around; they're just detached from the agent
   const ids: ToolIds = {};

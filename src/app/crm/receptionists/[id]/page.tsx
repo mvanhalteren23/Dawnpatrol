@@ -88,8 +88,10 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               <select name="bookingMeetingType" defaultValue={r.bookingMeetingType} className="input">
                 <option value="phone">Phone call (we call the number they give)</option>
                 <option value="google_meet">Google Meet (link in the invite)</option>
+                <option value="caller_choice">Caller&apos;s choice (phone or Google Meet)</option>
               </select>
             </Field>
+            <Field label="Questions to ask before booking (one per line)" className="col-span-2"><textarea name="bookingQuestions" rows={3} defaultValue={r.bookingQuestions} placeholder="What do your customers usually call about?" className="input" /></Field>
             <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM as a lead (for Dawn Patrol&apos;s own line)</label>
             <div className="col-span-2 flex gap-2">
               <SubmitButton pendingText="Saving…">Save booking</SubmitButton>

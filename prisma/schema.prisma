@@ -267,7 +267,8 @@ model Receptionist {
   bookingMinNoticeHours Int     @default(2)
   bookingDaysAhead      Int     @default(14)
   bookingBufferMinutes  Int     @default(0)
-  bookingMeetingType    String  @default("phone") // phone | google_meet
+  bookingMeetingType    String  @default("phone") // phone | google_meet | caller_choice
+  bookingQuestions      String  @default("") // asked before booking, one per line; answers go on the event
   bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (Dawn Patrol's own receptionist)
   elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
