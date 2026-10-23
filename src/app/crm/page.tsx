@@ -6,10 +6,12 @@ import { computeMrr, conversionRate, goalProgress, payingSubscriptions, required
 import { formatDate, formatMoney, safeJson } from "@/lib/utils";
 import { PageHeader, Progress, Stat, StageBadge, StatusBadge, Empty } from "@/components/ui";
 import { completeTask } from "./actions";
+import { syncAllCallsThrottled } from "@/lib/call-sync";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
+  await syncAllCallsThrottled();
   const now = new Date();
   const [subs, stageCounts, followUps, tasks, recent, missedCalls, goalRaw, wonCount, workedCount] = await Promise.all([
     db.subscription.findMany({ include: { account: true } }),

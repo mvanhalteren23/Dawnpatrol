@@ -64,3 +64,10 @@ export async function markCallFollowedUp(receptionistId: string, callId: string,
   await db.callLog.updateMany({ where: { id: callId, receptionistId }, data: { followedUpAt: new Date() } });
   done(returnTo, "Marked as followed up");
 }
+
+export async function refreshCalls(receptionistId: string, returnTo: string) {
+  await guard(receptionistId);
+  const { syncCalls } = await import("@/lib/call-sync");
+  const r = await syncCalls({ receptionistId });
+  done(returnTo, r.errors.length ? `Couldn't reach ElevenLabs: ${r.errors[0]}` : r.added ? `${r.added} new call${r.added === 1 ? "" : "s"} added` : "Calls are up to date");
+}
