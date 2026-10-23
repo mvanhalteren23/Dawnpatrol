@@ -10,7 +10,8 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
-import { draftKbFromWebsite, rotateRagToken, syncToElevenLabs, updateReceptionist } from "../../actions";
+import { googleConnection } from "@/lib/google";
+import { draftKbFromWebsite, previewOpenings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const kbRun = await db.researchRun.findFirst({ where: { kind: "KB_DRAFT", accountId: r.accountId }, orderBy: { createdAt: "desc" } });
   const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
   const returnTo = `/crm/receptionists/${r.id}`;
+  const google = await googleConnection();
 
   return (
     <div>
@@ -63,6 +65,34 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field>
             <Field label="Demo line extension" className="col-span-2"><input name="demoExtension" defaultValue={r.demoExtension ?? ""} placeholder="e.g. 101 — leave blank if this isn't a demo" className="input" inputMode="numeric" /></Field>
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>
+          </form>
+
+          <form action={updateBooking.bind(null, r.id)} className="card grid grid-cols-2 gap-3">
+            <h2 className="col-span-2">Calendar booking</h2>
+            <p className="col-span-2 text-xs text-slate-500">
+              {google.connected
+                ? <>The agent checks <b>{google.email}</b>&apos;s Google Calendar for openings and books calls into it. To book into a client&apos;s calendar, have them share it with that account (“Make changes to events”) and enter its address below.</>
+                : <>Google isn&apos;t connected yet — connect it in <Link href="/crm/settings">Settings</Link>. Until then the agent collects preferred times instead.</>}
+            </p>
+            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingEnabled" defaultChecked={r.bookingEnabled} /> Let the agent check availability and book</label>
+            <Field label="Appointment name"><input name="bookingTitle" defaultValue={r.bookingTitle} className="input" /></Field>
+            <Field label="Calendar"><input name="bookingCalendarId" defaultValue={r.bookingCalendarId} placeholder="primary" className="input" /></Field>
+            <Field label={`Bookable hours (${r.timezone})`} className="col-span-2"><textarea name="bookingHours" rows={3} defaultValue={r.bookingHours} placeholder={"Mon-Fri 09:00-12:00, 13:00-17:00\nSat 10:00-14:00"} className="input font-mono text-xs" /></Field>
+            <Field label="Length (minutes)"><input name="bookingSlotMinutes" type="number" defaultValue={r.bookingSlotMinutes} className="input" /></Field>
+            <Field label="Buffer between (minutes)"><input name="bookingBufferMinutes" type="number" defaultValue={r.bookingBufferMinutes} className="input" /></Field>
+            <Field label="Minimum notice (hours)"><input name="bookingMinNoticeHours" type="number" defaultValue={r.bookingMinNoticeHours} className="input" /></Field>
+            <Field label="Book up to (days ahead)"><input name="bookingDaysAhead" type="number" defaultValue={r.bookingDaysAhead} className="input" /></Field>
+            <Field label="Meeting type" className="col-span-2">
+              <select name="bookingMeetingType" defaultValue={r.bookingMeetingType} className="input">
+                <option value="phone">Phone call (we call the number they give)</option>
+                <option value="google_meet">Google Meet (link in the invite)</option>
+              </select>
+            </Field>
+            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM as a lead (for Dawn Patrol&apos;s own line)</label>
+            <div className="col-span-2 flex gap-2">
+              <SubmitButton pendingText="Saving…">Save booking</SubmitButton>
+              {google.connected ? <SubmitButton formAction={previewOpenings.bind(null, r.id)} className="btn-secondary" pendingText="Checking…">Preview openings</SubmitButton> : null}
+            </div>
           </form>
 
           <TestChat receptionistId={r.id} greeting={r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />

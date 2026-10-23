@@ -9,12 +9,15 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file", // only files/folders this app creates
   "https://www.googleapis.com/auth/gmail.readonly", // outreach tracking
   "https://www.googleapis.com/auth/gmail.send", // send tracked emails from the CRM
+  "https://www.googleapis.com/auth/calendar.freebusy", // receptionist availability lookups
+  "https://www.googleapis.com/auth/calendar.events", // receptionist bookings
   "openid",
   "email",
 ];
 
 const REFRESH_KEY = "google.refresh_token";
 const EMAIL_KEY = "google.email";
+const SCOPES_KEY = "google.scopes";
 
 export function googleConfigured(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
@@ -37,6 +40,7 @@ export async function completeOAuth(code: string): Promise<string | null> {
   const client = oauthClient();
   const { tokens } = await client.getToken(code);
   if (tokens.refresh_token) await setSetting(REFRESH_KEY, tokens.refresh_token);
+  if (tokens.scope) await setSetting(SCOPES_KEY, tokens.scope);
   let email: string | null = null;
   if (tokens.id_token) {
     const ticket = await client.verifyIdToken({ idToken: tokens.id_token, audience: process.env.GOOGLE_CLIENT_ID });
@@ -46,9 +50,9 @@ export async function completeOAuth(code: string): Promise<string | null> {
   return email;
 }
 
-export async function googleConnection(): Promise<{ connected: boolean; email: string | null }> {
-  const [token, email] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY)]);
-  return { connected: Boolean(token && googleConfigured()), email };
+export async function googleConnection(): Promise<{ connected: boolean; email: string | null; calendar: boolean }> {
+  const [token, email, scopes] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY), getSetting(SCOPES_KEY)]);
+  return { connected: Boolean(token && googleConfigured()), email, calendar: Boolean(scopes?.includes("calendar.events")) };
 }
 
 async function authedClient(): Promise<OAuth2Client> {

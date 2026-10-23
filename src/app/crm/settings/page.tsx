@@ -56,9 +56,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <h2>Integrations</h2>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="font-medium">Google Drive + Gmail</div>
-            <div className="text-xs text-slate-500">Folder system for every account, research docs, outreach logs, and automatic Gmail outreach tracking + tracked sending.</div>
+            <div className="font-medium">Google Drive + Gmail + Calendar</div>
+            <div className="text-xs text-slate-500">Folder system for every account, research docs, outreach logs, automatic Gmail outreach tracking + tracked sending, and Calendar availability + booking for receptionists.</div>
             {google.connected ? <div className="mt-1 text-xs">Connected as <b>{google.email}</b>{lastSync ? ` · last Gmail sync ${formatDate(lastSync, true)}` : ""}{driveRoot ? <> · <a href={`https://drive.google.com/drive/folders/${driveRoot}`} target="_blank" rel="noreferrer">open Drive root</a></> : null}</div> : null}
+            {google.connected && !google.calendar ? <div className="mt-1 text-xs text-amber-700">Connected before Calendar access was added — click Connect Google again to grant it.</div> : null}
           </div>
           <div className="shrink-0">
             {!googleConfigured() ? <Status ok={false} /> : google.connected ? (

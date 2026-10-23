@@ -19,7 +19,7 @@ The operating system for Dawn Patrol Co., which builds AI receptionists for smal
 
 ## Stack
 
-Next.js 15 (App Router, server actions) · TypeScript · Prisma + Postgres · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail REST) · ElevenLabs Conversational AI REST.
+Next.js 15 (App Router, server actions) · TypeScript · Prisma + Postgres · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail + Calendar REST) · ElevenLabs Conversational AI REST.
 
 ## Quick start
 
@@ -60,6 +60,7 @@ Each integration is optional. Features that need a missing key turn themselves o
    - `drive.file`: the app only sees folders and files it creates itself.
    - `gmail.readonly`: for outreach tracking.
    - `gmail.send`: for tracked sends.
+   - `calendar.freebusy` and `calendar.events`: for receptionist availability and booking.
 5. If the OAuth app stays in "Testing" mode, add yourself as a test user. Google expires refresh tokens for testing-mode apps after 7 days, so publish the app (it can stay internal/unverified for your own account) to avoid reconnecting every week.
 
 The folder structure the app creates:
@@ -90,6 +91,7 @@ Dawn Patrol Co — CRM/
   2. It uploads those documents and creates or patches the agent with the system prompt, greeting, voice and document references.
   3. It deletes the previous set of documents.
 - **Live lookups (optional):** add a webhook tool to the agent: `GET ${APP_URL}/api/rag/<receptionistId>/search?q={query}` with the header `Authorization: Bearer <RAG token>`. The token is shown on the receptionist page.
+- **Calendar booking:** turn it on in a receptionist's **Calendar booking** card (bookable hours, length, buffer, notice, meeting type). On sync the agent gets two webhook tools, `POST ${APP_URL}/api/agent-tools/<id>/availability` and `/book`, authorised with the RAG token. They read free/busy from the connected Google Calendar and create the event. Each booking is re-checked against the calendar before it's created, and can optionally add the caller to the CRM as an inbound lead (stage → Demo). A client's calendar works if they share it with the connected Google account and its address is set as the calendar.
 - **Call logs:** in ElevenLabs, set the post-call webhook to `${APP_URL}/api/webhooks/elevenlabs` and put its secret in `ELEVENLABS_WEBHOOK_SECRET`. Each call becomes a CallLog with an outcome (booked, message taken, transferred, missed opportunity…) and appears in both the CRM and the client portal. Calls are also appended to a monthly Call Log doc in the client's Drive folder.
 - Outcome detection uses a `data_collection_results.outcome` field if you configure one in the agent. Otherwise it falls back to keyword rules (`src/lib/calls.ts`).
 - The request shapes in `src/lib/elevenlabs.ts` follow ElevenLabs' Conversational AI REST API (`/v1/convai/agents/create`, `/v1/convai/agents/{id}`, `/v1/convai/knowledge-base/text`). Check them against your account's API version the first time you sync.

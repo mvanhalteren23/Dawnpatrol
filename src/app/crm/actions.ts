@@ -24,6 +24,8 @@ import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/c
 import { accountVariables, renderPrompt } from "@/lib/prompts";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
+import { availability } from "@/lib/agent-booking";
+import { parseWeeklyHours } from "@/lib/booking";
 import { cleanDigits, nextFreeExtension } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 
@@ -448,6 +450,50 @@ export async function updateReceptionist(id: string, form: FormData) {
   });
   await markDirty(id);
   back(`/crm/receptionists/${id}`, { notice: "Saved" });
+}
+
+export async function updateBooking(id: string, form: FormData) {
+  await requireAdmin();
+  const path = `/crm/receptionists/${id}`;
+  const hours = str(form, "bookingHours") || "Mon-Fri 09:00-17:00";
+  try {
+    if (!Object.keys(parseWeeklyHours(hours)).length) throw new Error("Add at least one line of bookable hours");
+  } catch (err) {
+    back(path, { error: `Bookable hours: ${errMsg(err)}` });
+  }
+  const int = (key: string, min: number, max: number, fallback: number) => Math.min(max, Math.max(min, optInt(form, key) ?? fallback));
+  await db.receptionist.update({
+    where: { id },
+    data: {
+      bookingEnabled: form.get("bookingEnabled") === "on",
+      bookingCalendarId: str(form, "bookingCalendarId") || "primary",
+      bookingTitle: str(form, "bookingTitle") || "Discovery call",
+      bookingHours: hours,
+      bookingSlotMinutes: int("bookingSlotMinutes", 10, 240, 30),
+      bookingMinNoticeHours: int("bookingMinNoticeHours", 0, 336, 2),
+      bookingDaysAhead: int("bookingDaysAhead", 1, 60, 14),
+      bookingBufferMinutes: int("bookingBufferMinutes", 0, 120, 0),
+      bookingMeetingType: str(form, "bookingMeetingType") === "google_meet" ? "google_meet" : "phone",
+      bookingAddsToCrm: form.get("bookingAddsToCrm") === "on",
+    },
+  });
+  await markDirty(id);
+  back(path, { notice: "Booking settings saved. Sync to ElevenLabs to update the live agent." });
+}
+
+/** Run the same lookup the agent's get_available_times tool does, so you can sanity-check it. */
+export async function previewOpenings(id: string) {
+  await requireAdmin();
+  const path = `/crm/receptionists/${id}`;
+  try {
+    const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
+    const res = await availability({ ...r, bookingEnabled: true }, {});
+    const list = "slots" in res && res.slots?.length ? res.slots.map((s) => s.label).join(" · ") : res.message;
+    back(path, { notice: `Openings the agent would offer: ${list}` });
+  } catch (err) {
+    unstable_rethrow(err);
+    back(path, { error: errMsg(err) });
+  }
 }
 
 export async function syncToElevenLabs(id: string) {

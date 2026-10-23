@@ -7,9 +7,9 @@ const TOUCH_TYPES = new Set(["EMAIL", "CALL", "SMS", "LINKEDIN", "MEETING"]);
 /** Stage auto-advance: first outbound touch → CONTACTED, first inbound reply → ENGAGED. Never moves backwards. */
 export function nextStageAfterActivity(stage: string, type: string, direction: string | null): string {
   if (!TOUCH_TYPES.has(type)) return stage;
+  if (type === "MEETING" && (stage === "PROSPECT" || stage === "CONTACTED" || stage === "ENGAGED")) return "DEMO";
   if (direction === "OUTBOUND" && stage === "PROSPECT") return "CONTACTED";
   if (direction === "INBOUND" && (stage === "PROSPECT" || stage === "CONTACTED")) return "ENGAGED";
-  if (type === "MEETING" && (stage === "PROSPECT" || stage === "CONTACTED" || stage === "ENGAGED")) return "DEMO";
   return stage;
 }
 

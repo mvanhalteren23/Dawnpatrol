@@ -18,7 +18,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!messages.length || messages[0]!.role !== "user") return NextResponse.json({ error: "Start with a caller message" }, { status: 400 });
   const r = await db.receptionist.findUniqueOrThrow({ where: { id }, include: { knowledge: true } });
   try {
-    const reply = await receptionistReply(buildReceptionistPrompt(r), compileKnowledgeBase(r.knowledge, r.businessName), messages);
+    // The test chat has no calendar tools, so it uses the collect-preferred-times flow.
+    const reply = await receptionistReply(buildReceptionistPrompt({ ...r, bookingEnabled: false }), compileKnowledgeBase(r.knowledge, r.businessName), messages);
     return NextResponse.json({ reply });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

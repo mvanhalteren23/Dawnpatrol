@@ -28,10 +28,88 @@ async function el<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 type KbDocRef = { category: string; docId: string; name: string };
+type ToolIds = Record<string, string>;
+
+const str = (description: string) => ({ type: "string", description });
+
+/** Webhook tools that let the agent read the calendar and book (see src/lib/agent-booking.ts). */
+export function bookingTools(r: { id: string; ragToken: string; timezone: string }) {
+  const base = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/agent-tools/${r.id}`;
+  const headers = { Authorization: `Bearer ${r.ragToken}` };
+  return {
+    get_available_times: {
+      type: "webhook",
+      name: "get_available_times",
+      description: `Look up real open appointment times on the calendar. Call it whenever the caller wants to book or asks what's available, before offering any time. Times are in ${r.timezone}. The response includes today's date.`,
+      response_timeout_secs: 20,
+      api_schema: {
+        url: `${base}/availability`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: {
+            preferred_date: str("Day the caller asked for, as YYYY-MM-DD. Leave empty if they have no preference."),
+            time_of_day: { type: "string", description: "Caller's preferred time of day", enum: ["any", "morning", "afternoon", "evening"] },
+          },
+          required: [],
+        },
+      },
+    },
+    book_appointment: {
+      type: "webhook",
+      name: "book_appointment",
+      description: "Book the time the caller chose. Only call it after the caller has agreed to a time from get_available_times and you have their name and phone number.",
+      response_timeout_secs: 30,
+      api_schema: {
+        url: `${base}/book`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: {
+            start_iso: str("The start_iso of the chosen slot, copied exactly from get_available_times."),
+            caller_name: str("Caller's full name."),
+            caller_phone: str("Best callback number, confirmed back to the caller."),
+            caller_email: str("Caller's email for the calendar invite, if they gave one."),
+            business_name: str("Caller's business name, if they have one."),
+            business_type: str("Type of business or service, if mentioned."),
+            town: str("Caller's town or city, if mentioned."),
+            interest: str("What they want to talk about or the service they're interested in."),
+            notes: str("Anything else the team should know before the call."),
+          },
+          required: ["start_iso", "caller_name", "caller_phone"],
+        },
+      },
+    },
+  };
+}
+
+/** Create or update the booking tools; returns the tool ids to attach to the agent. */
+async function syncBookingTools(r: { id: string; ragToken: string; timezone: string; bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
+  const existing = safeJson<ToolIds>(r.elevenLabsToolIds, {});
+  if (!r.bookingEnabled) return existing; // keep the tools around; they're just detached from the agent
+  const ids: ToolIds = {};
+  for (const [name, tool_config] of Object.entries(bookingTools(r))) {
+    const id = existing[name];
+    if (id) {
+      try {
+        await el(`/tools/${id}`, { method: "PATCH", body: JSON.stringify({ tool_config }) });
+        ids[name] = id;
+        continue;
+      } catch (e) {
+        if (!String(e).includes(" 404 ")) throw e; // deleted in ElevenLabs: recreate below
+      }
+    }
+    ids[name] = (await el<{ id: string }>("/tools", { method: "POST", body: JSON.stringify({ tool_config }) })).id;
+  }
+  return ids;
+}
 
 export function agentConfig(
   r: Parameters<typeof buildReceptionistPrompt>[0] & { voiceId?: string | null; language: string; greeting: string },
   docs: KbDocRef[],
+  toolIds: string[] = [],
 ) {
   const greeting = r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
   return {
@@ -44,6 +122,7 @@ export function agentConfig(
           prompt: buildReceptionistPrompt(r),
           ...(process.env.ELEVENLABS_LLM ? { llm: process.env.ELEVENLABS_LLM } : {}),
           knowledge_base: docs.map((d) => ({ type: "text", id: d.docId, name: d.name, usage_mode: "auto" })),
+          tool_ids: toolIds,
         },
       },
       ...((r.voiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID)
@@ -67,7 +146,8 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
       docs.push({ category: d.category, docId: created.id, name: d.name });
     }
 
-    const config = agentConfig(r, docs);
+    const toolIds = await syncBookingTools(r);
+    const config = agentConfig(r, docs, r.bookingEnabled ? Object.values(toolIds) : []);
     let agentId = r.elevenLabsAgentId;
     if (agentId) {
       await el(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(config) });
@@ -78,7 +158,7 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
 
     await db.receptionist.update({
       where: { id: r.id },
-      data: { elevenLabsAgentId: agentId, elevenLabsKbDocs: JSON.stringify(docs), syncStatus: "SYNCED", syncError: null, lastSyncedAt: new Date() },
+      data: { elevenLabsAgentId: agentId, elevenLabsKbDocs: JSON.stringify(docs), elevenLabsToolIds: JSON.stringify(toolIds), syncStatus: "SYNCED", syncError: null, lastSyncedAt: new Date() },
     });
 
     // Old docs are detached now; remove them (best effort).

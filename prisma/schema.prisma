@@ -257,6 +257,19 @@ model Receptionist {
   ragToken          String  @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
   demoExtension     String? @unique
+  // Calendar booking (Google Calendar of the connected Google account; a client can share
+  // their calendar with that account and put its address in bookingCalendarId).
+  bookingEnabled        Boolean @default(false)
+  bookingCalendarId     String  @default("primary")
+  bookingTitle          String  @default("Discovery call")
+  bookingSlotMinutes    Int     @default(30)
+  bookingHours          String  @default("Mon-Fri 09:00-17:00") // one line per rule, e.g. "Mon-Fri 09:00-12:00, 13:00-17:00"
+  bookingMinNoticeHours Int     @default(2)
+  bookingDaysAhead      Int     @default(14)
+  bookingBufferMinutes  Int     @default(0)
+  bookingMeetingType    String  @default("phone") // phone | google_meet
+  bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (Dawn Patrol's own receptionist)
+  elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
   syncError         String?
   lastSyncedAt      DateTime?

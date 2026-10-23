@@ -63,16 +63,17 @@ The demo number is a directory: callers enter an extension and reach the demo re
 4. For each prospect: on their account, add a receptionist with **Demo for this prospect** ticked (it gets the next free extension, starting at 101). Click **Draft KB from website**, approve the drafts, then click **Sync to ElevenLabs**.
 5. **CRM → Demo line** lists every extension, whether its agent is ready, and its demo calls.
 
-## 6. Connect Google (Drive folders + Gmail tracking)
+## 6. Connect Google (Drive folders, Gmail tracking, Calendar booking)
 
-1. In console.cloud.google.com, create a project. Enable the **Google Drive API** and **Gmail API**.
+1. In console.cloud.google.com, create a project. Enable the **Google Drive API**, **Gmail API** and **Google Calendar API**.
 2. Open **APIs & Services → OAuth consent screen**:
    - Choose External.
    - Add yourself as a test user.
    - Publish the app so tokens don't expire after 7 days.
 3. Open **Credentials → Create OAuth client → Web application**. Set the authorized redirect URI to `https://www.dawnpatrol-tech.com/api/google/callback`.
 4. Put the client ID and secret in Vercel, then redeploy.
-5. In the CRM, go to **Settings → Connect Google**.
+5. In the CRM, go to **Settings → Connect Google**. If you connected before Calendar was added, connect again to grant Calendar access.
+6. On a receptionist, fill in **Calendar booking**, tick **Let the agent check availability and book**, click **Preview openings** to check, then **Sync to ElevenLabs**. The sync adds two webhook tools to the agent: `get_available_times` and `book_appointment`.
 
 ## 7. Stripe (optional)
 
