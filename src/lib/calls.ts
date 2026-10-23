@@ -42,7 +42,8 @@ export function classifyCall(data: PostCallData): { outcome: string; followUpNee
 export function transcriptText(data: PostCallData): string {
   return (data.transcript ?? [])
     .filter((t) => t.message)
-    .map((t) => `${t.role === "agent" ? "Receptionist" : "Caller"}: ${t.message}`)
+    // Drop expressive voice tags such as "[happy]" or "[laugh]" so the transcript reads cleanly.
+    .map((t) => `${t.role === "agent" ? "Receptionist" : "Caller"}: ${(t.message ?? "").replace(/\[[a-z][a-z ]{0,20}\]\s*/gi, "").trim()}`)
     .join("\n");
 }
 
