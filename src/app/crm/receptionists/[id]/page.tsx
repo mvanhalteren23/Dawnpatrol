@@ -10,6 +10,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
+import { syncCallsThrottled } from "@/lib/call-sync";
 import { draftKbFromWebsite, rotateRagToken, syncToElevenLabs, updateReceptionist } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function ReceptionistPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ notice?: string; error?: string; kbRun?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await syncCallsThrottled(id);
   const r = await db.receptionist.findUnique({
     where: { id },
     include: { account: true, knowledge: { orderBy: [{ category: "asc" }, { title: "asc" }] }, calls: { orderBy: { startedAt: "desc" }, take: 25 } },
@@ -74,7 +76,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <div><div className="label">Export (GET ?format=markdown|json)</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{app}/api/rag/{r.id}/export</code></div>
             <div><div className="label">Token</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{r.ragToken}</code></div>
             <form action={rotateRagToken.bind(null, r.id)}><button className="text-xs text-red-600">Rotate token</button></form>
-            <div><div className="label">ElevenLabs post-call webhook</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{app}/api/webhooks/elevenlabs</code></div>
+            <div><div className="label">ElevenLabs post-call webhook</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{app}/api/webhooks/elevenlabs</code><p className="mt-1 text-xs text-slate-500">Optional: calls are also pulled from ElevenLabs automatically, so they log even without the webhook.</p></div>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
-import { callerNumber, classifyCall, transcriptText, type PostCallData } from "@/lib/calls";
+import { type PostCallData } from "@/lib/calls";
+import { saveCallLog } from "@/lib/call-store";
 import { verifyElevenLabsSignature } from "@/lib/webhook-verify";
 import { writeAccountDoc } from "@/lib/drive";
 import { googleConnection } from "@/lib/google";
@@ -8,6 +9,7 @@ import { getSetting, setSetting } from "@/lib/settings";
 import { formatDate } from "@/lib/utils";
 
 // ElevenLabs post-call webhook → CallLog (+ monthly call log doc in the client's Drive folder).
+// The pull-based sync in lib/call-sync.ts is the backstop if this webhook isn't configured.
 export async function POST(req: Request) {
   const raw = await req.text();
   const secret = process.env.ELEVENLABS_WEBHOOK_SECRET;
@@ -18,32 +20,14 @@ export async function POST(req: Request) {
   const payload = JSON.parse(raw) as { type?: string; data?: PostCallData };
   if (payload.type !== "post_call_transcription" || !payload.data?.conversation_id) return NextResponse.json({ ignored: true });
   const data = payload.data;
-  const conversationId = data.conversation_id!;
 
   const receptionist = data.agent_id ? await db.receptionist.findFirst({ where: { elevenLabsAgentId: data.agent_id } }) : null;
   if (!receptionist) return NextResponse.json({ ignored: "unknown agent" });
 
-  const { outcome, followUpNeeded } = classifyCall(data);
-  const collected = data.analysis?.data_collection_results ?? {};
-  const name = collected.caller_name?.value ?? collected.name?.value;
-  const startedAt = data.metadata?.start_time_unix_secs ? new Date(data.metadata.start_time_unix_secs * 1000) : new Date();
-  const call = await db.callLog.upsert({
-    where: { externalId: conversationId },
-    create: {
-      receptionistId: receptionist.id,
-      externalId: conversationId,
-      callerNumber: callerNumber(data),
-      callerName: typeof name === "string" ? name : null,
-      startedAt,
-      durationSec: data.metadata?.call_duration_secs ?? 0,
-      summary: data.analysis?.transcript_summary ?? "",
-      transcript: transcriptText(data),
-      outcome,
-      // Demo-line calls are prospects trying the product, not the client's customers.
-      followUpNeeded: receptionist.demoExtension ? false : followUpNeeded,
-    },
-    update: {},
-  });
+  // The webhook only fires for finished calls; don't let a status field filter it out.
+  const call = await saveCallLog(receptionist, { ...data, status: "done" });
+  if (!call) return NextResponse.json({ ignored: true });
+  const startedAt = call.startedAt;
 
   after(async () => {
     try {
@@ -62,5 +46,5 @@ export async function POST(req: Request) {
     }
   });
 
-  return NextResponse.json({ ok: true, id: call.id, outcome });
+  return NextResponse.json({ ok: true, id: call.id, outcome: call.outcome });
 }

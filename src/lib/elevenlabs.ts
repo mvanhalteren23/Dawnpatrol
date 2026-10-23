@@ -117,3 +117,41 @@ export async function registerTwilioCall(agentId: string, from: string, to: stri
   if (!xml) throw new Error("ElevenLabs register-call returned no TwiML");
   return xml;
 }
+
+// ---------------------------------------------------------------------------
+// Conversations (call history, transcripts, recordings)
+// ---------------------------------------------------------------------------
+
+export type ConversationSummary = { conversation_id: string; agent_id?: string; status?: string; start_time_unix_secs?: number };
+
+/** Finished and in-progress conversations for one agent, newest first, started after `afterUnix`. */
+export async function listConversations(agentId: string, afterUnix: number, max = 300): Promise<ConversationSummary[]> {
+  const out: ConversationSummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const qs = new URLSearchParams({ agent_id: agentId, page_size: "100", call_start_after_unix: String(afterUnix) });
+    if (cursor) qs.set("cursor", cursor);
+    const page = await el<{ conversations?: ConversationSummary[]; has_more?: boolean; next_cursor?: string | null }>(`/conversations?${qs}`);
+    out.push(...(page.conversations ?? []));
+    cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
+  } while (cursor && out.length < max);
+  return out;
+}
+
+/** Full conversation: transcript, metadata and analysis (same shape as the post-call webhook's data). */
+export async function getConversation<T = unknown>(conversationId: string): Promise<T> {
+  return el<T>(`/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+/** The call recording as a streaming Response (audio/mpeg), or null if ElevenLabs has none. */
+export async function fetchConversationAudio(conversationId: string, range?: string | null): Promise<Response | null> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
+  const res = await fetch(`${BASE}/conversations/${encodeURIComponent(conversationId)}/audio`, {
+    headers: { "xi-api-key": key, ...(range ? { Range: range } : {}) },
+    cache: "no-store",
+  });
+  if (res.status === 404 || res.status === 422) return null;
+  if (!res.ok) throw new Error(`ElevenLabs ${res.status} on audio: ${(await res.text()).slice(0, 300)}`);
+  return res;
+}

@@ -4,11 +4,13 @@ import { loadPortal } from "@/lib/portal";
 import { formatDate } from "@/lib/utils";
 import { Empty, Stat, StatusBadge } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
+import { syncCallsThrottled } from "@/lib/call-sync";
 
 export const dynamic = "force-dynamic";
 
 export default async function PortalHome({ searchParams }: { searchParams: Promise<{ account?: string }> }) {
   const { session, account, receptionist, adminAccountId, q } = await loadPortal(searchParams);
+  if (receptionist) await syncCallsThrottled(receptionist.id);
   const since = new Date(Date.now() - 30 * 86400000);
   const [calls, byOutcome, followUps, kbCount] = receptionist
     ? await Promise.all([
