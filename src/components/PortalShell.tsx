@@ -21,6 +21,7 @@ export async function PortalShell({ accountName, adminAccountId, email, children
             <Link href={`/portal/knowledge${q}`}>Knowledge base</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
             <Link href={`/portal/billing${q}`}>Billing</Link>
+            <Link href={`/portal/settings${q}`}>Settings</Link>
           </nav>
           <form action="/api/auth/logout" method="post" className="text-xs text-slate-500">{email} · <button className="underline">Sign out</button></form>
         </div>

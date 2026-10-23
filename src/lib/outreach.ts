@@ -181,6 +181,27 @@ function encodeHeader(value: string): string {
   return /^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
 }
 
+/** Plain-text email from the connected Gmail account (no tracking, no activity). */
+export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null }) {
+  const me = await connectedEmail();
+  if (!me) throw new Error("Google is not connected");
+  const mime = [
+    `From: ${params.fromName ? `${encodeHeader(params.fromName)} <${me}>` : me}`,
+    `To: ${params.to}`,
+    ...(params.replyTo ? [`Reply-To: ${params.replyTo}`] : []),
+    `Subject: ${encodeHeader(params.subject)}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "",
+    params.body,
+  ].join("\r\n");
+  return googleFetch<{ id: string; threadId: string }>(`${GMAIL}/messages/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: Buffer.from(mime).toString("base64url") }),
+  });
+}
+
 /** Send from the connected Gmail account with open/click tracking, and log it as an activity. */
 export async function sendTrackedEmail(params: { accountId: string; contactId: string; subject: string; body: string; userId?: string }) {
   const contact = await db.contact.findUniqueOrThrow({ where: { id: params.contactId } });

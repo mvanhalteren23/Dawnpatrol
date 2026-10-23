@@ -59,6 +59,54 @@ export function parseWeeklyHours(text: string): WeeklyHours {
   return hours;
 }
 
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first, for forms
+
+const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+/** Weekly hours -> one "09:00-12:00, 13:00-17:00" string per weekday ("" = closed), for the per-day form. */
+export function hoursByDay(text: string): Record<number, string> {
+  let hours: WeeklyHours = {};
+  try {
+    hours = parseWeeklyHours(text);
+  } catch {
+    // Unreadable legacy text: show every day closed rather than failing the page.
+  }
+  return Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, (hours[d] ?? []).map(([a, b]) => `${hhmm(a)}-${hhmm(b)}`).join(", ")]));
+}
+
+/** Per-day form values -> canonical weekly hours text ("Mon 09:00-17:00" lines). Throws on bad input. */
+export function hoursFromDays(days: Record<number, string>): string {
+  const lines = WEEK_ORDER.filter((d) => days[d]?.trim()).map((d) => `${DAY_LABELS[d]} ${days[d]!.trim()}`);
+  const text = lines.join("\n");
+  parseWeeklyHours(text); // validate
+  return text;
+}
+
+/** Read the AvailabilityFields form (hours_<weekday>, bookingHolidays, bookingClosedDates). Throws on bad hours. */
+export function availabilityFromForm(form: FormData) {
+  const days = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, String(form.get(`hours_${d}`) ?? "")]));
+  const bookingHours = hoursFromDays(days);
+  if (!bookingHours) throw new Error("Add bookable hours for at least one day");
+  const bad = String(form.get("bookingClosedDates") ?? "").split(/\s+/).filter((x) => x && !/^\d{4}-\d{2}-\d{2}$/.test(x));
+  if (bad.length) throw new Error(`Closed days must look like 2026-12-24 (not "${bad[0]}")`);
+  return {
+    bookingHours,
+    bookingHolidays: form.get("bookingHolidays") === "CA-BC" ? "CA-BC" : "",
+    bookingClosedDates: String(form.get("bookingClosedDates") ?? "").trim(),
+  };
+}
+
+/** Read the FollowUpFields form. */
+export function followUpFromForm(form: FormData) {
+  const on = String(form.get("followUpOn") ?? "");
+  const channel = String(form.get("followUpChannel") ?? "");
+  return {
+    followUpOn: ["bookings", "calls", "both"].includes(on) ? on : "",
+    followUpChannel: ["sms", "email"].includes(channel) ? channel : "caller_choice",
+  };
+}
+
 // --- Timezone helpers (Intl only, DST-safe) ---------------------------------------
 
 function partsInZone(date: Date, tz: string) {

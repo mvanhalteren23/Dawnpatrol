@@ -109,3 +109,15 @@ describe("holidays", () => {
     expect(days.has("2026-10-13")).toBe(true);
   });
 });
+
+describe("per-day hours form", () => {
+  it("round-trips weekly hours through the per-day fields", async () => {
+    const { hoursByDay, hoursFromDays } = await import("@/lib/booking");
+    const days = hoursByDay("Mon-Fri 09:00-17:00\nSat 10-14");
+    expect(days[1]).toBe("09:00-17:00");
+    expect(days[6]).toBe("10:00-14:00");
+    expect(days[0]).toBe("");
+    expect(hoursFromDays({ ...days, 3: "09:00-12:00, 13:00-17:00" })).toBe("Mon 09:00-17:00\nTue 09:00-17:00\nWed 09:00-12:00, 13:00-17:00\nThu 09:00-17:00\nFri 09:00-17:00\nSat 10:00-14:00");
+    expect(() => hoursFromDays({ 1: "17:00-09:00" })).toThrow();
+  });
+});

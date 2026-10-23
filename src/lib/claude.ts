@@ -233,3 +233,22 @@ export async function receptionistReply(
   assertNotRefused(response);
   return textOf(response.content);
 }
+
+// --- Caller follow-ups -------------------------------------------------------
+
+const CallerSummarySchema = z.object({
+  subject: z.string().describe("Short email subject, e.g. 'Your call with Acme Plumbing'"),
+  body: z.string().describe("The message to the caller, in plain text"),
+});
+
+/** A short, caller-facing recap of a phone call ("you asked…, we'll…"), for a text or an email. */
+export async function callerFollowUp(businessName: string, transcript: string, channel: "sms" | "email"): Promise<{ subject: string; body: string }> {
+  const ex = await extract(
+    CallerSummarySchema,
+    `Write the follow-up ${businessName} sends a caller after this phone call with its receptionist. Address the caller directly ("you"), in a warm, plain, brief tone with no praise or filler. Cover what they called about, anything that was answered or arranged (with exact days, times and contact details as stated in the call), and what happens next. Never add facts, prices or promises that aren't in the transcript. ${
+      channel === "sms" ? "It's a text message: at most 3 short sentences, under 300 characters, no greeting line, sign off with the business name." : "It's an email: a greeting with their name if known, 2-4 short paragraphs or a few bullet points, then sign off as the " + businessName + " team."
+    }`,
+    transcript,
+  );
+  return ex.data;
+}

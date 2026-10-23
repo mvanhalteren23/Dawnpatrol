@@ -26,7 +26,7 @@ import { companyName, renameCompany } from "@/lib/brand";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
 import { availability } from "@/lib/agent-booking";
-import { parseWeeklyHours } from "@/lib/booking";
+import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
 import { cleanDigits, nextFreeExtension } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 
@@ -465,9 +465,9 @@ export async function markReviewed(accountId: string) {
 export async function updateBooking(id: string, form: FormData) {
   await requireAdmin();
   const path = `/crm/receptionists/${id}`;
-  const hours = str(form, "bookingHours") || "Mon-Fri 09:00-17:00";
+  let availability: ReturnType<typeof availabilityFromForm>;
   try {
-    if (!Object.keys(parseWeeklyHours(hours)).length) throw new Error("Add at least one line of bookable hours");
+    availability = availabilityFromForm(form);
   } catch (err) {
     back(path, { error: `Bookable hours: ${errMsg(err)}` });
   }
@@ -478,15 +478,14 @@ export async function updateBooking(id: string, form: FormData) {
       bookingEnabled: form.get("bookingEnabled") === "on",
       bookingCalendarId: str(form, "bookingCalendarId") || "primary",
       bookingTitle: str(form, "bookingTitle") || "Discovery call",
-      bookingHours: hours,
       bookingSlotMinutes: int("bookingSlotMinutes", 10, 240, 30),
       bookingMinNoticeHours: int("bookingMinNoticeHours", 0, 336, 2),
       bookingDaysAhead: int("bookingDaysAhead", 1, 60, 14),
       bookingBufferMinutes: int("bookingBufferMinutes", 0, 120, 0),
       bookingMeetingType: ["google_meet", "caller_choice"].includes(str(form, "bookingMeetingType")) ? str(form, "bookingMeetingType") : "phone",
       bookingQuestions: str(form, "bookingQuestions"),
-      bookingHolidays: str(form, "bookingHolidays") === "CA-BC" ? "CA-BC" : "",
-      bookingClosedDates: str(form, "bookingClosedDates"),
+      ...availability,
+      ...followUpFromForm(form),
       bookingAddsToCrm: form.get("bookingAddsToCrm") === "on",
     },
   });

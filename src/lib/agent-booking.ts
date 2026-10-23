@@ -7,7 +7,8 @@ import { busyIntervals, createEvent } from "./calendar";
 import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
-import { samePhone, sendSms } from "./twilio";
+import { samePhone } from "./twilio";
+import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
 import { claudeConfigured } from "./claude";
 import { startAccountResearch } from "./jobs";
 
@@ -73,7 +74,9 @@ export type BookingInput = {
   business_type?: string;
   interest?: string;
   answers?: string;
-  wants_text?: boolean | string;
+  summary_method?: string; // text | email | none
+  wants_text?: boolean | string; // older agents
+  conversation_id?: string;
   notes?: string;
 };
 
@@ -92,7 +95,8 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const meetingType = meetingTypeFor(r.bookingMeetingType, input.meeting_type);
   const email = input.caller_email?.includes("@") ? input.caller_email.trim() : null;
   if (meetingType === "google_meet" && !email) return { booked: false, message: "A Google Meet needs the caller's email for the invite. Ask for it (spell it back), then book again." };
-  const wantsText = input.wants_text === true || input.wants_text === "true";
+  const preference = input.summary_method ?? (input.wants_text === true || input.wants_text === "true" ? "text" : input.wants_text != null ? "none" : null);
+  const channel = followUpEnabled(r, "booking") ? pickChannel(r.followUpChannel, preference, input.caller_phone.trim(), email) : null;
 
   // The slot must still be a valid opening (rules + calendar), so a stale or invented time can't book.
   const rules = slotRules(r);
@@ -116,7 +120,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     input.business_type ? `Business type: ${input.business_type.trim()}` : null,
     input.interest ? `Interested in: ${input.interest.trim()}` : null,
     input.answers?.trim() ? `\nBefore the call:\n${input.answers.trim()}` : null,
-    `\nWants a text: ${wantsText ? "yes" : "no"}`,
+    `\nConfirmation: ${channel === "sms" ? "by text" : channel === "email" ? "by email" : "none requested"}`,
     input.notes ? `Notes: ${input.notes.trim()}` : null,
     meetingType === "phone" ? `\nCall them at ${input.caller_phone.trim()}.` : "\nGoogle Meet (link in the invite).",
   ].filter(Boolean).join("\n");
@@ -141,22 +145,44 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     });
   }
 
-  let texted = false;
-  if (wantsText) {
+  let sent = false;
+  if (channel) {
     const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await connectedEmail()].filter(Boolean).join(" or email ");
     const how = meetingType === "google_meet" ? `Google Meet — the link is in your calendar invite${email ? ` (${email})` : ""}` : `we'll call you at ${input.caller_phone.trim()}`;
-    const text = `${r.businessName}: you're booked for a ${r.bookingTitle.toLowerCase()} on ${label} (${r.bookingSlotMinutes} min, ${how}).${input.interest ? ` We'll cover: ${input.interest.trim()}.` : ""} To reschedule or cancel, ${changeBy}.`;
-    texted = await sendSms(input.caller_phone, text).then(() => true, (e) => { console.error("Booking text failed", e); return false; });
+    const topic = input.interest ? ` We'll cover: ${input.interest.trim()}.` : "";
+    const body = channel === "sms"
+      ? `${r.businessName}: you're booked for a ${r.bookingTitle.toLowerCase()} on ${label} (${r.bookingSlotMinutes} min, ${how}).${topic} To reschedule or cancel, ${changeBy}.`
+      : [
+          `Hi ${input.caller_name.trim().split(/\s+/)[0]},`,
+          "",
+          `You're booked for a ${r.bookingTitle.toLowerCase()} with ${r.businessName}:`,
+          "",
+          `When: ${label} (${r.timezone.replace("America/", "").replace("_", " ")} time), ${r.bookingSlotMinutes} minutes`,
+          `How: ${meetingType === "google_meet" ? "Google Meet — the link is in your calendar invite" : `we'll call you at ${input.caller_phone.trim()}`}`,
+          ...(input.interest ? [`About: ${input.interest.trim()}`] : []),
+          "",
+          `Need to reschedule or cancel? No problem — ${changeBy}.`,
+          "",
+          `The ${r.businessName} team`,
+        ].join("\n");
+    sent = await sendFollowUp(r, {
+      kind: "booking",
+      channel,
+      to: channel === "sms" ? input.caller_phone.trim() : email!,
+      subject: `Booked: ${r.bookingTitle} on ${label}`,
+      body,
+      conversationId: input.conversation_id || null,
+    });
   }
 
   return {
     booked: true,
-    texted,
+    confirmation: channel ? (sent ? `sent by ${channel === "sms" ? "text" : "email"}` : "failed") : "none",
     researchRunId: lead?.researchRunId ?? null,
     start_iso: start.toISOString(),
     label,
     meet_link: event.meetLink,
-    message: `Booked for ${label} (${r.timezone}). Read the time back to the caller${meetingType === "google_meet" ? " and tell them the Google Meet link is in their calendar invite" : email ? " and tell them a calendar invite is on its way to their email" : ""}${meetingType === "phone" ? `. We'll call them at ${input.caller_phone.trim()}` : ""}.${wantsText ? (texted ? " A confirmation text is on its way." : " The confirmation text couldn't be sent; tell them they'll get the details by email or a call instead.") : ""}`,
+    message: `Booked for ${label} (${r.timezone}). Read the time back to the caller${meetingType === "google_meet" ? " and tell them the Google Meet link is in their calendar invite" : email ? " and tell them a calendar invite is on its way to their email" : ""}${meetingType === "phone" ? `. We'll call them at ${input.caller_phone.trim()}` : ""}.${channel ? (sent ? ` A confirmation ${channel === "sms" ? "text" : "email"} is on its way.` : " The confirmation couldn't be sent; tell them the team will follow up with the details.") : ""}`,
   };
 }
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { callerNumber, classifyCall, transcriptText, type PostCallData } from "./calls";
+import { sendCallFollowUp } from "./follow-up";
 
 type ReceptionistRef = { id: string; demoExtension: string | null };
 
@@ -27,7 +28,7 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     transcript: transcriptText(data),
     outcome,
   };
-  return db.callLog.upsert({
+  const call = await db.callLog.upsert({
     where: { externalId: conversationId },
     create: {
       receptionistId: receptionist.id,
@@ -39,4 +40,7 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     // Fill in anything a first, partial save missed, but never undo a follow-up the user recorded.
     update: { summary: fields.summary || undefined, transcript: fields.transcript || undefined, durationSec: fields.durationSec || undefined },
   });
+  const full = await db.receptionist.findUnique({ where: { id: receptionist.id } });
+  if (full) await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));
+  return call;
 }

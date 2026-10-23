@@ -275,6 +275,9 @@ model Receptionist {
   bookingQuestions      String  @default("") // asked before booking, one per line; answers go on the event
   bookingHolidays       String  @default("") // "" | "CA-BC": no bookings on these statutory holidays
   bookingClosedDates    String  @default("") // extra closed days, YYYY-MM-DD, one per line
+  // Summary sent to the caller after a call and/or a booking, by text or email.
+  followUpOn            String  @default("") // "" (off) | bookings | calls | both
+  followUpChannel       String  @default("caller_choice") // caller_choice | sms | email
   bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
@@ -285,6 +288,26 @@ model Receptionist {
 
   knowledge KnowledgeItem[]
   calls     CallLog[]
+  followUps FollowUpMessage[]
+}
+
+/** A text or email the receptionist sent a caller after a call or booking. */
+model FollowUpMessage {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  conversationId String? // ElevenLabs conversation, when known
+  kind           String // booking | call
+  channel        String // sms | email
+  to             String
+  subject        String?
+  body           String
+  status         String // SENT | FAILED
+  error          String?
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, createdAt])
+  @@index([conversationId])
 }
 
 model KnowledgeItem {

@@ -33,7 +33,8 @@ type ToolIds = Record<string, string>;
 const str = (description: string) => ({ type: "string", description });
 
 /** Webhook tools that let the agent read the calendar and book (see src/lib/agent-booking.ts). */
-export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string }) {
+export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string; followUpOn: string; followUpChannel: string }) {
+  const confirmations = r.followUpOn === "bookings" || r.followUpOn === "both";
   const base = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/agent-tools/${r.id}`;
   const headers = { Authorization: `Bearer ${r.ragToken}` };
   return {
@@ -81,7 +82,18 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
             ...(r.bookingQuestions.trim()
               ? { answers: str("The caller's answers to the pre-booking questions, one 'Question: answer' line each.") }
               : {}),
-            wants_text: { type: "boolean", description: "True if the caller wants a confirmation text with the booking details." },
+            ...(confirmations
+              ? {
+                  summary_method: {
+                    type: "string",
+                    enum: ["text", "email", "none"],
+                    description: r.followUpChannel === "caller_choice"
+                      ? "How the caller wants their booking confirmation: text, email, or none."
+                      : `Send "none" only if the caller doesn't want a confirmation; otherwise "${r.followUpChannel === "email" ? "email" : "text"}".`,
+                  },
+                }
+              : {}),
+            conversation_id: { type: "string", dynamic_variable: "system__conversation_id" },
             notes: str("Anything else the team should know before the call."),
           },
           required: ["start_iso", "caller_name", "caller_phone"],
@@ -92,6 +104,21 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
 }
 
 /** Create or update the booking tools; returns the tool ids to attach to the agent. */
+/** Post-call fields ElevenLabs extracts from each call; the CRM uses them for outcomes and caller follow-ups. */
+export const DATA_COLLECTION = {
+  caller_name: { type: "string", description: "The caller's name as they gave it, or empty if not given." },
+  callback_number: { type: "string", description: "Best callback number the caller gave, or empty." },
+  caller_email: { type: "string", description: "The caller's email address if they gave one (as spelled back), or empty." },
+  summary_delivery: { type: "string", enum: ["text", "email", "none"], description: "How the caller asked to receive a summary or confirmation: text, email, or none if they declined or weren't asked." },
+};
+
+/** Add our data-collection fields without dropping any configured by hand in ElevenLabs. */
+async function mergedDataCollection(agentId: string | null) {
+  if (!agentId) return DATA_COLLECTION;
+  const current = await el<{ platform_settings?: { data_collection?: Record<string, unknown> } }>(`/agents/${agentId}`).catch(() => null);
+  return { ...(current?.platform_settings?.data_collection ?? {}), ...DATA_COLLECTION };
+}
+
 async function syncBookingTools(r: Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
   const existing = safeJson<ToolIds>(r.elevenLabsToolIds, {});
   if (!r.bookingEnabled) return existing; // keep the tools around; they're just detached from the agent
@@ -153,7 +180,10 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
     }
 
     const toolIds = await syncBookingTools(r);
-    const config = agentConfig(r, docs, r.bookingEnabled ? Object.values(toolIds) : []);
+    const config = {
+      ...agentConfig(r, docs, r.bookingEnabled ? Object.values(toolIds) : []),
+      platform_settings: { data_collection: await mergedDataCollection(r.elevenLabsAgentId) },
+    };
     let agentId = r.elevenLabsAgentId;
     if (agentId) {
       await el(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(config) });
