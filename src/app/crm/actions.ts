@@ -22,6 +22,7 @@ import {
 } from "@/lib/jobs";
 import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/claude";
 import { accountVariables, renderPrompt } from "@/lib/prompts";
+import { companyName, renameCompany } from "@/lib/brand";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
 import { availability } from "@/lib/agent-booking";
@@ -238,6 +239,7 @@ export async function draftEmail(accountId: string, form: FormData) {
   const demo = await demoLineConfig();
   const vars = {
     ...accountVariables({ ...account, contacts: contact ? [contact] : account.contacts }),
+    my_company: await companyName(),
     demo_phone: demoExtension && demo.number ? formatPhone(demo.number) : "",
     demo_extension: demoExtension ?? "",
   };
@@ -600,6 +602,15 @@ export async function seedDefaultPrompts() {
     n++;
   }
   back("/crm/settings", { notice: `Added ${n} starter prompts` });
+}
+
+export async function saveCompanyName(form: FormData) {
+  await requireAdmin();
+  const name = str(form, "companyName").trim();
+  if (!name) back("/crm/settings", { error: "Company name can't be empty" });
+  const changed = await renameCompany(name, form.get("rewrite") === "on");
+  revalidatePath("/", "layout");
+  back("/crm/settings", { notice: `Company name set to ${name}${changed ? ` · updated ${changed} records — sync your receptionist to push the new name to ElevenLabs` : ""}` });
 }
 
 export async function changePassword(form: FormData) {

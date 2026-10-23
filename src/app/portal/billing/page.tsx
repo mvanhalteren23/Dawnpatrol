@@ -3,6 +3,7 @@ import { loadPortal } from "@/lib/portal";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { Empty, Notice, StatusBadge } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
+import { companyName } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function PortalBilling({ searchParams }: { searchParams: Pr
             </div>
             {sub.stripeCustomerId ? <form action="/api/billing/portal" method="post"><input type="hidden" name="accountId" value={account.id} /><button className="btn">Manage payment method</button></form> : null}
           </div>
-        ) : <Empty>No active subscription. Your Dawn Patrol contact will send you a checkout link.</Empty>}
+        ) : <Empty>No active subscription. Your {await companyName()} contact will send you a checkout link.</Empty>}
       </div>
       <div className="card">
         <h2 className="mb-3">Invoices</h2>

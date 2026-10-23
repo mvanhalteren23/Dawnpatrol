@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { companyName } from "@/lib/brand";
 
-export function PortalShell({ accountName, adminAccountId, email, children }: { accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
+export async function PortalShell({ accountName, adminAccountId, email, children }: { accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
   const q = adminAccountId ? `?account=${adminAccountId}` : "";
+  const company = await companyName();
   return (
     <div className="min-h-screen">
       {adminAccountId ? (
@@ -12,7 +14,7 @@ export function PortalShell({ accountName, adminAccountId, email, children }: { 
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
             <div className="font-semibold">🌅 {accountName}</div>
-            <div className="text-xs text-slate-500">AI receptionist by Dawn Patrol Co.</div>
+            <div className="text-xs text-slate-500">AI receptionist by {company}</div>
           </div>
           <nav className="flex flex-wrap gap-4 text-sm">
             <Link href={`/portal${q}`}>Overview</Link>

@@ -9,10 +9,11 @@ import {
   isClientStage,
   type DrivePurpose,
 } from "./constants";
+import { companyName } from "./brand";
 
 // Folder system (all created by the app, so the narrow drive.file scope is enough):
 //
-//   Dawn Patrol Co — CRM/
+//   <Company name> — CRM/
 //     00 Company/            exports, reports, templates
 //     01 Prospects/<Account (domain)>/{01 Research, 02 Outreach}
 //     02 Clients/<Account (domain)>/{01 Research … 06 Billing}
@@ -53,7 +54,7 @@ async function ensureSettingFolder(key: string, name: string, parentId?: string)
 }
 
 export async function ensureRootFolders(): Promise<{ root: string; company: string; prospects: string; clients: string }> {
-  const root = await ensureSettingFolder("drive.root", process.env.GOOGLE_DRIVE_ROOT_NAME || "Dawn Patrol Co — CRM");
+  const root = await ensureSettingFolder("drive.root", process.env.GOOGLE_DRIVE_ROOT_NAME || `${await companyName()} — CRM`);
   const [company, prospects, clients] = await Promise.all([
     ensureSettingFolder("drive.company", "00 Company", root),
     ensureSettingFolder("drive.prospects", "01 Prospects", root),

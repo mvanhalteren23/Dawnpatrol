@@ -1,6 +1,6 @@
-# Dawn Patrol Co. — CRM & Client Portal
+# AI Receptionist Agency — CRM & Client Portal
 
-The operating system for Dawn Patrol Co., which builds AI receptionists for small and medium businesses so they never miss a call or lose a customer.
+The operating system for Head Above Digital, which builds AI receptionists for small and medium businesses so they never miss a call or lose a customer.
 
 **The goal it's built around:** get to 30–50 clients paying monthly. The dashboard tracks paying clients against that goal, along with MRR, pipeline, follow-ups due and client calls that still need a follow-up.
 
@@ -33,7 +33,7 @@ SEED_DEMO=1 npm run db:seed   # optional: sample prospects + a demo client with 
 npm run dev                   # http://localhost:3000
 ```
 
-Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. To give a client portal access, open their account and use **Client portal access**.
+Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The company name shown everywhere is set in **CRM → Settings → Company** (fallback: `COMPANY_NAME`, default "Head Above Digital"). To give a client portal access, open their account and use **Client portal access**.
 
 ```bash
 npm test          # unit tests (CSV mapping, RAG retrieval, outreach rules, signatures, metrics)
@@ -66,7 +66,7 @@ Each integration is optional. Features that need a missing key turn themselves o
 The folder structure the app creates:
 
 ```
-Dawn Patrol Co — CRM/
+<Company name> — CRM/
   00 Company/
   01 Prospects/<Account (domain)>/01 Research, 02 Outreach
   02 Clients/<Account (domain)>/01 Research … 04 Knowledge Base (RAG), 05 Call Logs, 06 Billing

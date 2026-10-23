@@ -16,6 +16,7 @@ export type PromptAccount = {
 
 export const PROMPT_VARIABLES: { key: string; description: string }[] = [
   { key: "company", description: "Account name" },
+  { key: "my_company", description: "Your company's name (CRM → Settings)" },
   { key: "domain", description: "Normalised domain" },
   { key: "website", description: "Website URL" },
   { key: "industry", description: "Industry / vertical" },
@@ -82,7 +83,7 @@ Find and summarise:
 3. Signals they miss calls or leads: reviews mentioning "never called back", "no answer", voicemail complaints; limited hours; small team; seasonal peaks.
 4. Decision makers (owner / GM / office manager) with titles and any public contact info.
 5. Competitors nearby and whether they offer 24/7 answering.
-6. A recommended pitch angle for Dawn Patrol Co.'s AI receptionist, with an estimate of missed calls per week and the revenue at stake.
+6. A recommended pitch angle for {{my_company}}'s AI receptionist, with an estimate of missed calls per week and the revenue at stake.
 
 Known notes: {{notes}}
 Known contacts:
@@ -113,7 +114,7 @@ Only include real businesses you found on the web with a working website. Exclud
     kind: "OUTREACH",
     description: "Short personalised first-touch email.",
     template: `Write a short (under 120 words) first-touch cold email to {{contacts}} at {{company}} ({{industry}}, {{location}}).
-Angle: every unanswered call is a lost job. Dawn Patrol Co. builds AI receptionists that answer 24/7, book appointments and text the owner a summary.
+Angle: every unanswered call is a lost job. {{my_company}} builds AI receptionists that answer 24/7, book appointments and text the owner a summary.
 Reference one specific detail about their business. One clear call to action. If a demo line is given ({{demo_phone}}, extension {{demo_extension}}), invite them to call it and hear their own AI receptionist answer as their business; otherwise offer a 15-minute demo. No hype, no emojis. Return a subject line and body.`,
   },
 ];

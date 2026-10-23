@@ -4,6 +4,7 @@ import { discoverProspects, draftKnowledgeBase, researchAccount, type ResearchSu
 import { writeAccountDoc } from "./drive";
 import { googleConnection } from "./google";
 import { accountVariables, renderPrompt } from "./prompts";
+import { companyName } from "./brand";
 import { recordActivity } from "./outreach";
 
 // Long-running Claude work runs after the response is sent (next/server `after`), writing
@@ -19,7 +20,7 @@ export async function startAccountResearch(accountId: string, promptId: string |
   const prompt = promptId ? await db.savedPrompt.findUnique({ where: { id: promptId } }) : null;
   const template = customPrompt || prompt?.template;
   if (!template) throw new Error("Choose a saved prompt or write one");
-  const input = renderPrompt(template, accountVariables(account));
+  const input = renderPrompt(template, { ...accountVariables(account), my_company: await companyName() });
   const run = await db.researchRun.create({ data: { kind: "RESEARCH", accountId, promptId: prompt?.id ?? null, input } });
   return run.id;
 }
@@ -94,7 +95,7 @@ export async function archiveRunToDrive(runId: string) {
 export async function startProspecting(promptId: string | null, criteria: string, count: number, customPrompt?: string): Promise<string> {
   const prompt = promptId ? await db.savedPrompt.findUnique({ where: { id: promptId } }) : null;
   const template = customPrompt || prompt?.template || "Find {{count}} businesses matching: {{criteria}}";
-  const input = renderPrompt(template, { criteria, count });
+  const input = renderPrompt(template, { criteria, count, my_company: await companyName() });
   const run = await db.researchRun.create({ data: { kind: "PROSPECTING", promptId: prompt?.id ?? null, input, resultJson: JSON.stringify({ count }) } });
   return run.id;
 }

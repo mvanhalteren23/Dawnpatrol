@@ -8,12 +8,12 @@ import { DEFAULT_PROMPTS } from "../src/lib/prompts";
 const db = new PrismaClient();
 
 async function main() {
-  const email = (process.env.ADMIN_EMAIL ?? "admin@dawnpatrol.co").toLowerCase();
+  const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
   if (!password) throw new Error("Set ADMIN_PASSWORD before seeding");
   const admin = await db.user.upsert({
     where: { email },
-    create: { email, name: "Dawn Patrol Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password, 12) },
+    create: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password, 12) },
     update: { role: "ADMIN" },
   });
   console.log(`Admin: ${admin.email}`);

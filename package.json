@@ -2,7 +2,7 @@
   "name": "dawnpatrol",
   "version": "0.1.0",
   "private": true,
-  "description": "Dawn Patrol Co. \u2014 CRM + client portal for AI receptionist clients",
+  "description": "CRM + client portal for AI receptionist clients",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",

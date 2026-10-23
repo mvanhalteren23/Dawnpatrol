@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { demoLineConfig, formatPhone, DEFAULT_DEMO_GREETING } from "@/lib/demo-line";
+import { demoLineConfig, formatPhone } from "@/lib/demo-line";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { formatDate } from "@/lib/utils";
 import { Badge, Empty, Field, Notice, PageHeader, StageBadge, StatusBadge } from "@/components/ui";
@@ -54,7 +54,7 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
       <div className="grid gap-6 lg:grid-cols-2">
         <form action={saveDemoLineSettings} className="card space-y-3">
           <h2>Directory settings</h2>
-          <Field label="Greeting"><textarea name="greeting" rows={3} defaultValue={config.greeting === DEFAULT_DEMO_GREETING ? "" : config.greeting} placeholder={DEFAULT_DEMO_GREETING} className="input" /></Field>
+          <Field label="Greeting"><textarea name="greeting" rows={3} defaultValue={config.greeting === config.defaultGreeting ? "" : config.greeting} placeholder={config.defaultGreeting} className="input" /></Field>
           <Field label="If no valid extension after 3 tries, connect to">
             <select name="fallbackReceptionistId" defaultValue={config.fallbackReceptionistId ?? ""} className="input">
               <option value="">Nobody — say goodbye and hang up</option>

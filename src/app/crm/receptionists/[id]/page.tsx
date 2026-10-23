@@ -92,7 +92,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               </select>
             </Field>
             <Field label="Questions to ask before booking (one per line)" className="col-span-2"><textarea name="bookingQuestions" rows={3} defaultValue={r.bookingQuestions} placeholder="What do your customers usually call about?" className="input" /></Field>
-            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM as a lead (for Dawn Patrol&apos;s own line)</label>
+            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM as a lead (for your own line)</label>
             <div className="col-span-2 flex gap-2">
               <SubmitButton pendingText="Saving…">Save booking</SubmitButton>
               {google.connected ? <SubmitButton formAction={previewOpenings.bind(null, r.id)} className="btn-secondary" pendingText="Checking…">Preview openings</SubmitButton> : null}

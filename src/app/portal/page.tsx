@@ -4,6 +4,7 @@ import { loadPortal } from "@/lib/portal";
 import { formatDate } from "@/lib/utils";
 import { Empty, Stat, StatusBadge } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
+import { companyName } from "@/lib/brand";
 import { syncCallsThrottled } from "@/lib/call-sync";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
   return (
     <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-6">Welcome back</h1>
-      {!receptionist ? <Empty>Your receptionist is being set up by the Dawn Patrol team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
+      {!receptionist ? <Empty>Your receptionist is being set up by the {await companyName()} team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
         <>
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Calls answered (30d)" value={calls} sub="Every call picked up, 24/7" />

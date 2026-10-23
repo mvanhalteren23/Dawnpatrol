@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import { companyName } from "./brand";
 
 // All Claude calls live here. Research and prospecting use server-side web search/fetch,
 // followed by a cheap structured-extraction pass so the CRM gets typed fields back.
@@ -42,7 +43,7 @@ function assertNotRefused(message: Anthropic.Beta.BetaMessage) {
   }
 }
 
-const RESEARCH_SYSTEM = `You are the research analyst for Dawn Patrol Co., which builds AI receptionists for small and medium businesses so they never miss a call or lose a customer.
+const researchSystem = (company: string) => `You are the research analyst for ${company}, which builds AI receptionists for small and medium businesses so they never miss a call or lose a customer.
 Research with the web tools, verify facts against the business's own website when possible, and cite sources inline as markdown links.
 Write in clean markdown with short sections. Say "unknown" instead of guessing.`;
 
@@ -60,7 +61,7 @@ export async function runWebResearch(prompt: string, opts: { maxSearches?: numbe
       betas: [FALLBACK_BETA],
       fallbacks: "default",
       output_config: { effort: "high" },
-      system: opts.system ?? RESEARCH_SYSTEM,
+      system: opts.system ?? researchSystem(await companyName()),
       tools: [
         { type: "web_search_20260209", name: "web_search", max_uses: opts.maxSearches ?? 8 },
         { type: "web_fetch_20260209", name: "web_fetch", max_uses: 6 },
@@ -198,7 +199,7 @@ const EmailDraftSchema = z.object({ subject: z.string(), body: z.string() });
 export async function draftOutreachEmail(renderedPrompt: string, researchContext: string): Promise<{ subject: string; body: string }> {
   const ex = await extract(
     EmailDraftSchema,
-    `${renderedPrompt}\n\nUse the account research below for personalisation. Body is plain text with line breaks; sign off as the Dawn Patrol Co. team.`,
+    `${renderedPrompt}\n\nUse the account research below for personalisation. Body is plain text with line breaks; sign off as the ${await companyName()} team.`,
     researchContext || "No research available.",
   );
   return ex.data;

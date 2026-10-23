@@ -1,4 +1,4 @@
-// Dawn Patrol Co. — CRM + client portal
+// AI receptionist agency CRM + client portal
 // Postgres everywhere (local dev: `docker compose up -d db`; production: Neon/Supabase/
 // Vercel Postgres). Enums are modelled as strings and JSON payloads as text.
 
@@ -269,7 +269,7 @@ model Receptionist {
   bookingBufferMinutes  Int     @default(0)
   bookingMeetingType    String  @default("phone") // phone | google_meet | caller_choice
   bookingQuestions      String  @default("") // asked before booking, one per line; answers go on the event
-  bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (Dawn Patrol's own receptionist)
+  bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
   syncError         String?

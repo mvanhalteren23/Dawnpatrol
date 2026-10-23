@@ -8,7 +8,8 @@ import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
 import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
-import { changePassword, disconnectGoogle, saveGoal, seedDefaultPrompts } from "../actions";
+import { companyName } from "@/lib/brand";
+import { changePassword, disconnectGoogle, saveCompanyName, saveGoal, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ function Status({ ok, label }: { ok: boolean; label?: string }) {
 }
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
+  const company = await companyName();
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
     googleConnection(),
     getSetting("gmail.lastSyncAt"),
@@ -31,6 +33,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Settings" />
       <Flash params={await searchParams} />
+
+      <div className="card">
+        <h2 className="mb-3">Company</h2>
+        <form action={saveCompanyName} className="grid grid-cols-3 items-end gap-3">
+          <Field label="Company name" className="col-span-2"><input name="companyName" defaultValue={company} className="input" required /></Field>
+          <div><button className="btn-secondary">Save</button></div>
+          <label className="col-span-3 flex items-center gap-2 text-sm"><input type="checkbox" name="rewrite" defaultChecked /> Also replace the old name in saved prompts, the demo line greeting, and your own account, receptionist and knowledge base</label>
+          <p className="col-span-3 text-xs text-slate-500">Used across the CRM, client portal, Claude research and outreach (<code>{"{{my_company}}"}</code> in saved prompts) and the demo line.</p>
+        </form>
+      </div>
 
       <div className="card">
         <h2 className="mb-3">Your password</h2>

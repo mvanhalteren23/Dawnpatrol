@@ -1,15 +1,18 @@
 import "server-only";
 import { db } from "./db";
 import { getSetting } from "./settings";
+import { companyName } from "./brand";
 
-export const DEFAULT_DEMO_GREETING =
-  "Thanks for calling the Dawn Patrol demo line. Please enter the demo extension from your email, then press pound.";
+export const defaultDemoGreeting = (company: string) =>
+  `Thanks for calling the ${company} demo line. Please enter the demo extension from your email, then press pound.`;
 
 export async function demoLineConfig() {
-  const [greeting, fallbackReceptionistId] = await Promise.all([getSetting("demo.greeting"), getSetting("demo.fallbackReceptionistId")]);
+  const [greeting, fallbackReceptionistId, company] = await Promise.all([getSetting("demo.greeting"), getSetting("demo.fallbackReceptionistId"), companyName()]);
+  const defaultGreeting = defaultDemoGreeting(company);
   return {
     number: process.env.TWILIO_DEMO_NUMBER ?? "",
-    greeting: greeting || DEFAULT_DEMO_GREETING,
+    greeting: greeting || defaultGreeting,
+    defaultGreeting,
     fallbackReceptionistId: fallbackReceptionistId || null,
   };
 }

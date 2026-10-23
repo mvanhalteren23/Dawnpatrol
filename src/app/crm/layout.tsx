@@ -1,16 +1,17 @@
 import { requireAdmin } from "@/lib/auth";
 import { NavLink } from "@/components/ui";
+import { companyName } from "@/lib/brand";
 
 // Claude research, prospecting and KB drafting run in after() from this segment's server actions.
 export const maxDuration = 300;
 
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
-  const session = await requireAdmin();
+  const [session, company] = await Promise.all([requireAdmin(), companyName()]);
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 flex-col bg-dawn-900 p-4 md:flex">
         <div className="mb-6 px-3">
-          <div className="text-lg font-semibold text-white">🌅 Dawn Patrol</div>
+          <div className="text-lg font-semibold text-white">🌅 {company}</div>
           <div className="text-xs text-indigo-200">CRM</div>
         </div>
         <nav className="space-y-1">
