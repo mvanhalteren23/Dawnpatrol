@@ -49,11 +49,17 @@ export async function availability(r: Receptionist, input: { preferred_date?: st
   if (!slots.length) return { ...base, available: false, slots: [], message: `No openings in the next ${r.bookingDaysAhead} days. ${FALLBACK}` };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(input.preferred_date ?? "") ? input.preferred_date : undefined;
   const picked = pickSlots(slots, r.timezone, { date, timeOfDay: input.time_of_day });
+  const last = localDate(slots[slots.length - 1]!, r.timezone);
+  const beyond = date && date > isoDate(last.y, last.m, last.d);
+  const why = date && !picked.matchedDate
+    ? beyond ? `Bookings only open ${r.bookingDaysAhead} days ahead, so that day can't be booked yet. Here are the nearest times. `
+      : "Nothing open on the requested day. "
+    : "";
   return {
     ...base,
     available: true,
     slots: picked.slots.map((s) => ({ start_iso: s.toISOString(), label: formatSlot(s, r.timezone) })),
-    message: `${date && !picked.matchedDate ? "Nothing open on the requested day. " : ""}Offer two or three of these times (all ${r.timezone}). Pass the chosen start_iso to book_appointment exactly as given.`,
+    message: `${why}Offer two or three of these times (all ${r.timezone}). Pass the chosen start_iso to book_appointment exactly as given.`,
   };
 }
 

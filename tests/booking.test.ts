@@ -32,14 +32,15 @@ describe("slots", () => {
 
   it("respects minimum notice and working days", () => {
     const c = candidateSlots(rules, now);
-    expect(formatSlot(c[0]!, TZ)).toBe("Monday, October 26 at 10:00 AM"); // 9:00 and 9:30 are inside 2h notice
+    expect(formatSlot(c[0]!, TZ)).toBe("Monday, October 26 at 10:00 AM"); // 30 + 15 min -> hourly; 9:00 is inside 2h notice
+    expect(c.filter((s) => formatSlot(s, TZ).startsWith("Tuesday")).map((s) => formatSlot(s, TZ))).toEqual(["Tuesday, October 27 at 9:00 AM", "Tuesday, October 27 at 10:00 AM"]);
     expect(c.every((s) => ![0, 6].includes(new Date(s.toLocaleString("en-US", { timeZone: TZ })).getDay()))).toBe(true);
   });
 
   it("removes slots overlapping busy time plus buffer", () => {
-    const busy = [{ start: new Date("2026-10-27T16:30:00Z"), end: new Date("2026-10-27T17:00:00Z") }]; // Tue 9:30-10:00
+    const busy = [{ start: new Date("2026-10-27T16:35:00Z"), end: new Date("2026-10-27T16:40:00Z") }]; // Tue 9:35-9:40
     const tue = freeSlots(rules, now, busy).filter((s) => formatSlot(s, TZ).startsWith("Tuesday")).map((s) => formatSlot(s, TZ));
-    expect(tue).toEqual(["Tuesday, October 27 at 10:30 AM"]); // 9:00 (buffer), 9:30 (busy), 10:00 (buffer) removed
+    expect(tue).toEqual(["Tuesday, October 27 at 10:00 AM"]); // 9:00-9:30 + 15 min buffer overlaps; 10:00 minus buffer (9:45) is clear
   });
 
   it("offers a couple per day, or the requested day", () => {

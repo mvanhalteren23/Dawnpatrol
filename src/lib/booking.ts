@@ -179,9 +179,15 @@ export function closedDates(holidays: string, extra: string, fromYear: number): 
   return out;
 }
 
+/** Slots start on the hour or half hour: meeting + buffer rounded up to 30 min (20 + 10 -> every 30). */
+export function slotStep(rules: Pick<SlotRules, "slotMinutes" | "bufferMinutes">): number {
+  return Math.ceil((rules.slotMinutes + rules.bufferMinutes) / 30) * 30;
+}
+
 /** Every bookable slot start in the window, ignoring the calendar. */
 export function candidateSlots(rules: SlotRules, now: Date): Date[] {
   const out: Date[] = [];
+  const step = slotStep(rules);
   const earliest = now.getTime() + rules.minNoticeHours * 3600_000;
   const today = localDate(now, rules.timezone);
   for (let i = 0; i <= rules.daysAhead; i++) {
@@ -189,7 +195,7 @@ export function candidateSlots(rules: SlotRules, now: Date): Date[] {
     const y = day.getUTCFullYear(), m = day.getUTCMonth() + 1, d = day.getUTCDate();
     if (rules.closedDates?.has(isoDate(y, m, d))) continue;
     for (const [startMin, endMin] of rules.hours[day.getUTCDay()] ?? []) {
-      for (let t = startMin; t + rules.slotMinutes <= endMin; t += rules.slotMinutes) {
+      for (let t = startMin; t + rules.slotMinutes <= endMin; t += step) {
         const start = zonedTime(y, m, d, t, rules.timezone);
         if (start.getTime() >= earliest) out.push(start);
       }
