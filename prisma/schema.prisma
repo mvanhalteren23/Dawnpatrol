@@ -56,6 +56,10 @@ model Account {
   notes      String  @default("")
   estMissedCallsPerWeek Int?
   avgJobValueCents      Int?
+  // Set when something created or changed this account automatically (e.g. a receptionist
+  // booking); the CRM shows it until someone reviews it.
+  needsReview  Boolean @default(false)
+  reviewReason String?
 
   ownerId String?
   owner   User?   @relation("AccountOwner", fields: [ownerId], references: [id])
@@ -269,6 +273,8 @@ model Receptionist {
   bookingBufferMinutes  Int     @default(0)
   bookingMeetingType    String  @default("phone") // phone | google_meet | caller_choice
   bookingQuestions      String  @default("") // asked before booking, one per line; answers go on the event
+  bookingHolidays       String  @default("") // "" | "CA-BC": no bookings on these statutory holidays
+  bookingClosedDates    String  @default("") // extra closed days, YYYY-MM-DD, one per line
   bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED

@@ -109,7 +109,75 @@ export type SlotRules = {
   minNoticeHours: number;
   daysAhead: number;
   bufferMinutes: number;
+  closedDates?: Set<string>; // local YYYY-MM-DD with no bookings
 };
+
+// --- Holidays -----------------------------------------------------------------------
+
+function nthWeekday(y: number, m: number, weekday: number, n: number): Date {
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  return new Date(Date.UTC(y, m - 1, 1 + ((weekday - first.getUTCDay() + 7) % 7) + (n - 1) * 7));
+}
+
+/** Gregorian Easter Sunday (anonymous algorithm). */
+function easter(y: number): Date {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  return new Date(Date.UTC(y, month - 1, ((h + l - 7 * m + 114) % 31) + 1));
+}
+
+const ymd = (d: Date) => isoDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+
+/**
+ * British Columbia statutory holidays, plus Boxing Day (most businesses close). A holiday on a
+ * weekend also closes the following Monday (or Tuesday for Boxing Day after a weekend Christmas).
+ */
+export function bcHolidays(y: number): { date: string; name: string }[] {
+  const fixed = (m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+  const victoria = fixed(5, 24);
+  victoria.setUTCDate(24 - ((victoria.getUTCDay() + 6) % 7)); // Monday on or before May 24
+  const goodFriday = easter(y);
+  goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
+  const list: [Date, string][] = [
+    [fixed(1, 1), "New Year's Day"],
+    [nthWeekday(y, 2, 1, 3), "Family Day"],
+    [goodFriday, "Good Friday"],
+    [victoria, "Victoria Day"],
+    [fixed(7, 1), "Canada Day"],
+    [nthWeekday(y, 8, 1, 1), "B.C. Day"],
+    [nthWeekday(y, 9, 1, 1), "Labour Day"],
+    [fixed(9, 30), "National Day for Truth and Reconciliation"],
+    [nthWeekday(y, 10, 1, 2), "Thanksgiving"],
+    [fixed(11, 11), "Remembrance Day"],
+    [fixed(12, 25), "Christmas Day"],
+    [fixed(12, 26), "Boxing Day"],
+  ];
+  const out: { date: string; name: string }[] = [];
+  const taken = new Set<string>();
+  for (const [d, name] of list) {
+    out.push({ date: ymd(d), name });
+    taken.add(ymd(d));
+  }
+  for (const [d, name] of list) {
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) continue;
+    const obs = new Date(d);
+    do obs.setUTCDate(obs.getUTCDate() + 1);
+    while (obs.getUTCDay() === 0 || obs.getUTCDay() === 6 || taken.has(ymd(obs)));
+    taken.add(ymd(obs));
+    out.push({ date: ymd(obs), name: `${name} (observed)` });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Closed days for the booking window: holiday set (if any) plus extra YYYY-MM-DD lines. */
+export function closedDates(holidays: string, extra: string, fromYear: number): Set<string> {
+  const out = new Set<string>();
+  if (holidays === "CA-BC") for (const y of [fromYear, fromYear + 1]) for (const h of bcHolidays(y)) out.add(h.date);
+  for (const m of extra.matchAll(/\d{4}-\d{2}-\d{2}/g)) out.add(m[0]);
+  return out;
+}
 
 /** Every bookable slot start in the window, ignoring the calendar. */
 export function candidateSlots(rules: SlotRules, now: Date): Date[] {
@@ -119,6 +187,7 @@ export function candidateSlots(rules: SlotRules, now: Date): Date[] {
   for (let i = 0; i <= rules.daysAhead; i++) {
     const day = new Date(Date.UTC(today.y, today.m - 1, today.d + i));
     const y = day.getUTCFullYear(), m = day.getUTCMonth() + 1, d = day.getUTCDate();
+    if (rules.closedDates?.has(isoDate(y, m, d))) continue;
     for (const [startMin, endMin] of rules.hours[day.getUTCDay()] ?? []) {
       for (let t = startMin; t + rules.slotMinutes <= endMin; t += rules.slotMinutes) {
         const start = zonedTime(y, m, d, t, rules.timezone);

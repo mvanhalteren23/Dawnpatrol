@@ -6,6 +6,7 @@ import { googleConnection } from "./google";
 import { accountVariables, renderPrompt } from "./prompts";
 import { companyName } from "./brand";
 import { recordActivity } from "./outreach";
+import { normalizeDomain, websiteUrl } from "./utils";
 
 // Long-running Claude work runs after the response is sent (next/server `after`), writing
 // progress to ResearchRun. Pages poll with <AutoRefresh>.
@@ -55,11 +56,15 @@ export async function executeAccountResearch(runId: string) {
 export async function applyResearchSummary(accountId: string, s: ResearchSummary, overwrite: boolean) {
   const a = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { contacts: true } });
   const pick = <T,>(current: T | null, next: T | null) => (overwrite ? next ?? current : current ?? next);
+  // Only take the website's domain if no other account already has it (domain is unique).
+  const foundDomain = normalizeDomain(s.website);
+  const domainFree = foundDomain && (overwrite || !a.domain) && !(await db.account.findFirst({ where: { domain: foundDomain, id: { not: accountId } } }));
   await db.account.update({
     where: { id: accountId },
     data: {
       fitScore: s.fitScore ?? a.fitScore,
       industry: pick(a.industry, s.industry),
+      ...(domainFree ? { domain: foundDomain, website: pick(a.website, websiteUrl(s.website)) } : {}),
       city: pick(a.city, s.city),
       state: pick(a.state, s.state),
       phone: pick(a.phone, s.phone),

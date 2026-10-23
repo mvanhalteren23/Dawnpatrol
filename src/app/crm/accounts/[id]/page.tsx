@@ -23,6 +23,7 @@ import {
   saveManualBilling,
   sendEmail,
   updateAccount,
+  markReviewed,
 } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,14 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
         </>}
       />
       <Flash params={sp} />
+      {account.needsReview ? (
+        <Notice>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span><b>Review needed.</b> {account.reviewReason ?? "This account was updated automatically."} {running ? "Research is still running; this page refreshes when it's done." : ""}</span>
+            <form action={markReviewed.bind(null, account.id)}><SubmitButton className="btn-secondary" pendingText="Saving…">Mark reviewed</SubmitButton></form>
+          </div>
+        </Notice>
+      ) : null}
       {sp.checkout ? <Notice kind="success">Checkout link: <a href={sp.checkout} target="_blank" rel="noreferrer" className="break-all">{sp.checkout}</a></Notice> : null}
       {!google.connected ? <Notice>Google isn&apos;t connected — Drive folders and Gmail sending are disabled. <Link href="/crm/settings">Connect in Settings</Link>.</Notice> : null}
 

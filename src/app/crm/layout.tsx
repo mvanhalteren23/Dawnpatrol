@@ -1,12 +1,14 @@
 import { requireAdmin } from "@/lib/auth";
 import { NavLink } from "@/components/ui";
 import { companyName } from "@/lib/brand";
+import { db } from "@/lib/db";
 
 // Claude research, prospecting and KB drafting run in after() from this segment's server actions.
 export const maxDuration = 300;
 
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
   const [session, company] = await Promise.all([requireAdmin(), companyName()]);
+  const toReview = await db.account.findMany({ where: { needsReview: true }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 5 });
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 flex-col bg-dawn-900 p-4 md:flex">
@@ -39,6 +41,12 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
             <a key={href} href={href} className="whitespace-nowrap text-indigo-100">{label}</a>
           ))}
         </div>
+        {toReview.length ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            🔔 {toReview.length === 1 ? "1 account" : `${toReview.length}${toReview.length === 5 ? "+" : ""} accounts`} added or updated from receptionist bookings — review and edit as needed:{" "}
+            {toReview.map((a, i) => <span key={a.id}>{i ? ", " : ""}<a href={`/crm/accounts/${a.id}`} className="font-medium text-amber-900 underline">{a.name}</a></span>)}
+          </div>
+        ) : null}
         <main className="mx-auto max-w-7xl p-4 md:p-8">{children}</main>
       </div>
     </div>

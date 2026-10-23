@@ -80,3 +80,31 @@ describe("booking helpers", () => {
     expect(toE164("+44 20 7946 0958")).toBe("+442079460958");
   });
 });
+
+describe("holidays", () => {
+  it("knows BC statutory holidays and weekend observances", async () => {
+    const { bcHolidays } = await import("@/lib/booking");
+    const h = Object.fromEntries(bcHolidays(2026).map((x) => [x.name, x.date]));
+    expect(h["Family Day"]).toBe("2026-02-16");
+    expect(h["Good Friday"]).toBe("2026-04-03");
+    expect(h["Victoria Day"]).toBe("2026-05-18");
+    expect(h["B.C. Day"]).toBe("2026-08-03");
+    expect(h["Thanksgiving"]).toBe("2026-10-12");
+    // Boxing Day 2026 is a Saturday -> observed Monday Dec 28
+    expect(h["Boxing Day (observed)"]).toBe("2026-12-28");
+    // 2027: Christmas Saturday -> Mon 27, Boxing Sunday -> Tue 28
+    const h27 = Object.fromEntries(bcHolidays(2027).map((x) => [x.name, x.date]));
+    expect(h27["Christmas Day (observed)"]).toBe("2027-12-27");
+    expect(h27["Boxing Day (observed)"]).toBe("2027-12-28");
+  });
+
+  it("skips closed days when finding slots", async () => {
+    const { candidateSlots, closedDates, parseWeeklyHours } = await import("@/lib/booking");
+    const rules = { timezone: TZ, hours: parseWeeklyHours("Mon-Fri 09:00-17:00"), slotMinutes: 20, minNoticeHours: 24, daysAhead: 7, bufferMinutes: 0, closedDates: closedDates("CA-BC", "", 2026) };
+    // Fri Oct 9 2026, noon local: Mon Oct 12 is Thanksgiving
+    const slots = candidateSlots(rules, zonedTime(2026, 10, 9, 12 * 60, TZ));
+    const days = new Set(slots.map((s) => s.toISOString().slice(0, 10)));
+    expect(days.has("2026-10-12")).toBe(false);
+    expect(days.has("2026-10-13")).toBe(true);
+  });
+});

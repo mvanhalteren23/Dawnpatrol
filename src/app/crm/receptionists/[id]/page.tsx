@@ -91,8 +91,15 @@ export default async function ReceptionistPage({ params, searchParams }: { param
                 <option value="caller_choice">Caller&apos;s choice (phone or Google Meet)</option>
               </select>
             </Field>
+            <Field label="Holidays">
+              <select name="bookingHolidays" defaultValue={r.bookingHolidays} className="input">
+                <option value="">Book on holidays</option>
+                <option value="CA-BC">No bookings on B.C. statutory holidays</option>
+              </select>
+            </Field>
+            <Field label="Other closed days (YYYY-MM-DD, one per line)"><textarea name="bookingClosedDates" rows={2} defaultValue={r.bookingClosedDates} placeholder="2026-12-24" className="input font-mono text-xs" /></Field>
             <Field label="Questions to ask before booking (one per line)" className="col-span-2"><textarea name="bookingQuestions" rows={3} defaultValue={r.bookingQuestions} placeholder="What do your customers usually call about?" className="input" /></Field>
-            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM as a lead (for your own line)</label>
+            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM: match or create the account, research new ones with Claude, and flag them for review (for your own line)</label>
             <div className="col-span-2 flex gap-2">
               <SubmitButton pendingText="Saving…">Save booking</SubmitButton>
               {google.connected ? <SubmitButton formAction={previewOpenings.bind(null, r.id)} className="btn-secondary" pendingText="Checking…">Preview openings</SubmitButton> : null}

@@ -86,6 +86,7 @@ export async function updateAccount(accountId: string, form: FormData) {
     await db.account.update({
       where: { id: accountId },
       data: {
+        needsReview: false, // saving the details counts as reviewing them
         name: str(form, "name"),
         website: websiteUrl(website),
         domain,
@@ -454,6 +455,13 @@ export async function updateReceptionist(id: string, form: FormData) {
   back(`/crm/receptionists/${id}`, { notice: "Saved" });
 }
 
+export async function markReviewed(accountId: string) {
+  await requireAdmin();
+  await db.account.update({ where: { id: accountId }, data: { needsReview: false } });
+  revalidatePath("/crm", "layout");
+  back(`/crm/accounts/${accountId}`, { notice: "Marked as reviewed" });
+}
+
 export async function updateBooking(id: string, form: FormData) {
   await requireAdmin();
   const path = `/crm/receptionists/${id}`;
@@ -477,6 +485,8 @@ export async function updateBooking(id: string, form: FormData) {
       bookingBufferMinutes: int("bookingBufferMinutes", 0, 120, 0),
       bookingMeetingType: ["google_meet", "caller_choice"].includes(str(form, "bookingMeetingType")) ? str(form, "bookingMeetingType") : "phone",
       bookingQuestions: str(form, "bookingQuestions"),
+      bookingHolidays: str(form, "bookingHolidays") === "CA-BC" ? "CA-BC" : "",
+      bookingClosedDates: str(form, "bookingClosedDates"),
       bookingAddsToCrm: form.get("bookingAddsToCrm") === "on",
     },
   });

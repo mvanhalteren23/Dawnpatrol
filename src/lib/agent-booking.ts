@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import type { Receptionist } from "@prisma/client";
 import { db } from "./db";
 import { connectedEmail, googleConnection } from "./google";
-import { sendSms } from "./twilio";
 import { busyIntervals, createEvent } from "./calendar";
-import { candidateSlots, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
+import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
+import { samePhone, sendSms } from "./twilio";
+import { claudeConfigured } from "./claude";
+import { startAccountResearch } from "./jobs";
 
 // Server side of the receptionist's two booking tools (get_available_times, book_appointment).
 // Responses are phrased for the agent to read: every branch returns a `message` it can act on.
@@ -20,6 +22,7 @@ export function slotRules(r: Receptionist): SlotRules {
     minNoticeHours: r.bookingMinNoticeHours,
     daysAhead: r.bookingDaysAhead,
     bufferMinutes: r.bookingBufferMinutes,
+    closedDates: closedDates(r.bookingHolidays, r.bookingClosedDates, new Date().getUTCFullYear()),
   };
 }
 
@@ -124,8 +127,12 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     requestId: randomUUID(),
   });
 
+  let lead: LeadResult | null = null;
   if (r.bookingAddsToCrm) {
-    await addLead(input, `${r.bookingTitle}: ${label}`, `${details}\n\nCalendar: ${event.htmlLink}`).catch((e) => console.error("Booking CRM lead failed", e));
+    lead = await addLead(r, input, label, `${r.bookingTitle}: ${label}`, `${details}\n\nCalendar: ${event.htmlLink}`).catch((e) => {
+      console.error("Booking CRM lead failed", e);
+      return null;
+    });
   }
 
   let texted = false;
@@ -139,6 +146,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   return {
     booked: true,
     texted,
+    researchRunId: lead?.researchRunId ?? null,
     start_iso: start.toISOString(),
     label,
     meet_link: event.meetLink,
@@ -146,30 +154,86 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   };
 }
 
-/** Match an existing account by email domain or business name; otherwise create an inbound lead. */
-async function addLead(input: BookingInput, subject: string, body: string) {
-  const email = input.caller_email?.trim().toLowerCase() || null;
-  const freeMail = /@(gmail|yahoo|hotmail|outlook|icloud|live|aol|proton|shaw|telus)\./i;
-  const domain = email && !freeMail.test(email) ? normalizeDomain(email) : null;
-  const name = input.business_name?.trim() || input.caller_name!.trim();
+const FREE_MAIL = /@(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|icloud|me|mac|aol|proton|protonmail|shaw|telus|rogers|sympatico|bell)\./i;
 
-  let account =
-    (email ? (await db.contact.findFirst({ where: { email }, include: { account: true } }))?.account : null) ??
-    (domain ? await db.account.findUnique({ where: { domain } }) : null) ??
-    (await db.account.findFirst({ where: { name: { equals: name, mode: "insensitive" } } }));
+/** "Acme Plumbing Ltd." -> "acme plumbing" for loose name matching. */
+export function normalizeBusinessName(name: string): string {
+  return name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]/g, " ").replace(/\b(ltd|limited|inc|incorporated|corp|corporation|co|company|llc|the)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
+type LeadResult = { accountId: string; created: boolean; researchRunId: string | null };
+
+/**
+ * Find the caller's account (contact email → company email domain → phone → business name),
+ * or create one. Logs the booking, flags the account for review, and queues Claude research when
+ * the account is new or has never been researched. The caller runs the research after responding.
+ */
+async function addLead(r: Receptionist, input: BookingInput, label: string, subject: string, body: string): Promise<LeadResult> {
+  const email = input.caller_email?.trim().toLowerCase() || null;
+  const domain = email && !FREE_MAIL.test(email) ? normalizeDomain(email) : null;
+  const phone = input.caller_phone!.trim();
+  const businessName = input.business_name?.trim() || null;
+  const name = businessName || input.caller_name!.trim();
+
+  let matchedBy: string | null = null;
+  let account = email ? (await db.contact.findFirst({ where: { email }, include: { account: true } }))?.account ?? null : null;
+  if (account) matchedBy = `contact email (${email})`;
+  if (!account && domain) {
+    account = await db.account.findUnique({ where: { domain } });
+    if (account) matchedBy = `email domain (${domain})`;
+  }
   if (!account) {
+    const withPhones = await db.account.findMany({ where: { OR: [{ phone: { not: null } }, { contacts: { some: { phone: { not: null } } } }] }, include: { contacts: { select: { phone: true } } } });
+    account = withPhones.find((a) => samePhone(a.phone, phone) || a.contacts.some((c) => samePhone(c.phone, phone))) ?? null;
+    if (account) matchedBy = `phone number (${phone})`;
+  }
+  if (!account && businessName) {
+    const key = normalizeBusinessName(businessName);
+    const candidates = await db.account.findMany({ where: { name: { contains: key.split(" ")[0] ?? key, mode: "insensitive" } } });
+    account = candidates.find((a) => normalizeBusinessName(a.name) === key) ?? null;
+    if (account) matchedBy = `business name (${businessName})`;
+  }
+
+  const created = !account;
+  if (!account) {
+    const notes = [
+      `Created from a call booked by ${r.name} (${r.businessName}'s receptionist) for ${label}.`,
+      input.business_type ? `Business type: ${input.business_type.trim()}` : null,
+      input.interest ? `Interested in: ${input.interest.trim()}` : null,
+      input.answers?.trim() ? `From the call:\n${input.answers.trim()}` : null,
+    ].filter(Boolean).join("\n");
     account = await db.account.create({
-      data: { name, domain, phone: input.caller_phone, industry: input.business_type ?? null, source: "inbound", notes: input.interest ?? "" },
+      data: { name, domain, website: domain ? `https://${domain}` : null, phone, industry: input.business_type?.trim() || null, source: "inbound", notes },
     });
   }
 
   const [firstName, ...rest] = input.caller_name!.trim().split(/\s+/);
-  let contact = await db.contact.findFirst({ where: { accountId: account.id, OR: [...(email ? [{ email }] : []), { phone: input.caller_phone }] } });
-  if (!contact) {
+  const contacts = await db.contact.findMany({ where: { accountId: account.id } });
+  let contact = contacts.find((c) => (email && c.email?.toLowerCase() === email) || samePhone(c.phone, phone)) ?? null;
+  if (contact) {
+    contact = await db.contact.update({ where: { id: contact.id }, data: { email: contact.email ?? email, phone: contact.phone ?? phone } });
+  } else {
     contact = await db.contact.create({
-      data: { accountId: account.id, firstName, lastName: rest.join(" ") || null, email, phone: input.caller_phone, isPrimary: true },
+      data: { accountId: account.id, firstName, lastName: rest.join(" ") || null, email, phone, isPrimary: contacts.length === 0 },
     });
   }
 
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "MEETING", direction: "INBOUND", subject, body, source: "receptionist" });
+
+  const reviewReason = created
+    ? `New account: ${r.name} booked ${label} and created this account from the call. Claude is researching the business to fill in the details. Check them and edit as needed.`
+    : `${r.name} booked ${label} and matched the caller to this account by ${matchedBy}. Check the match and the contact details.`;
+  await db.account.update({ where: { id: account.id }, data: { needsReview: true, reviewReason } });
+
+  let researchRunId: string | null = null;
+  const researched = await db.researchRun.count({ where: { accountId: account.id, kind: "RESEARCH", status: { in: ["DONE", "RUNNING", "PENDING"] } } });
+  if (!researched && claudeConfigured()) {
+    const prompt = await db.savedPrompt.findFirst({ where: { kind: "RESEARCH" }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] });
+    researchRunId = await startAccountResearch(
+      account.id,
+      prompt?.id ?? null,
+      prompt ? undefined : `Research {{company}} ({{website}}), a {{industry}} business. Phone: {{phone}}. Notes: {{notes}}. Find its website, location, services, team size and decision makers. Cite sources.`,
+    );
+  }
+  return { accountId: account.id, created, researchRunId };
 }

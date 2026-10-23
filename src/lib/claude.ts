@@ -102,6 +102,7 @@ export const ResearchSummarySchema = z.object({
   estMissedCallsPerWeek: z.number().int().nullable(),
   avgJobValueUsd: z.number().nullable(),
   industry: z.string().nullable(),
+  website: z.string().nullable().describe("The business's own website URL, if found"),
   city: z.string().nullable(),
   state: z.string().nullable(),
   phone: z.string().nullable(),
