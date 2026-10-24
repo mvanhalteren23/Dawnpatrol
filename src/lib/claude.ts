@@ -7,7 +7,7 @@ import { companyName } from "./brand";
 // All Claude calls live here. Research and prospecting use server-side web search/fetch,
 // followed by a cheap structured-extraction pass so the CRM gets typed fields back.
 
-export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 
 // Server-side refusal fallback: if the model declines, the API re-runs on its recommended
 // fallback model inside the same call.

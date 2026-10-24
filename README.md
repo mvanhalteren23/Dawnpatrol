@@ -47,7 +47,7 @@ Each integration is optional. Features that need a missing key turn themselves o
 
 ### Claude (`ANTHROPIC_API_KEY`)
 - Used for prospect discovery, account research, knowledge-base drafting from the client's website, outreach drafts and the receptionist test chat.
-- Defaults to `claude-opus-5-5`. Override it with `CLAUDE_MODEL`.
+- Defaults to `claude-sonnet-5-5`. Override it with `CLAUDE_MODEL`.
 - Research uses the server-side `web_search` and `web_fetch` tools. A low-effort structured-output pass then extracts typed fields.
 - Requests opt in to server-side refusal fallback (`fallbacks: "default"`).
 - Long runs happen in the background with Next's `after()`, and pages refresh themselves while a run is `RUNNING`. On serverless hosts, give the functions enough time (Vercel: Pro plan, `maxDuration` up to 300 s).
