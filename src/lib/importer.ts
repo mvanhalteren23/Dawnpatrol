@@ -16,6 +16,7 @@ async function findExisting(row: ImportRow["account"]) {
 /** Upsert accounts + contacts. Existing accounts (same domain, or same name+city) only get blanks filled and tags merged. */
 export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
   let created = 0;
+  const createdIds: string[] = [];
   let updated = 0;
   let skipped = 0;
   const errors: { row: number; message: string }[] = [];
@@ -71,6 +72,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
             },
           });
           created++;
+          createdIds.push(a.id);
           accountId = a.id;
         }
         seen.set(key, accountId);
@@ -92,7 +94,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
       errors.push({ row: row.rowNumber, message: (err as Error).message });
     }
   }
-  return { created, updated, skipped, errors };
+  return { created, createdIds, updated, skipped, errors };
 }
 
 export async function importCsvText(filename: string, text: string, opts: ImportOptions & { createdById?: string }) {
@@ -109,5 +111,5 @@ export async function importCsvText(filename: string, text: string, opts: Import
       createdById: opts.createdById ?? null,
     },
   });
-  return { job, mapping: parsed.mapping };
+  return { job, mapping: parsed.mapping, createdIds: result.createdIds };
 }

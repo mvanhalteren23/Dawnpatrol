@@ -12,3 +12,30 @@ describe("AI router types", () => {
     expect(TASK_KEYS.filter((t) => TASKS[t].web)).toEqual(["research", "prospecting", "kb_draft"]);
   });
 });
+
+describe("research guard", () => {
+  it("drops contact details the report doesn't contain", async () => {
+    const { verifySummary } = await import("@/lib/research-guard");
+    const report = "Match: confirmed. Acme Plumbing (acmeplumbing.ca) — call 604-555-0101. Owner: Jane Smith (jane@acmeplumbing.ca).";
+    const s = verifySummary(
+      {
+        match: "confirmed", fitScore: 70, estMissedCallsPerWeek: null, avgJobValueUsd: null, industry: "Plumbing",
+        website: "https://acmeplumbing.ca", city: null, state: null, phone: "(604) 555-0101", employees: null,
+        keyFacts: [], painSignals: [], suggestedOpener: "",
+        decisionMakers: [
+          { name: "Jane Smith", title: "Owner", email: "jane@acmeplumbing.ca", phone: "604-555-9999", linkedin: null },
+          { name: "Bob Jones", title: "GM", email: "bob@acmeplumbing.ca", phone: null, linkedin: null },
+        ],
+      },
+      report,
+    );
+    expect(s.website).toBe("https://acmeplumbing.ca");
+    expect(s.phone).toBe("(604) 555-0101");
+    expect(s.decisionMakers).toHaveLength(1);
+    expect(s.decisionMakers[0]!.email).toBe("jane@acmeplumbing.ca");
+    expect(s.decisionMakers[0]!.phone).toBeNull();
+    const wrong = verifySummary({ ...s, website: "https://acme-plumbing.com", phone: "250-555-1212" }, report);
+    expect(wrong.website).toBeNull();
+    expect(wrong.phone).toBeNull();
+  });
+});

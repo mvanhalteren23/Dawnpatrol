@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { recordActivity } from "@/lib/outreach";
 import { verifySharedSecret } from "@/lib/webhook-verify";
 import { normalizeDomain, websiteUrl } from "@/lib/utils";
+import { researchNewAccounts } from "@/lib/jobs";
 
 // Generic outreach webhook for sequencers / Zapier / Make. Accepts one event or an array.
 //
@@ -56,6 +57,7 @@ async function resolve(e: OutreachEvent) {
   let account = domain ? await db.account.findUnique({ where: { domain } }) : null;
   if (!account && e.createIfMissing && (e.company || domain)) {
     account = await db.account.create({ data: { name: e.company ?? domain!, domain, website: websiteUrl(e.website ?? domain), source: "inbound", tags: "webhook" } });
+    await researchNewAccounts([account.id]);
   }
   if (!account) return null;
   let contactId: string | null = null;
@@ -65,6 +67,9 @@ async function resolve(e: OutreachEvent) {
   }
   return { accountId: account.id, contactId };
 }
+
+// New accounts are researched after the response.
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const url = new URL(req.url);

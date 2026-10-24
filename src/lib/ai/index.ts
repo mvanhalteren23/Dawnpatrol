@@ -38,6 +38,7 @@ function combine(report: AiResult, ex: { tokensIn: number; tokensOut: number; mo
 // --- Account research --------------------------------------------------------
 
 export const ResearchSummarySchema = z.object({
+  match: z.enum(["confirmed", "not_confirmed"]).describe("Whether the report confirms it found the right business (name plus website, phone or location matching)"),
   fitScore: z.number().int().describe("0-100: how well this business fits an AI receptionist (call-dependent, misses calls, can pay ~$300-1000/mo)"),
   estMissedCallsPerWeek: z.number().int().nullable(),
   avgJobValueUsd: z.number().nullable(),
@@ -63,7 +64,7 @@ export type ResearchSummary = z.infer<typeof ResearchSummarySchema>;
 export async function researchAccount(renderedPrompt: string): Promise<AiResult & { summary: ResearchSummary | null }> {
   const report = await webResearch("research", renderedPrompt, { maxSearches: 5, maxFetches: 3 });
   try {
-    const ex = await structured("extraction", ResearchSummarySchema, "Extract the structured fields from this research report. Use null where the report doesn't say. Only include decision makers named in the report.", report.text);
+    const ex = await structured("extraction", ResearchSummarySchema, "Extract the structured fields from this research report. Fill a field only when the report states it; use null otherwise. Copy websites, phone numbers, emails and names exactly as written in the report, and never construct or guess them. Only include decision makers named in the report. Set estMissedCallsPerWeek and avgJobValueUsd only if the report gives specific evidence for them, otherwise null. Set match to not_confirmed if the report says it couldn't confirm the business.", report.text);
     return { ...combine(report, ex), summary: ex.data };
   } catch (err) {
     console.error("research extraction failed", err);

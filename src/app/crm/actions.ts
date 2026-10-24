@@ -17,6 +17,7 @@ import {
   executeKbDraft,
   executeProspecting,
   startAccountResearch,
+  researchNewAccounts,
   startKbDraft,
   startProspecting,
 } from "@/lib/jobs";
@@ -75,6 +76,7 @@ export async function createAccount(form: FormData) {
       data: { accountId: account.id, firstName: firstName || null, lastName: rest.join(" ") || null, email: contactEmail?.toLowerCase() ?? null, title: optStr(form, "contactTitle"), isPrimary: true },
     });
   }
+  await researchNewAccounts([account.id]);
   back(`/crm/accounts/${account.id}`);
 }
 
@@ -158,13 +160,14 @@ export async function importCsv(form: FormData) {
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) back("/crm/accounts/import", { error: "Choose a CSV file" });
   if (file.size > 10 * 1024 * 1024) back("/crm/accounts/import", { error: "CSV must be under 10MB" });
-  const { job } = await importCsvText(file.name, await file.text(), {
+  const { job, createdIds } = await importCsvText(file.name, await file.text(), {
     createdById: session.sub,
     ownerId: session.sub,
     defaultTags: str(form, "tags").split(","),
     updateExisting: form.get("updateExisting") === "on",
   });
-  back("/crm/accounts/import", { job: job.id });
+  const researching = await researchNewAccounts(createdIds);
+  back("/crm/accounts/import", { job: job.id, ...(researching ? { notice: `Researching ${researching} of ${createdIds.length} new accounts automatically${createdIds.length > researching ? " (the rest: select them on Accounts and run research in bulk)" : ""}` } : {}) });
 }
 
 // --- Contacts & activities ----------------------------------------------------------
@@ -369,6 +372,8 @@ export async function addProspects(runId: string, form: FormData) {
     const domain = normalizeDomain(p.website);
     if (domain) await db.account.updateMany({ where: { domain, fitScore: null }, data: { fitScore: p.fitScore } });
   }
+  // New accounts always get the fact-only profile; the checkbox adds the full opportunity audit.
+  await researchNewAccounts(result.createdIds);
   if (form.get("research") === "on") {
     const promptId = (await db.savedPrompt.findFirst({ where: { kind: "RESEARCH", isDefault: true } }))?.id;
     const accounts = await db.account.findMany({ where: { domain: { in: picked.map((p) => normalizeDomain(p.website)).filter((d): d is string => Boolean(d)) } } });
@@ -668,6 +673,14 @@ export async function saveAiRoutes(form: FormData) {
   );
   await saveRoutes(routes as Parameters<typeof saveRoutes>[0]);
   back("/crm/settings", { notice: "AI models saved" });
+}
+
+export async function saveAutoResearch(form: FormData) {
+  await requireAdmin();
+  const { setSetting } = await import("@/lib/settings");
+  const { AUTO_RESEARCH_KEY } = await import("@/lib/jobs");
+  await setSetting(AUTO_RESEARCH_KEY, form.get("autoResearch") === "on" ? "on" : "off");
+  back("/crm/settings", { notice: form.get("autoResearch") === "on" ? "New accounts will be researched automatically" : "Automatic research is off" });
 }
 
 export async function resetAiRoutes() {

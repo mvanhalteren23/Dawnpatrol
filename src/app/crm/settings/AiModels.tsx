@@ -5,7 +5,9 @@ import { CLAUDE_PRICES, PROVIDERS, TASK_KEYS, TASKS, estimateCost } from "@/lib/
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
-import { resetAiRoutes, saveAiRoutes } from "../actions";
+import { getSetting } from "@/lib/settings";
+import { AUTO_RESEARCH_BATCH_LIMIT, AUTO_RESEARCH_KEY } from "@/lib/jobs";
+import { resetAiRoutes, saveAiRoutes, saveAutoResearch } from "../actions";
 
 const PROVIDER_LABEL = { anthropic: "Claude (Anthropic API)", gemini: "Gemini (Google AI Studio)" } as const;
 
@@ -17,10 +19,11 @@ async function geminiModels(): Promise<string[]> {
 
 export async function AiModels() {
   const since = new Date(Date.now() - 30 * 86400_000);
-  const [routes, gModels, usage] = await Promise.all([
+  const [routes, gModels, usage, autoResearch] = await Promise.all([
     getRoutes(),
     geminiModels(),
     db.aiUsage.groupBy({ by: ["task", "provider", "model", "ok"], where: { createdAt: { gte: since } }, _count: true, _sum: { tokensIn: true, tokensOut: true } }),
+    getSetting(AUTO_RESEARCH_KEY),
   ]);
   const claudeModels = Object.keys(CLAUDE_PRICES);
   const totalCost = usage.reduce((n, u) => n + (estimateCost(u.provider, u.model, u._sum.tokensIn ?? 0, u._sum.tokensOut ?? 0) ?? 0), 0);
@@ -43,6 +46,12 @@ export async function AiModels() {
       </div>
 
       <datalist id="ai-models">{[...claudeModels, ...(gModels.length ? gModels : [DEFAULT_MODELS.gemini, "gemini-pro-latest"])].map((m) => <option key={m} value={m} />)}</datalist>
+
+      <form action={saveAutoResearch} className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+        <label className="flex items-center gap-2"><input type="checkbox" name="autoResearch" defaultChecked={autoResearch !== "off"} /> Research every new account automatically</label>
+        <span className="text-xs text-slate-500">Booked calls, manual adds, webhooks, prospect lists and CSV imports (first {AUTO_RESEARCH_BATCH_LIMIT} per batch). Uses the &ldquo;Company profile (facts only)&rdquo; prompt on the Account research model; only fills empty fields, and drops any phone, email or website the research report doesn&apos;t actually contain.</span>
+        <SubmitButton className="btn-secondary" pendingText="Saving…">Save</SubmitButton>
+      </form>
 
       <form action={saveAiRoutes} className="space-y-3">
         {TASK_KEYS.map((t) => {

@@ -1,9 +1,13 @@
 import "server-only";
+import { after } from "next/server";
 import { db } from "./db";
 import { discoverProspects, draftKnowledgeBase, researchAccount, type ResearchSummary } from "./ai";
 import { writeAccountDoc } from "./drive";
 import { googleConnection } from "./google";
-import { accountVariables, renderPrompt } from "./prompts";
+import { accountVariables, COMPANY_PROFILE_PROMPT, COMPANY_PROFILE_PROMPT_NAME, renderPrompt } from "./prompts";
+import { verifySummary } from "./research-guard";
+import { getSetting } from "./settings";
+import { aiConfigured } from "./ai";
 import { companyName } from "./brand";
 import { recordActivity } from "./outreach";
 import { normalizeDomain, websiteUrl } from "./utils";
@@ -26,6 +30,43 @@ export async function startAccountResearch(accountId: string, promptId: string |
   return run.id;
 }
 
+export const AUTO_RESEARCH_KEY = "research.autoNewAccounts";
+
+export async function autoResearchEnabled(): Promise<boolean> {
+  return (await getSetting(AUTO_RESEARCH_KEY)) !== "off" && aiConfigured();
+}
+
+/**
+ * Every new account gets a fact-only company profile (the saved prompt of that name if you've
+ * edited it, else the built-in one). Returns the run id; the caller runs it with
+ * executeAccountResearch after responding (next/server `after`). Null when turned off.
+ */
+export async function queueProfileResearch(accountId: string): Promise<string | null> {
+  if (!(await autoResearchEnabled())) return null;
+  const busy = await db.researchRun.count({ where: { accountId, kind: "RESEARCH", status: "RUNNING" } });
+  if (busy) return null;
+  const prompt = await db.savedPrompt.findFirst({ where: { kind: "RESEARCH", name: COMPANY_PROFILE_PROMPT_NAME } });
+  return startAccountResearch(accountId, prompt?.id ?? null, prompt ? undefined : COMPANY_PROFILE_PROMPT);
+}
+
+/** Up to this many new accounts per batch (import, prospect list) are researched automatically. */
+export const AUTO_RESEARCH_BATCH_LIMIT = 10;
+
+/** Queue profile research for new accounts and run it (3 at a time) after the response. */
+export async function researchNewAccounts(accountIds: string[]): Promise<number> {
+  const runIds: string[] = [];
+  for (const id of accountIds.slice(0, AUTO_RESEARCH_BATCH_LIMIT)) {
+    const runId = await queueProfileResearch(id);
+    if (runId) runIds.push(runId);
+  }
+  if (runIds.length) {
+    after(async () => {
+      for (let i = 0; i < runIds.length; i += 3) await Promise.all(runIds.slice(i, i + 3).map((r) => executeAccountResearch(r)));
+    });
+  }
+  return runIds.length;
+}
+
 export async function executeAccountResearch(runId: string) {
   const run = await db.researchRun.findUniqueOrThrow({ where: { id: runId }, include: { account: true, prompt: true } });
   try {
@@ -42,7 +83,14 @@ export async function executeAccountResearch(runId: string) {
         finishedAt: new Date(),
       },
     });
-    if (run.accountId && result.summary) await applyResearchSummary(run.accountId, result.summary, false);
+    if (run.accountId && result.summary) {
+      if (result.summary.match === "not_confirmed") {
+        // Don't fill anything in from a profile of what may be a different business.
+        await db.account.update({ where: { id: run.accountId }, data: { needsReview: true, reviewReason: "Research couldn't confirm it found the right business, so no details were filled in. Add the website or phone number and re-run research." } });
+      } else {
+        await applyResearchSummary(run.accountId, verifySummary(result.summary, result.text), false);
+      }
+    }
     if (run.accountId) {
       await recordActivity({ accountId: run.accountId, type: "RESEARCH", source: "system", subject: `Claude research: ${run.prompt?.name ?? "custom prompt"}`, body: result.summary?.keyFacts.join("\n") ?? null });
       await archiveRunToDrive(runId).catch((e) => console.warn("Drive archive skipped:", (e as Error).message));

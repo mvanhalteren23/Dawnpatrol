@@ -69,7 +69,34 @@ export function templateVariables(template: string): string[] {
   return Array.from(found);
 }
 
+/** Used automatically on every new account (CRM → Settings → AI models). Facts only, each with a source. */
+export const COMPANY_PROFILE_PROMPT_NAME = "Company profile (facts only)";
+export const COMPANY_PROFILE_PROMPT = `Build a fact-checked company profile of {{company}}.
+What we already know (may be incomplete): website {{website}}; phone {{phone}}; location {{location}}; industry {{industry}}.
+Notes: {{notes}}
+Known contacts:
+{{contacts}}
+
+1. First make sure you have the right business: the name plus at least one of the website, phone number or location must match. If you can't confirm a match, say "Match: not confirmed", explain why, and stop. Otherwise start with "Match: confirmed".
+2. Report only facts you found on a source, each followed by its source link:
+   - Official website and main phone number
+   - Street address, city and province/state
+   - What they do (industry), services offered and service area
+   - Business hours
+   - Years in business and approximate team size, only if a source states them
+   - Owner or decision makers with titles, and any business email or phone published for them
+   - Google rating and review count
+   - Social media profiles
+   - How customers reach them today: online booking, after-hours answering, chat
+3. Write "unknown" for anything you couldn't verify. Never guess, estimate or construct contact details (no pattern-guessed emails), and never mix in details from a different business with a similar name.`;
+
 export const DEFAULT_PROMPTS: { name: string; kind: "RESEARCH" | "PROSPECTING" | "OUTREACH"; description: string; template: string; isDefault?: boolean }[] = [
+  {
+    name: COMPANY_PROFILE_PROMPT_NAME,
+    kind: "RESEARCH",
+    description: "Runs automatically on every new account: verified facts only, each with a source.",
+    template: COMPANY_PROFILE_PROMPT,
+  },
   {
     name: "Missed-call opportunity audit",
     kind: "RESEARCH",
