@@ -1,7 +1,7 @@
 import "server-only";
 import type { CallLog, Receptionist } from "@prisma/client";
 import { db } from "./db";
-import { callerFollowUp, claudeConfigured } from "./claude";
+import { callerFollowUp, aiConfigured } from "./ai";
 import { sendPlainEmail } from "./outreach";
 import { sendSms } from "./twilio";
 
@@ -51,7 +51,7 @@ export async function sendCallFollowUp(r: Receptionist, call: CallLog, collected
   const channel = pickChannel(r.followUpChannel, val("summary_delivery"), phone, email);
   if (!channel) return;
 
-  const content = claudeConfigured()
+  const content = aiConfigured()
     ? await callerFollowUp(r.businessName, call.transcript, channel).catch(() => null)
     : null;
   const body = content?.body ?? `Thanks for calling ${r.businessName}. ${call.summary}`.slice(0, channel === "sms" ? 320 : 4000);

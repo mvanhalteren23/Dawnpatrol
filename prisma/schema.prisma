@@ -376,3 +376,19 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/** One model call made through the AI router (src/lib/ai), for cost and credit tracking. */
+model AiUsage {
+  id        String   @id @default(cuid())
+  task      String // research | prospecting | kb_draft | extraction | outreach | caller_summary | test_chat
+  provider  String // anthropic | gemini
+  model     String
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  ok        Boolean  @default(true)
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([task, createdAt])
+}

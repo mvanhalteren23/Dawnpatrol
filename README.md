@@ -20,7 +20,7 @@ The operating system for Head Above Digital, which builds AI receptionists for s
 
 ## Stack
 
-Next.js 15 (App Router, server actions) · TypeScript · Prisma + Postgres · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail + Calendar REST) · ElevenLabs Conversational AI REST.
+Next.js 15 (App Router, server actions) · TypeScript · Prisma + Postgres · Tailwind · `@anthropic-ai/sdk` · Stripe · Google OAuth (Drive + Gmail + Calendar REST) · Gemini (`@google/genai`) · ElevenLabs Conversational AI REST.
 
 ## Quick start
 
@@ -46,12 +46,12 @@ npm run build
 
 Each integration is optional. Features that need a missing key turn themselves off, and **CRM → Settings** shows the status of each one.
 
-### Claude (`ANTHROPIC_API_KEY`)
-- Used for prospect discovery, account research, knowledge-base drafting from the client's website, outreach drafts and the receptionist test chat.
-- Defaults to `claude-sonnet-5-5`. Override it with `CLAUDE_MODEL`.
-- Research uses the server-side `web_search` and `web_fetch` tools. A low-effort structured-output pass then extracts typed fields.
-- Requests opt in to server-side refusal fallback (`fallbacks: "default"`).
-- Long runs happen in the background with Next's `after()`, and pages refresh themselves while a run is `RUNNING`. On serverless hosts, give the functions enough time (Vercel: Pro plan, `maxDuration` up to 300 s).
+### AI models: Claude and Gemini (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`)
+- Every AI job goes through one router (`src/lib/ai`). **CRM → Settings → AI models** picks the provider and model per job (account research, prospect search, knowledge base from website, structured fields, outreach emails, caller summaries, test chat) with an optional fallback. Changes apply immediately, no deploy.
+- **Defaults:** with `GEMINI_API_KEY` set, the three web-research jobs run on Gemini (`gemini-flash-latest`, grounded with Google Search and page reading) with Claude as the fallback; everything else runs on Claude (`claude-sonnet-5-5`, or `CLAUDE_MODEL`) with Gemini as the fallback.
+- Claude research uses the server-side `web_search` / `web_fetch` tools (capped at a few searches and page reads per run); structured fields use a low-effort structured-output pass. Requests opt in to server-side refusal fallback.
+- Every call is logged (`AiUsage`) and summarised on the settings page with a Claude cost estimate.
+- Long runs happen in the background with Next's `after()`, and pages refresh themselves while a run is `RUNNING`.
 
 ### Google Drive + Gmail
 1. In Google Cloud Console, create an OAuth client of type **Web application** and enable the **Drive API** and **Gmail API**.
@@ -116,7 +116,7 @@ Step-by-step guide for Vercel + Neon on www.dawnpatrol-tech.com: **[DEPLOY.md](D
 
 ```
 prisma/schema.prisma        data model (accounts → contacts, activities, research, subscription, receptionists → knowledge, calls)
-src/lib/claude.ts           all Claude calls (web research, prospect discovery, KB drafting, email drafts, test chat)
+src/lib/ai/                  AI router + Claude/Gemini adapters (research, prospects, KB drafting, emails, summaries, test chat)
 src/lib/jobs.ts             background research/prospecting/KB-draft runs
 src/lib/rag.ts              KB compilation, receptionist prompt, BM25 retrieval
 src/lib/elevenlabs.ts       agent + KB sync

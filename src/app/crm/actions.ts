@@ -20,7 +20,7 @@ import {
   startKbDraft,
   startProspecting,
 } from "@/lib/jobs";
-import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/claude";
+import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/ai";
 import { accountVariables, renderPrompt } from "@/lib/prompts";
 import { companyName, renameCompany } from "@/lib/brand";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
@@ -651,6 +651,30 @@ export async function seedDefaultPrompts() {
     n++;
   }
   back("/crm/settings", { notice: `Added ${n} starter prompts` });
+}
+
+export async function saveAiRoutes(form: FormData) {
+  await requireAdmin();
+  const { PROVIDERS, TASK_KEYS } = await import("@/lib/ai/types");
+  const { saveRoutes } = await import("@/lib/ai/router");
+  const provider = (v: string) => (PROVIDERS as readonly string[]).includes(v) ? (v as (typeof PROVIDERS)[number]) : null;
+  const routes = Object.fromEntries(
+    TASK_KEYS.map((t) => {
+      const p = provider(str(form, `${t}_provider`)) ?? "anthropic";
+      const fp = provider(str(form, `${t}_fb_provider`));
+      const fm = str(form, `${t}_fb_model`).trim();
+      return [t, { provider: p, model: str(form, `${t}_model`).trim() || (p === "gemini" ? "gemini-flash-latest" : "claude-sonnet-5-5"), fallback: fp && fm ? { provider: fp, model: fm } : null }];
+    }),
+  );
+  await saveRoutes(routes as Parameters<typeof saveRoutes>[0]);
+  back("/crm/settings", { notice: "AI models saved" });
+}
+
+export async function resetAiRoutes() {
+  await requireAdmin();
+  const { deleteSetting } = await import("@/lib/settings");
+  await deleteSetting("ai.routes");
+  back("/crm/settings", { notice: "AI models reset to defaults" });
 }
 
 export async function saveCompanyName(form: FormData) {

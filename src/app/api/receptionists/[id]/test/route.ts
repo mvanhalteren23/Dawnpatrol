@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { apiSession } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { buildReceptionistPrompt, compileKnowledgeBase } from "@/lib/rag";
-import { receptionistReply } from "@/lib/claude";
+import { receptionistReply } from "@/lib/ai";
 
 export const maxDuration = 60;
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import type { ResearchSummary } from "@/lib/claude";
+import type { ResearchSummary } from "@/lib/ai";
 import { formatDate, safeJson } from "@/lib/utils";
 import { PageHeader, StatusBadge, Notice } from "@/components/ui";
 import { Flash } from "@/components/Flash";

@@ -9,7 +9,7 @@ import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
 import { samePhone } from "./twilio";
 import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
-import { claudeConfigured } from "./claude";
+import { aiConfigured } from "./ai";
 import { startAccountResearch } from "./jobs";
 
 // Server side of the receptionist's two booking tools (get_available_times, book_appointment).
@@ -259,7 +259,7 @@ async function addLead(r: Receptionist, input: BookingInput, label: string, subj
 
   let researchRunId: string | null = null;
   const researched = await db.researchRun.count({ where: { accountId: account.id, kind: "RESEARCH", status: { in: ["DONE", "RUNNING", "PENDING"] } } });
-  if (!researched && claudeConfigured()) {
+  if (!researched && aiConfigured()) {
     const prompt = await db.savedPrompt.findFirst({ where: { kind: "RESEARCH" }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] });
     researchRunId = await startAccountResearch(
       account.id,

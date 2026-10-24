@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import type { Prospect } from "@/lib/claude";
+import type { Prospect } from "@/lib/ai";
 import { normalizeDomain, safeJson } from "@/lib/utils";
 import { Badge, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";

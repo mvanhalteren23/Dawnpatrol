@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { claudeConfigured } from "@/lib/claude";
+import { aiConfigured } from "@/lib/ai";
 import { formatDate, safeJson } from "@/lib/utils";
 import { Field, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -16,7 +16,7 @@ export default async function ProspectingPage() {
   return (
     <div className="max-w-4xl">
       <PageHeader title="Find prospects with Claude" subtitle="Claude searches the web for businesses that match your saved prompt, scores their fit, and you choose which to add." actions={<Link href="/crm/prompts" className="btn-secondary">Manage prompts</Link>} />
-      {!claudeConfigured() ? <Notice kind="error">Set ANTHROPIC_API_KEY to enable prospecting.</Notice> : null}
+      {!aiConfigured() ? <Notice kind="error">Set ANTHROPIC_API_KEY to enable prospecting.</Notice> : null}
       <form action={runProspecting} className="card space-y-4">
         <Field label="Saved prompt">
           <select name="promptId" className="input">{prompts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}<option value="">Custom ↓</option></select>

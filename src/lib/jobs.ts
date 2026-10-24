@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { discoverProspects, draftKnowledgeBase, researchAccount, type ResearchSummary } from "./claude";
+import { discoverProspects, draftKnowledgeBase, researchAccount, type ResearchSummary } from "./ai";
 import { writeAccountDoc } from "./drive";
 import { googleConnection } from "./google";
 import { accountVariables, renderPrompt } from "./prompts";

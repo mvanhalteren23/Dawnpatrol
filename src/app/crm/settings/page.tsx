@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { claudeConfigured, CLAUDE_MODEL } from "@/lib/claude";
+import { aiConfigured } from "@/lib/ai";
+import { AiModels } from "./AiModels";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { googleConfigured, googleConnection } from "@/lib/google";
 import { stripeConfigured } from "@/lib/billing";
@@ -44,6 +45,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </form>
       </div>
 
+      <AiModels />
+
       <div className="card">
         <h2 className="mb-3">Your password</h2>
         <form action={changePassword} className="grid grid-cols-3 gap-3">
@@ -80,8 +83,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
         <div className="flex items-start justify-between gap-4">
-          <div><div className="font-medium">Claude</div><div className="text-xs text-slate-500">Prospecting, account research, KB drafting, outreach drafting and receptionist test calls. Model: <code>{CLAUDE_MODEL}</code></div></div>
-          <Status ok={claudeConfigured()} />
+          <div><div className="font-medium">AI (Claude / Gemini)</div><div className="text-xs text-slate-500">Prospecting, account research, KB drafting, outreach drafting, caller summaries and receptionist test chats. Choose models per job under AI models below.</div></div>
+          <Status ok={aiConfigured()} />
         </div>
         <div className="flex items-start justify-between gap-4">
           <div><div className="font-medium">ElevenLabs</div><div className="text-xs text-slate-500">Agent + knowledge-base sync. Post-call webhook: <code>{app}/api/webhooks/elevenlabs</code></div></div>
