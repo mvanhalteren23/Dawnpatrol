@@ -4,7 +4,7 @@ import { formatDate } from "@/lib/utils";
 import { Badge, Empty, Notice } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
 import { SubmitButton } from "@/components/SubmitButton";
-import { AvailabilityFields, FollowUpFields } from "@/components/ReceptionistOptions";
+import { AvailabilityFields, FollowUpFields, RingFields } from "@/components/ReceptionistOptions";
 import { saveReceptionistOptions } from "@/app/receptionist-actions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,12 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
             <h2 className="col-span-2">Booking hours &amp; holidays</h2>
             {!receptionist.bookingEnabled ? <p className="col-span-2 text-xs text-slate-500">Live calendar booking isn&apos;t switched on for your receptionist yet; until it is, callers leave preferred times instead, and these hours apply once itthese hours are used once it is, and callers leave preferred times instead.apos;s on.</p> : null}
             <AvailabilityFields r={receptionist} />
+            {receptionist.businessNumber ? (
+              <>
+                <h2 className="col-span-2 mt-2">Business line {receptionist.businessNumber}</h2>
+                <RingFields r={receptionist} />
+              </>
+            ) : null}
             <h2 className="col-span-2 mt-2">Caller summaries</h2>
             <FollowUpFields r={receptionist} />
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>

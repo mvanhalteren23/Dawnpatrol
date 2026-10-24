@@ -15,12 +15,12 @@ import { followUpEnabled, pickChannel, type Channel } from "./follow-up-rules";
 export { followUpEnabled, pickChannel, type Channel };
 
 export async function sendFollowUp(
-  r: Pick<Receptionist, "id" | "businessName">,
+  r: Pick<Receptionist, "id" | "businessName" | "businessNumber">,
   msg: { kind: "booking" | "call"; channel: Channel; to: string; subject: string; body: string; conversationId?: string | null },
 ): Promise<boolean> {
   let error: string | null = null;
   try {
-    if (msg.channel === "sms") await sendSms(msg.to, msg.body);
+    if (msg.channel === "sms") await sendSms(msg.to, msg.body, r.businessNumber); // from the client's own line when they have one
     else await sendPlainEmail({ to: msg.to, subject: msg.subject, body: msg.body, fromName: r.businessName });
   } catch (e) {
     error = (e as Error).message.slice(0, 500);

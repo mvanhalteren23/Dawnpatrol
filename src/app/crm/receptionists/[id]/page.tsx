@@ -11,9 +11,9 @@ import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { googleConnection } from "@/lib/google";
-import { AvailabilityFields, FollowUpFields } from "@/components/ReceptionistOptions";
+import { AvailabilityFields, FollowUpFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
-import { draftKbFromWebsite, previewOpenings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLine, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +100,31 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               {google.connected ? <SubmitButton formAction={previewOpenings.bind(null, r.id)} className="btn-secondary" pendingText="Checking…">Preview openings</SubmitButton> : null}
             </div>
           </form>
+
+          <div className="card space-y-3">
+            <h2>Business line</h2>
+            {r.businessNumber ? (
+              <>
+                <p className="text-sm">Calls to <b>{r.businessNumber}</b> ring {r.ringFirstNumber ?? "nobody"} first{r.ringMode === "hours" ? " during bookable hours" : r.ringMode === "never" ? " — ringing is off, the receptionist answers every call" : ""}, then go to {r.name}. Texts are forwarded to the cell.</p>
+                <form action={saveRingSettings.bind(null, r.id)} className="grid grid-cols-2 gap-3">
+                  <RingFields r={r} />
+                  <div className="col-span-2"><SubmitButton pendingText="Saving…">Save line settings</SubmitButton></div>
+                </form>
+                <form action={removeBusinessLine.bind(null, r.id)} className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-xs">
+                  <label className="flex items-center gap-1"><input type="checkbox" name="release" /> Also release the number to Twilio (permanent)</label>
+                  <button className="text-red-600">Remove business line</button>
+                </form>
+              </>
+            ) : (
+              <form action={getBusinessLine.bind(null, r.id)} className="grid grid-cols-2 gap-3">
+                <p className="col-span-2 text-xs text-slate-500">Gives the client a new local number to publish. Each call rings their cell first (with &ldquo;press 1 to answer&rdquo; so their voicemail can&apos;t take it), then {r.name} answers. Needs the ElevenLabs agent synced, and costs a Twilio number plus per-minute charges for both legs while the cell rings.</p>
+                <RingFields r={r} />
+                <Field label="Area code for the new number"><input name="areaCode" defaultValue={(r.ringFirstNumber ?? "").replace(/\D/g, "").slice(-10, -7) || "604"} className="input" inputMode="numeric" maxLength={3} /></Field>
+                <Field label="…or use a number already on Twilio"><input name="existingNumber" placeholder="+16045551234" className="input" /></Field>
+                <div className="col-span-2"><SubmitButton pendingText="Setting up…">Get business line</SubmitButton></div>
+              </form>
+            )}
+          </div>
 
           <TestChat receptionistId={r.id} greeting={r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 

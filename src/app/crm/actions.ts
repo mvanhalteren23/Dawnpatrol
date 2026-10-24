@@ -26,8 +26,9 @@ import { companyName, renameCompany } from "@/lib/brand";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
 import { availability } from "@/lib/agent-booking";
+import { provisionLine, removeLine } from "@/lib/business-line";
 import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
-import { cleanDigits, nextFreeExtension } from "@/lib/twilio";
+import { cleanDigits, nextFreeExtension, ringFromForm } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 
 function back(path: string, params?: Record<string, string>): never {
@@ -491,6 +492,45 @@ export async function updateBooking(id: string, form: FormData) {
   });
   await markDirty(id);
   back(path, { notice: "Booking settings saved. Sync to ElevenLabs to update the live agent." });
+}
+
+export async function getBusinessLine(id: string, form: FormData) {
+  await requireAdmin();
+  const path = `/crm/receptionists/${id}`;
+  try {
+    const ring = ringFromForm(form);
+    if (!ring.ringFirstNumber) throw new Error("Enter the owner's cell number to ring first");
+    await db.receptionist.update({ where: { id }, data: ring });
+    const number = await provisionLine(id, { areaCode: str(form, "areaCode"), existing: str(form, "existingNumber") || undefined });
+    back(path, { notice: `Business line ${number} is live: calls ring ${ring.ringFirstNumber} first, then the receptionist.` });
+  } catch (err) {
+    unstable_rethrow(err);
+    back(path, { error: errMsg(err) });
+  }
+}
+
+export async function saveRingSettings(id: string, form: FormData) {
+  await requireAdmin();
+  const path = `/crm/receptionists/${id}`;
+  try {
+    await db.receptionist.update({ where: { id }, data: ringFromForm(form) });
+  } catch (err) {
+    back(path, { error: errMsg(err) });
+  }
+  back(path, { notice: "Business line settings saved (they apply to the next call)" });
+}
+
+export async function removeBusinessLine(id: string, form: FormData) {
+  await requireAdmin();
+  const path = `/crm/receptionists/${id}`;
+  const release = form.get("release") === "on";
+  try {
+    await removeLine(id, release);
+  } catch (err) {
+    unstable_rethrow(err);
+    back(path, { error: errMsg(err) });
+  }
+  back(path, { notice: release ? "Business line removed and the number released to Twilio" : "Business line detached (the number is still on your Twilio account)" });
 }
 
 /** Run the same lookup the agent's get_available_times tool does, so you can sanity-check it. */

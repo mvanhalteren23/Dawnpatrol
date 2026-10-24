@@ -93,3 +93,14 @@ describe("demo line webhook", () => {
     expect(registerTwilioCall).not.toHaveBeenCalled();
   });
 });
+
+describe("business line TwiML", () => {
+  it("rings the cell with screening, then falls through", async () => {
+    const { ringFirst, screenPrompt, forwardSms } = await import("@/lib/twilio");
+    const x = ringFirst({ cell: "+16045550000", seconds: 20, callerId: "+16045551111", screenUrl: "https://a.test/s?r=1&x=2", action: "https://a.test/after?r=1" });
+    expect(x).toContain('<Dial timeout="20" callerId="+16045551111" action="https://a.test/after?r=1"');
+    expect(x).toContain('<Number url="https://a.test/s?r=1&amp;x=2" method="POST">+16045550000</Number>');
+    expect(screenPrompt("Acme", "https://a.test/ok")).toContain('numDigits="1"');
+    expect(forwardSms("+1604", "+1778", "Hi <there>")).toContain("Text from +1778: Hi &lt;there&gt;");
+  });
+});

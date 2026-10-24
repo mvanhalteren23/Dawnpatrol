@@ -252,6 +252,15 @@ export function candidateSlots(rules: SlotRules, now: Date): Date[] {
   return out;
 }
 
+/** Is `now` inside the weekly hours and not on a closed day? (Used to decide whether to ring the owner.) */
+export function isOpenAt(rules: Pick<SlotRules, "timezone" | "hours" | "closedDates">, now: Date): boolean {
+  const l = localDate(now, rules.timezone);
+  if (rules.closedDates?.has(isoDate(l.y, l.m, l.d))) return false;
+  const p = partsInZone(now, rules.timezone);
+  const minute = p.h * 60 + p.min;
+  return (rules.hours[l.weekday] ?? []).some(([a, b]) => minute >= a && minute < b);
+}
+
 export function freeSlots(rules: SlotRules, now: Date, busy: Interval[]): Date[] {
   const pad = rules.bufferMinutes * 60_000;
   const len = rules.slotMinutes * 60_000;

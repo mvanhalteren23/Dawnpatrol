@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
+import { ringFromForm } from "@/lib/twilio";
 import { markDirty } from "@/lib/elevenlabs";
 
 function done(returnTo: string, key: "notice" | "error", message: string): never {
@@ -17,13 +18,13 @@ function done(returnTo: string, key: "notice" | "error", message: string): never
 export async function saveReceptionistOptions(receptionistId: string, returnTo: string, form: FormData) {
   const session = await getSession();
   if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
-  let availability;
+  let data;
   try {
-    availability = availabilityFromForm(form);
+    data = { ...availabilityFromForm(form), ...followUpFromForm(form), ...(form.has("ringMode") ? ringFromForm(form) : {}) };
   } catch (err) {
     done(returnTo, "error", (err as Error).message);
   }
-  await db.receptionist.update({ where: { id: receptionistId }, data: { ...availability, ...followUpFromForm(form) } });
+  await db.receptionist.update({ where: { id: receptionistId }, data });
   await markDirty(receptionistId);
   // Hours, holidays and closed days are read live on every availability lookup; the summary
   // settings change the agent's instructions and tools, so they need a sync.

@@ -55,3 +55,24 @@ export function FollowUpFields({ r }: { r: Pick<Receptionist, "followUpOn" | "fo
     </>
   );
 }
+
+/** Ring-the-owner-first settings for a business line. Parsed by ringFromForm. */
+export function RingFields({ r }: { r: Pick<Receptionist, "ringFirstNumber" | "ringSeconds" | "ringMode" | "businessNumber"> }) {
+  return (
+    <>
+      <Field label="Ring this cell first"><input name="ringFirstNumber" defaultValue={r.ringFirstNumber ?? ""} placeholder="604-555-1234" className="input" inputMode="tel" /></Field>
+      <Field label="Ring for (seconds)"><input name="ringSeconds" type="number" min={10} max={40} defaultValue={r.ringSeconds} className="input" /></Field>
+      <Field label="When" className="col-span-2">
+        <select name="ringMode" defaultValue={r.ringMode} className="input">
+          <option value="hours">During business hours; after hours the receptionist answers right away</option>
+          <option value="always">Always ring my cell first</option>
+          <option value="never">Never — the receptionist answers every call</option>
+        </select>
+      </Field>
+      <p className="col-span-2 text-xs text-slate-500">
+        {r.businessNumber ? <>Calls to <b>{r.businessNumber}</b> ring your cell first. </> : null}
+        When you pick up you&apos;ll hear &ldquo;press 1 to answer&rdquo;. Don&apos;t answer, decline, or just hang up, and your receptionist takes the call. Texts to the business number are forwarded to your cell. Keep the ring time shorter than it takes your cell to go to voicemail (usually 20–25 seconds).
+      </p>
+    </>
+  );
+}

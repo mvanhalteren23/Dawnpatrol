@@ -278,6 +278,13 @@ model Receptionist {
   // Summary sent to the caller after a call and/or a booking, by text or email.
   followUpOn            String  @default("") // "" (off) | bookings | calls | both
   followUpChannel       String  @default("caller_choice") // caller_choice | sms | email
+  // Business line: a Twilio number that rings the owner's cell first, then hands unanswered
+  // calls to the agent (src/app/api/voice/business). Texts to it are forwarded to the cell.
+  businessNumber        String? @unique // E.164
+  businessNumberSid     String?
+  ringFirstNumber       String? // owner's cell, E.164
+  ringSeconds           Int     @default(20)
+  ringMode              String  @default("hours") // always | hours (only during bookable hours) | never (straight to the agent)
   bookingAddsToCrm      Boolean @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String  @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus        String  @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED

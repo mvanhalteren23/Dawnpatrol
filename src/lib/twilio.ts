@@ -40,20 +40,95 @@ export function gatherExtension(prompt: string, action: string, onEmpty: string)
   );
 }
 
-/** Digits only, "#"/"*" stripped. */
-/** Send an SMS through the Twilio REST API. From = TWILIO_SMS_FROM, else the demo number. */
-export async function sendSms(to: string, body: string): Promise<void> {
+/**
+ * Ring the owner's cell; the <Number url> plays a screening prompt to whoever picks up, so a
+ * cell's own voicemail can't swallow the call. Unanswered/declined calls go to `action`.
+ */
+export function ringFirst(opts: { cell: string; seconds: number; callerId: string; screenUrl: string; action: string }): string {
+  return twiml(
+    `<Dial timeout="${Math.min(60, Math.max(5, opts.seconds))}" callerId="${escapeXml(opts.callerId)}" action="${escapeXml(opts.action)}" method="POST" answerOnBridge="true">` +
+      `<Number url="${escapeXml(opts.screenUrl)}" method="POST">${escapeXml(opts.cell)}</Number></Dial>`,
+  );
+}
+
+/** Played to the owner when they pick up: press 1 to take the call; otherwise the leg hangs up. */
+export function screenPrompt(businessName: string, action: string): string {
+  return twiml(
+    `<Gather input="dtmf" numDigits="1" timeout="6" action="${escapeXml(action)}" method="POST">${say(`${businessName} call. Press 1 to answer, or hang up to send it to your receptionist.`)}</Gather><Hangup/>`,
+  );
+}
+
+/** Forward an inbound text to the owner's cell. */
+export function forwardSms(to: string, from: string, body: string): string {
+  return twiml(`<Message to="${escapeXml(to)}">${escapeXml(`Text from ${from}: ${body}`)}</Message>`);
+}
+
+async function twilioApi<T>(path: string, init: { method?: string; form?: Record<string, string> } = {}): Promise<T> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SMS_FROM || process.env.TWILIO_DEMO_NUMBER;
-  if (!sid || !token || !from) throw new Error("Twilio SMS is not configured");
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ To: toE164(to), From: from, Body: body }),
+  if (!sid || !token) throw new Error("TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are not configured");
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}${path}`, {
+    method: init.method ?? (init.form ? "POST" : "GET"),
+    headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`, ...(init.form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) },
+    body: init.form ? new URLSearchParams(init.form) : undefined,
   });
   if (!res.ok) throw new Error(`Twilio ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
+
+/** Send an SMS. From = the given number (e.g. a client's business line), else TWILIO_SMS_FROM, else the demo number. */
+export async function sendSms(to: string, body: string, from?: string | null): Promise<void> {
+  const sender = from || process.env.TWILIO_SMS_FROM || process.env.TWILIO_DEMO_NUMBER;
+  if (!sender) throw new Error("Twilio SMS is not configured");
+  await twilioApi("/Messages.json", { form: { To: toE164(to), From: sender, Body: body } });
+}
+
+export type TwilioNumber = { sid: string; phone_number: string; friendly_name: string };
+
+/** First available local number in a country/area code (CA or US). */
+export async function findLocalNumber(country: "CA" | "US", areaCode: string): Promise<string | null> {
+  const res = await twilioApi<{ available_phone_numbers: { phone_number: string }[] }>(
+    `/AvailablePhoneNumbers/${country}/Local.json?AreaCode=${encodeURIComponent(areaCode)}&VoiceEnabled=true&SmsEnabled=true&PageSize=1`,
+  );
+  return res.available_phone_numbers[0]?.phone_number ?? null;
+}
+
+/** Buy a number with its voice and SMS webhooks pointing at the CRM. */
+export async function buyNumber(phoneNumber: string, label: string, voiceUrl: string, smsUrl: string): Promise<TwilioNumber> {
+  return twilioApi<TwilioNumber>("/IncomingPhoneNumbers.json", {
+    form: { PhoneNumber: phoneNumber, FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", SmsUrl: smsUrl, SmsMethod: "POST" },
+  });
+}
+
+/** Point a number already on the account at the CRM. */
+export async function attachNumber(phoneNumber: string, label: string, voiceUrl: string, smsUrl: string): Promise<TwilioNumber> {
+  const found = await twilioApi<{ incoming_phone_numbers: TwilioNumber[] }>(`/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`);
+  const n = found.incoming_phone_numbers[0];
+  if (!n) throw new Error(`${phoneNumber} isn't on this Twilio account`);
+  return twilioApi<TwilioNumber>(`/IncomingPhoneNumbers/${n.sid}.json`, {
+    form: { FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", SmsUrl: smsUrl, SmsMethod: "POST" },
+  });
+}
+
+/** Give a number back to Twilio (billing stops; the number may be reassigned). */
+export async function releaseNumber(sid: string): Promise<void> {
+  await twilioApi(`/IncomingPhoneNumbers/${sid}.json`, { method: "DELETE" });
+}
+
+/** Read the RingFields form (ringFirstNumber, ringSeconds, ringMode). Throws on a bad cell number. */
+export function ringFromForm(form: FormData) {
+  const cell = String(form.get("ringFirstNumber") ?? "").trim();
+  if (cell && cleanDigits(cell).length < 10) throw new Error("Enter the cell number with area code, e.g. 604-555-1234");
+  const mode = String(form.get("ringMode") ?? "");
+  const seconds = Number(form.get("ringSeconds") ?? 20);
+  return {
+    ringFirstNumber: cell ? toE164(cell) : null,
+    ringSeconds: Number.isFinite(seconds) ? Math.min(40, Math.max(10, Math.round(seconds))) : 20,
+    ringMode: ["always", "hours", "never"].includes(mode) ? mode : "hours",
+  };
+}
+
+/** Digits only, "#"/"*" stripped. */
 
 /** North American numbers spoken as 10 or 11 digits -> +1XXXXXXXXXX; anything with a + is kept. */
 export function toE164(phone: string): string {

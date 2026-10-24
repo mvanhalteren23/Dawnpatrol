@@ -121,3 +121,14 @@ describe("per-day hours form", () => {
     expect(() => hoursFromDays({ 1: "17:00-09:00" })).toThrow();
   });
 });
+
+describe("open hours", () => {
+  it("knows when the business is open", async () => {
+    const { isOpenAt, parseWeeklyHours, closedDates } = await import("@/lib/booking");
+    const rules = { timezone: TZ, hours: parseWeeklyHours("Mon-Fri 09:00-17:00"), closedDates: closedDates("CA-BC", "", 2026) };
+    expect(isOpenAt(rules, zonedTime(2026, 10, 27, 10 * 60, TZ))).toBe(true); // Tue 10:00
+    expect(isOpenAt(rules, zonedTime(2026, 10, 27, 17 * 60, TZ))).toBe(false); // Tue 17:00
+    expect(isOpenAt(rules, zonedTime(2026, 10, 24, 11 * 60, TZ))).toBe(false); // Sat
+    expect(isOpenAt(rules, zonedTime(2026, 11, 11, 10 * 60, TZ))).toBe(false); // Remembrance Day
+  });
+});

@@ -63,6 +63,10 @@ The demo number is a directory: callers enter an extension and reach the demo re
 4. For each prospect: on their account, add a receptionist with **Demo for this prospect** ticked (it gets the next free extension, starting at 101). Click **Draft KB from website**, approve the drafts, then click **Sync to ElevenLabs**.
 5. **CRM → Demo line** lists every extension, whether its agent is ready, and its demo calls.
 
+## 5c. Business lines (ring the owner's cell first)
+
+On a receptionist, **Business line → Get business line** buys a local number in the area code you enter (or attaches one already on your Twilio account) and points its voice and SMS webhooks at `${APP_URL}/api/voice/business` and `/api/sms/business`. Nothing to configure in Twilio or ElevenLabs by hand. Leave these numbers **unassigned** in ElevenLabs, like the demo line. The Twilio account must be upgraded (trial accounts can't buy numbers or call unverified cells).
+
 ## 6. Connect Google (Drive folders, Gmail tracking, Calendar booking)
 
 1. In console.cloud.google.com, create a project. Enable the **Google Drive API**, **Gmail API** and **Google Calendar API**.
