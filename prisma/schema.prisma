@@ -80,6 +80,7 @@ model Account {
   invoices      Invoice[]
   receptionists Receptionist[]
   driveFolders  DriveFolder[]
+  emailDrafts   EmailDraft[]
   users         User[]
 
   @@index([stage])
@@ -395,4 +396,25 @@ model AiUsage {
 
   @@index([createdAt])
   @@index([task, createdAt])
+}
+
+/** An AI-drafted outreach email, with your rating/feedback and what was actually sent: the email writer learns from these. */
+model EmailDraft {
+  id             String   @id @default(cuid())
+  accountId      String
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactId      String?
+  promptId       String?
+  instructions   String   @default("") // one-off instructions given for this draft
+  subject        String
+  body           String
+  rating         Int? // 1 = good, -1 = bad
+  feedback       String?
+  sentSubject    String?
+  sentBody       String?
+  sentActivityId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([createdAt])
 }

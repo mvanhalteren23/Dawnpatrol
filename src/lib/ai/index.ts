@@ -130,12 +130,28 @@ Additional notes from the client: ${notes || "none"}`,
 
 const EmailDraftSchema = z.object({ subject: z.string(), body: z.string() });
 
-export async function draftOutreachEmail(renderedPrompt: string, researchContext: string): Promise<{ subject: string; body: string }> {
+export async function draftOutreachEmail(renderedPrompt: string, researchContext: string, guidance = ""): Promise<{ subject: string; body: string }> {
   const ex = await structured(
     "outreach",
     EmailDraftSchema,
-    `${renderedPrompt}\n\nUse the account research below for personalisation. Body is plain text with line breaks; sign off as the ${await companyName()} team.`,
+    `${renderedPrompt}${guidance ? `\n\n${guidance}` : ""}\n\nUse the account research below for personalisation. Body is plain text with line breaks; sign off as the ${await companyName()} team.`,
     researchContext || "No research available.",
+  );
+  return ex.data;
+}
+
+const StyleGuideSchema = z.object({
+  guide: z.string().describe("The full updated style guide: short, concrete bullet rules"),
+  changes: z.array(z.string()).describe("What changed and why, one line each, citing the feedback"),
+});
+
+/** Propose an updated email style guide from feedback, edits and replies (the user reviews it before saving). */
+export async function proposeStyleGuide(currentGuide: string, material: string): Promise<z.infer<typeof StyleGuideSchema>> {
+  const ex = await structured(
+    "outreach",
+    StyleGuideSchema,
+    `You maintain the house style guide for ${await companyName()}'s cold outreach emails to small business owners. Update the current guide using the evidence below: feedback on drafts, drafts the user rewrote before sending (what they changed reveals preferences), and emails that got replies. Keep rules the evidence doesn't contradict, add rules the evidence clearly supports, and drop rules it contradicts. Write short, concrete, testable bullet rules (length, tone, openers, CTA, words to avoid). No more than 15 bullets.\n\nCURRENT GUIDE:\n${currentGuide || "(none yet)"}`,
+    material,
   );
   return ex.data;
 }

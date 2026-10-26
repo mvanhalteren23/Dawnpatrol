@@ -21,7 +21,8 @@ import {
   startKbDraft,
   startProspecting,
 } from "@/lib/jobs";
-import { draftOutreachEmail, type Prospect, type ResearchSummary } from "@/lib/ai";
+import { draftOutreachEmail, proposeStyleGuide, type Prospect, type ResearchSummary } from "@/lib/ai";
+import { STYLE_GUIDE_KEY, STYLE_PROPOSAL_KEY, styleLearningMaterial, writerGuidance } from "@/lib/email-writer";
 import { accountVariables, renderPrompt } from "@/lib/prompts";
 import { companyName, renameCompany } from "@/lib/brand";
 import { createCheckout, setManualSubscription } from "@/lib/billing";
@@ -312,10 +313,51 @@ export async function completeTask(activityId: string, redirectTo: string) {
   back(redirectTo);
 }
 
+export async function rateDraft(accountId: string, draftId: string, form: FormData) {
+  await requireAdmin();
+  const rating = form.get("rating") ? Number(form.get("rating")) : null;
+  await db.emailDraft.updateMany({ where: { id: draftId, accountId }, data: { rating: rating === 1 || rating === -1 ? rating : null, feedback: optStr(form, "feedback") } });
+  back(`/crm/accounts/${accountId}`, { draft: draftId, notice: "Thanks: the email writer will use this on future drafts" });
+}
+
+export async function saveStyleGuide(form: FormData) {
+  await requireAdmin();
+  const { setSetting, deleteSetting } = await import("@/lib/settings");
+  await setSetting(STYLE_GUIDE_KEY, str(form, "guide").trim());
+  await deleteSetting(STYLE_PROPOSAL_KEY);
+  back("/crm/outreach/writer", { notice: "Style guide saved: every new draft follows it" });
+}
+
+export async function proposeStyleGuideAction() {
+  await requireAdmin();
+  const { setSetting } = await import("@/lib/settings");
+  try {
+    const { guide, material, count } = await styleLearningMaterial();
+    if (!count) back("/crm/outreach/writer", { error: "No feedback, edits or sent drafts to learn from yet" });
+    const proposal = await proposeStyleGuide(guide, material);
+    await setSetting(STYLE_PROPOSAL_KEY, JSON.stringify(proposal));
+  } catch (err) {
+    unstable_rethrow(err);
+    back("/crm/outreach/writer", { error: `Couldn't propose an update: ${errMsg(err)}` });
+  }
+  back("/crm/outreach/writer", { notice: "Review the proposed update below, edit it if you like, then save" });
+}
+
+export async function discardStyleProposal() {
+  await requireAdmin();
+  const { deleteSetting } = await import("@/lib/settings");
+  await deleteSetting(STYLE_PROPOSAL_KEY);
+  back("/crm/outreach/writer");
+}
+
 export async function sendEmail(accountId: string, form: FormData) {
   const session = await requireAdmin();
   try {
-    await sendTrackedEmail({ accountId, contactId: str(form, "contactId"), subject: str(form, "subject"), body: str(form, "body"), userId: session.sub });
+    const activity = await sendTrackedEmail({ accountId, contactId: str(form, "contactId"), subject: str(form, "subject"), body: str(form, "body"), userId: session.sub });
+    // Remember what was actually sent for a draft: the writer learns from your edits and from replies.
+    if (optStr(form, "draftId")) {
+      await db.emailDraft.updateMany({ where: { id: str(form, "draftId"), accountId }, data: { sentSubject: str(form, "subject"), sentBody: str(form, "body"), sentActivityId: activity.id } });
+    }
   } catch (err) {
     back(`/crm/accounts/${accountId}`, { error: `Email not sent: ${errMsg(err)}` });
   }
@@ -340,12 +382,24 @@ export async function draftEmail(accountId: string, form: FormData) {
     demo_phone: demoExtension && demo.number ? formatPhone(demo.number) : "",
     demo_extension: demoExtension ?? "",
   };
+  // One-off instructions, plus (on a redraft) what was wrong with the previous draft.
+  const instructions = str(form, "instructions").trim();
+  const previous = optStr(form, "previousDraftId") ? await db.emailDraft.findUnique({ where: { id: str(form, "previousDraftId") } }) : null;
+  const feedback = str(form, "feedback").trim();
+  if (previous && (feedback || form.get("rating"))) {
+    await db.emailDraft.update({ where: { id: previous.id }, data: { feedback: feedback || previous.feedback, rating: form.get("rating") ? Number(form.get("rating")) : previous.rating } });
+  }
+  const oneOff = [
+    instructions ? `Instructions for this email: ${instructions}` : "",
+    previous ? `Rewrite this previous draft. ${feedback ? `Feedback on it: ${feedback}` : "Make it better."}\nPREVIOUS DRAFT:\nSubject: ${previous.subject}\n${previous.body}` : "",
+  ].filter(Boolean).join("\n\n");
   try {
-    const draft = await draftOutreachEmail(renderPrompt(prompt.template, vars), account.research[0]?.output ?? "");
-    const run = await db.researchRun.create({
-      data: { kind: "OUTREACH", accountId, promptId: prompt.id, input: contactId, output: draft.body, resultJson: JSON.stringify(draft), status: "DONE", finishedAt: new Date() },
+    const guidance = [await writerGuidance(prompt.id), oneOff].filter(Boolean).join("\n\n");
+    const draft = await draftOutreachEmail(renderPrompt(prompt.template, vars), account.research[0]?.output ?? "", guidance);
+    const saved = await db.emailDraft.create({
+      data: { accountId, contactId: contactId || null, promptId: prompt.id, instructions: [instructions, previous && feedback ? `Redraft: ${feedback}` : ""].filter(Boolean).join(" · "), subject: draft.subject, body: draft.body },
     });
-    back(`/crm/accounts/${accountId}`, { draft: run.id });
+    back(`/crm/accounts/${accountId}`, { draft: saved.id });
   } catch (err) {
     unstable_rethrow(err);
     back(`/crm/accounts/${accountId}`, { error: `Draft failed: ${errMsg(err)}` });
@@ -496,7 +550,8 @@ export async function savePrompt(form: FormData) {
   if (data.isDefault) await db.savedPrompt.updateMany({ where: { kind: data.kind }, data: { isDefault: false } });
   if (id) await db.savedPrompt.update({ where: { id }, data });
   else await db.savedPrompt.create({ data: { ...data, createdById: session.sub } });
-  back("/crm/prompts", { notice: "Prompt saved" });
+  const returnTo = str(form, "returnTo");
+  back(returnTo.startsWith("/crm/") ? returnTo : "/crm/prompts", { notice: "Prompt saved" });
 }
 
 export async function deletePrompt(id: string) {

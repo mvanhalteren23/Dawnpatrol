@@ -27,6 +27,7 @@ import {
   updateAccount,
   markReviewed,
   addNote,
+  rateDraft,
 } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
     db.savedPrompt.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     googleConnection(),
-    sp.draft ? db.researchRun.findUnique({ where: { id: sp.draft } }) : null,
+    sp.draft ? db.emailDraft.findFirst({ where: { id: sp.draft, accountId: id } }) : null,
     db.activity.groupBy({ by: ["type", "direction"], where: { accountId: id }, _count: true }),
     db.activity.aggregate({ where: { accountId: id, type: "EMAIL", direction: "OUTBOUND" }, _count: true, _sum: { openCount: true, clickCount: true } }),
     db.activity.count({ where: { accountId: id, type: "TASK", completedAt: null } }),
@@ -91,7 +92,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const filter = TIMELINE_FILTERS.find((f) => f.key === (sp.tl ?? "")) ?? TIMELINE_FILTERS[0]!;
   const timeline = filter.types.length ? account.activities.filter((a) => filter.types.includes(a.type)) : account.activities;
   const notes = account.activities.filter((a) => a.type === "NOTE");
-  const draft = safeJson<{ subject?: string; body?: string }>(draftRun?.resultJson, {});
+  const draft = { subject: draftRun?.subject, body: draftRun?.body };
   const researchPrompts = prompts.filter((p) => p.kind === "RESEARCH");
   const outreachPrompts = prompts.filter((p) => p.kind === "OUTREACH");
   const running = account.research.some((r) => r.status === "RUNNING");
@@ -352,14 +353,40 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             {emailable.length ? (
               <>
                 {outreachPrompts.length ? (
-                  <form action={draftEmail.bind(null, account.id)} className="mb-3 flex gap-2">
-                    <select name="contactId" className="input">{emailable.map((c) => <option key={c.id} value={c.id}>{contactName(c)}</option>)}</select>
-                    <select name="promptId" className="input">{outreachPrompts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                    <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="Drafting…">Draft with Claude</SubmitButton>
+                  <form action={draftEmail.bind(null, account.id)} className="mb-3 space-y-2">
+                    <div className="flex gap-2">
+                      <select name="contactId" className="input" defaultValue={draftRun?.contactId ?? undefined}>{emailable.map((c) => <option key={c.id} value={c.id}>{contactName(c)}</option>)}</select>
+                      <select name="promptId" className="input" defaultValue={draftRun?.promptId ?? undefined}>{outreachPrompts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                      <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="Drafting…">Draft email</SubmitButton>
+                    </div>
+                    <input name="instructions" placeholder="Extra instructions for this one (optional), e.g. mention their 4.9★ reviews, keep it under 80 words" className="input" />
+                    <p className="text-xs text-slate-500">Drafts follow your <Link href="/crm/outreach/writer">style guide and past feedback</Link>. <Link href="/crm/outreach/writer#prompts">Add or edit email prompts</Link>.</p>
                   </form>
+                ) : <p className="mb-3 text-sm text-slate-500">No email prompts yet. <Link href="/crm/outreach/writer#prompts">Add one</Link>.</p>}
+                {draftRun ? (
+                  <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <div className="mb-2 font-medium">How&apos;s this draft? Your feedback improves every future draft.</div>
+                    <form action={rateDraft.bind(null, account.id, draftRun.id)} className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <label className="flex items-center gap-1"><input type="radio" name="rating" value="1" defaultChecked={draftRun.rating === 1} /> 👍 Good</label>
+                        <label className="flex items-center gap-1"><input type="radio" name="rating" value="-1" defaultChecked={draftRun.rating === -1} /> 👎 Needs work</label>
+                      </div>
+                      <input name="feedback" defaultValue={draftRun.feedback ?? ""} placeholder="What should change? e.g. too long, too salesy, lead with the missed-calls stat" className="input" />
+                      <div className="flex flex-wrap gap-2">
+                        <SubmitButton className="btn-secondary" pendingText="Saving…">Save feedback</SubmitButton>
+                        {draftRun.promptId ? (
+                          <SubmitButton formAction={draftEmail.bind(null, account.id)} className="btn-secondary" pendingText="Redrafting…">Redraft with this feedback</SubmitButton>
+                        ) : null}
+                      </div>
+                      <input type="hidden" name="previousDraftId" value={draftRun.id} />
+                      <input type="hidden" name="promptId" value={draftRun.promptId ?? ""} />
+                      <input type="hidden" name="contactId" value={draftRun.contactId ?? ""} />
+                    </form>
+                  </div>
                 ) : null}
                 <form action={sendEmail.bind(null, account.id)} className="space-y-2">
-                  <select name="contactId" className="input" defaultValue={draftRun?.input ?? undefined}>{emailable.map((c) => <option key={c.id} value={c.id}>{contactName(c)} &lt;{c.email}&gt;</option>)}</select>
+                  {draftRun ? <input type="hidden" name="draftId" value={draftRun.id} /> : null}
+                  <select name="contactId" className="input" defaultValue={draftRun?.contactId ?? undefined}>{emailable.map((c) => <option key={c.id} value={c.id}>{contactName(c)} &lt;{c.email}&gt;</option>)}</select>
                   <input name="subject" placeholder="Subject" className="input" defaultValue={draft.subject} required />
                   <textarea name="body" rows={draft.body ? 9 : 5} className="input" defaultValue={draft.body} placeholder="Plain text. Links are click-tracked; opens are tracked." required />
                   <SubmitButton pendingText="Sending…">{google.connected ? "Send via Gmail (tracked)" : "Connect Google to send"}</SubmitButton>

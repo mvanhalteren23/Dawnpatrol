@@ -84,3 +84,9 @@ export function safeJson<T>(text: string | null | undefined, fallback: T): T {
     return fallback;
   }
 }
+
+/** Did the user change a draft meaningfully before sending? (whitespace and case ignored) */
+export function wasEdited(draft: string, sent: string): boolean {
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(draft) !== norm(sent);
+}

@@ -39,3 +39,11 @@ describe("research guard", () => {
     expect(wrong.phone).toBeNull();
   });
 });
+
+describe("email writer", () => {
+  it("detects real edits but ignores whitespace", async () => {
+    const { wasEdited } = await import("@/lib/utils");
+    expect(wasEdited("Hi Jane,\n\nQuick question", "Hi Jane, Quick question")).toBe(false);
+    expect(wasEdited("Hi Jane, quick question", "Jane, one question")).toBe(true);
+  });
+});

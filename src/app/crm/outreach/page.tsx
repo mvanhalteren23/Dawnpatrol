@@ -32,7 +32,10 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Outreach"
         subtitle={`Every touch across all accounts — last ${days} days`}
-        actions={google.connected ? <form action={syncOutreachNow}><SubmitButton className="btn-secondary" pendingText="Syncing…">Sync Gmail now</SubmitButton></form> : <Link href="/crm/settings" className="btn">Connect Gmail</Link>}
+        actions={<>
+          <Link href="/crm/outreach/writer" className="btn-secondary">✍️ Email writer</Link>
+          {google.connected ? <form action={syncOutreachNow}><SubmitButton className="btn-secondary" pendingText="Syncing…">Sync Gmail now</SubmitButton></form> : <Link href="/crm/settings" className="btn">Connect Gmail</Link>}
+        </>}
       />
       <Flash params={sp} />
       <Notice>
