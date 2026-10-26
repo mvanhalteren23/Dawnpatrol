@@ -3,13 +3,14 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { PROSPECT_STAGES, STAGE_LABELS, type Stage } from "@/lib/constants";
 import { dialerStatus } from "@/lib/dialer";
-import { contactName, formatDate } from "@/lib/utils";
 import { Notice, PageHeader } from "@/components/ui";
 import { Dialer, type DialTarget } from "@/components/Dialer";
+import { dialAccountInclude, toDialTarget } from "@/lib/dial-targets";
 
 export const dynamic = "force-dynamic";
 
 const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithRelationInput[] }> = {
+  best: { label: "Best to call now (tasks due, replies, opens…)", orderBy: [{ lastContactedAt: { sort: "asc", nulls: "first" } }] },
   stale: { label: "Last touched: longest ago first", orderBy: [{ lastContactedAt: { sort: "asc", nulls: "first" } }, { fitScore: { sort: "desc", nulls: "last" } }] },
   recent: { label: "Last touched: most recent first", orderBy: [{ lastContactedAt: { sort: "desc", nulls: "last" } }] },
   fit: { label: "Research fit score: highest first", orderBy: [{ fitScore: { sort: "desc", nulls: "last" } }, { lastContactedAt: { sort: "asc", nulls: "first" } }] },
@@ -18,15 +19,10 @@ const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithR
   newest: { label: "Newest accounts first", orderBy: [{ createdAt: "desc" }] },
 };
 
-function ago(d: Date | null): string {
-  if (!d) return "never touched";
-  const days = Math.floor((Date.now() - d.getTime()) / 86400_000);
-  return days <= 0 ? "touched today" : `touched ${days}d ago`;
-}
 
 export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string }> }) {
   const sp = await searchParams;
-  const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "stale";
+  const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "best";
   const stages = sp.stage && (PROSPECT_STAGES as string[]).includes(sp.stage) ? [sp.stage as Stage] : PROSPECT_STAGES;
   const where: Prisma.AccountWhereInput = {
     stage: { in: stages },
@@ -38,23 +34,13 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
   startOfDay.setHours(0, 0, 0, 0);
   const [status, accounts, today] = await Promise.all([
     dialerStatus(),
-    db.account.findMany({ where, orderBy: SORTS[sort]!.orderBy, take: 200, include: { contacts: { where: { phone: { not: null } }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], take: 1 } } }),
+    db.account.findMany({ where, orderBy: SORTS[sort]!.orderBy, take: 200, include: dialAccountInclude }),
     db.activity.groupBy({ by: ["outcome"], where: { source: "dialer", type: "CALL", occurredAt: { gte: startOfDay } }, _count: true }),
   ]);
 
-  const targets: DialTarget[] = accounts.map((a) => {
-    const c = a.contacts[0];
-    const usesContact = !a.phone && c;
-    return {
-      key: a.id,
-      accountId: a.id,
-      accountName: a.name,
-      contactId: usesContact ? c.id : (c?.id ?? null),
-      label: usesContact ? `${contactName(c)}${c.title ? ` (${c.title})` : ""}` : "Main line",
-      phone: (usesContact ? c.phone : a.phone)!,
-      meta: [STAGE_LABELS[a.stage as Stage], a.fitScore != null ? `fit ${a.fitScore}` : null, ago(a.lastContactedAt), a.nextFollowUpAt ? `follow-up ${formatDate(a.nextFollowUpAt)}` : null, a.city].filter(Boolean).join(" · "),
-    };
-  });
+  const rows = accounts.map((a) => toDialTarget(a)).filter((t) => t.numbers.length);
+  if (sort === "best") rows.sort((x, y) => y.priority - x.priority);
+  const targets: DialTarget[] = rows;
   const calls = today.reduce((n, t) => n + t._count, 0);
   const connects = today.filter((t) => ["connected", "booked", "call_back", "not_interested"].includes(t.outcome ?? "")).reduce((n, t) => n + t._count, 0);
   const booked = today.find((t) => t.outcome === "booked")?._count ?? 0;

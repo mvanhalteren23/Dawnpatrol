@@ -3,14 +3,19 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import type { Call, Device } from "@twilio/voice-sdk";
 import { saveCallOutcome } from "@/app/crm/actions";
 
+export type DialNumber = { contactId: string | null; label: string; phone: string }; // label e.g. "Main line" or "Jane Smith (Owner)"
+
 export type DialTarget = {
   key: string;
   accountId: string;
   accountName: string;
-  contactId?: string | null;
-  label: string; // who/what number, e.g. "Main line" or "Jane Smith (Owner)"
-  phone: string;
-  meta?: string; // e.g. "Fit 78 · last touch 3d ago · North Vancouver"
+  numbers: DialNumber[];
+  meta?: string; // one-line summary under the name
+  reasons?: string[]; // why call now
+  details?: { label: string; value: string }[]; // fit score, industry, stage…
+  touches?: { when: string; text: string }[]; // recent touches, newest first
+  touchSummary?: string; // e.g. "4 emails (1 reply) · 2 calls · 1 note"
+  research?: { opener?: string; facts: string[]; link?: string };
 };
 
 const OUTCOMES = [
@@ -61,6 +66,10 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
   const target = targets[active];
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Record<string, number>>({}); // account key -> index into numbers
+  const numberFor = (t: DialTarget) => t.numbers[picked[t.key] ?? 0] ?? t.numbers[0];
+  const current = target ? numberFor(target) : undefined;
 
   useEffect(() => {
     if (phase !== "live") return;
@@ -99,7 +108,8 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
     setPhase("connecting");
     try {
       const d = await getDevice();
-      const c = await d.connect({ params: { To: t.phone, accountId: t.accountId, contactId: t.contactId ?? "" } });
+      const n = numberFor(t)!;
+      const c = await d.connect({ params: { To: n.phone, accountId: t.accountId, contactId: n.contactId ?? "" } });
       call.current = c;
       c.on("ringing", () => setPhase("ringing"));
       c.on("accept", () => {
@@ -131,7 +141,7 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
   function save(form: FormData, next: boolean) {
     if (!target) return;
     form.set("accountId", target.accountId);
-    form.set("contactId", target.contactId ?? "");
+    form.set("contactId", current?.contactId ?? "");
     form.set("callSid", callSid);
     startSaving(async () => {
       const res = await saveCallOutcome(form);
@@ -165,7 +175,9 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
       {busy && target ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="font-medium">{target.accountName}</div>
-          <div className="text-sm text-slate-600">{target.label} · {target.phone}</div>
+          <div className="text-sm text-slate-600">{current?.label} · {current?.phone}</div>
+          {target.reasons?.length ? <div className="mt-1 text-xs text-slate-600">Why: {target.reasons.join(" · ")}</div> : null}
+          {target.research?.opener ? <div className="mt-1 text-xs italic text-slate-600">Opener: {target.research.opener}</div> : null}
           <p className="mt-1 text-xs text-slate-500">Calls are recorded. Mention it early: &ldquo;Just so you know, this call may be recorded.&rdquo;</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={hangUp} className="btn-danger">Hang up</button>
@@ -214,17 +226,66 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
 
       {targets.length ? (
         <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
-          {targets.map((t, i) => (
-            <li key={t.key} ref={(el) => { rowRefs.current[t.key] = el; }} className={`flex items-center justify-between gap-3 px-1 py-2 text-sm ${i === active ? "bg-dawn-50" : ""} ${done.has(t.key) ? "opacity-50" : ""}`}>
-              <div className="min-w-0">
-                <a href={`/crm/accounts/${t.accountId}`} className="font-medium">{t.accountName}</a>
-                <div className="truncate text-xs text-slate-500">{t.label} · {t.phone}{t.meta ? ` · ${t.meta}` : ""}</div>
-              </div>
-              <button type="button" disabled={busy || phase === "wrapup"} onClick={() => dial(i)} className={i === active && !done.has(t.key) ? "btn whitespace-nowrap" : "btn-secondary whitespace-nowrap"}>
-                {done.has(t.key) ? "✓ Called" : "📞 Call"}
-              </button>
-            </li>
-          ))}
+          {targets.map((t, i) => {
+            const open = expanded === t.key;
+            const n = numberFor(t);
+            return (
+              <li key={t.key} ref={(el) => { rowRefs.current[t.key] = el; }} className={`px-1 py-2 text-sm ${i === active ? "bg-dawn-50" : ""} ${done.has(t.key) ? "opacity-60" : ""}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <button type="button" onClick={() => setExpanded(open ? null : t.key)} className="min-w-0 flex-1 text-left" aria-expanded={open}>
+                    <div className="font-medium text-slate-900"><span className="mr-1 text-xs text-slate-400">{open ? "▾" : "▸"}</span>{t.accountName}</div>
+                    <div className="truncate text-xs text-slate-500">{t.reasons?.[0] ? <span className="text-amber-700">{t.reasons[0]}</span> : null}{t.reasons?.[0] && t.meta ? " · " : ""}{t.meta}</div>
+                  </button>
+                  {t.numbers.length > 1 ? (
+                    <select value={picked[t.key] ?? 0} onChange={(e) => setPicked((p) => ({ ...p, [t.key]: Number(e.target.value) }))} className="input w-44 py-1 text-xs" aria-label="Number to dial" disabled={busy && i === active}>
+                      {t.numbers.map((num, j) => <option key={j} value={j}>{num.label} · {num.phone}</option>)}
+                    </select>
+                  ) : <span className="hidden whitespace-nowrap text-xs text-slate-500 sm:inline">{n?.label} · {n?.phone}</span>}
+                  <button type="button" disabled={busy || phase === "wrapup" || !n} onClick={() => dial(i)} className={i === active && !done.has(t.key) ? "btn whitespace-nowrap" : "btn-secondary whitespace-nowrap"}>
+                    {done.has(t.key) ? "✓ Called" : "📞 Call"}
+                  </button>
+                </div>
+                {open ? (
+                  <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 text-xs md:grid-cols-2">
+                    <div className="space-y-2">
+                      {t.reasons?.length ? (
+                        <div><div className="label">Why call now</div><ul className="list-disc pl-4 text-slate-700">{t.reasons.map((r) => <li key={r}>{r}</li>)}</ul></div>
+                      ) : null}
+                      {t.details?.length ? (
+                        <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
+                          {t.details.map((d) => <div key={d.label}><dt className="text-slate-500">{d.label}</dt><dd className="text-slate-800">{d.value}</dd></div>)}
+                        </dl>
+                      ) : null}
+                      <div>
+                        <div className="label">Who to call</div>
+                        <ul className="space-y-0.5">
+                          {t.numbers.map((num, j) => (
+                            <li key={j}><label className="flex items-center gap-2"><input type="radio" name={`num-${t.key}`} checked={(picked[t.key] ?? 0) === j} onChange={() => setPicked((p) => ({ ...p, [t.key]: j }))} /> {num.label} · {num.phone}</label></li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {t.research && (t.research.opener || t.research.facts.length) ? (
+                        <div>
+                          <div className="label">From research</div>
+                          {t.research.opener ? <p className="italic text-slate-700">&ldquo;{t.research.opener}&rdquo;</p> : null}
+                          {t.research.facts.length ? <ul className="mt-1 list-disc pl-4 text-slate-700">{t.research.facts.map((f) => <li key={f}>{f}</li>)}</ul> : null}
+                        </div>
+                      ) : null}
+                      <div>
+                        <div className="label">Touches {t.touchSummary ? <span className="font-normal normal-case text-slate-500">({t.touchSummary})</span> : null}</div>
+                        {t.touches?.length ? (
+                          <ul className="space-y-0.5 text-slate-700">{t.touches.map((x, k) => <li key={k}><span className="text-slate-400">{x.when}</span> {x.text}</li>)}</ul>
+                        ) : <p className="text-slate-500">No touches yet.</p>}
+                      </div>
+                      <a href={`/crm/accounts/${t.accountId}`} className="inline-block">Open account →</a>
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : <p className="text-sm text-slate-500">{emptyText ?? "No numbers to call."}</p>}
     </div>

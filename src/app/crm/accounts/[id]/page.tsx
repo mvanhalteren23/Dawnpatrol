@@ -82,10 +82,15 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
     db.callLog.groupBy({ by: ["outcome"], where: { receptionist: { accountId: id } }, _count: true }),
     dialerStatus(),
   ]);
-  const dialTargets: DialTarget[] = [
-    ...(account.phone ? [{ key: "main", accountId: account.id, accountName: account.name, contactId: account.contacts.find((c) => c.isPrimary)?.id ?? null, label: "Main line", phone: account.phone }] : []),
-    ...account.contacts.filter((c) => c.phone && c.phone !== account.phone).map((c) => ({ key: c.id, accountId: account.id, accountName: account.name, contactId: c.id, label: `${contactName(c)}${c.title ? ` (${c.title})` : ""}`, phone: c.phone! })),
-  ];
+  const dialTargets: DialTarget[] = [{
+    key: account.id,
+    accountId: account.id,
+    accountName: account.name,
+    numbers: [
+      ...(account.phone ? [{ contactId: account.contacts.find((c) => c.isPrimary)?.id ?? null, label: "Main line", phone: account.phone }] : []),
+      ...account.contacts.filter((c) => c.phone && c.phone !== account.phone).map((c) => ({ contactId: c.id, label: `${contactName(c)}${c.title ? ` (${c.title})` : ""}`, phone: c.phone! })),
+    ],
+  }].filter((t) => t.numbers.length);
   const count = (type: string, direction?: "INBOUND" | "OUTBOUND") =>
     typeCounts.filter((t) => t.type === type && (!direction || t.direction === direction)).reduce((n, t) => n + t._count, 0);
   const receptionistCalls = callStats.reduce((n, c) => n + c._count, 0);
