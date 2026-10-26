@@ -124,6 +124,10 @@ model Activity {
   repliedAt   DateTime?
   dueAt       DateTime? // tasks
   completedAt DateTime?
+  // Dialer calls
+  outcome      String? // connected | booked | voicemail | no_answer | call_back | not_interested | wrong_number
+  durationSec  Int?
+  recordingSid String?
   occurredAt  DateTime  @default(now())
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id])

@@ -56,6 +56,19 @@ export async function structured<T extends z.ZodType>(model: string, schema: T, 
   return { data: parsed.data, ...usage(model, res) };
 }
 
+/** Structured output from an audio file (e.g. a call recording) plus instructions. */
+export async function structuredAudio<T extends z.ZodType>(model: string, schema: T, instructions: string, audio: { data: Buffer; mimeType: string }): Promise<Usage & { data: z.infer<T> }> {
+  const { $schema: _ignored, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
+  const res = await gemini().models.generateContent({
+    model,
+    contents: [{ role: "user", parts: [{ inlineData: { mimeType: audio.mimeType, data: audio.data.toString("base64") } }, { text: instructions }] }],
+    config: { responseMimeType: "application/json", responseJsonSchema: jsonSchema },
+  });
+  const parsed = schema.safeParse(JSON.parse(textOrThrow(res)));
+  if (!parsed.success) throw new Error(`Gemini returned output that did not match the expected format: ${parsed.error.message.slice(0, 300)}`);
+  return { data: parsed.data, ...usage(model, res) };
+}
+
 export async function chat(model: string, system: string, context: string, history: ChatTurn[]): Promise<Usage & { text: string }> {
   const res = await gemini().models.generateContent({
     model,

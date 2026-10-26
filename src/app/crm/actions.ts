@@ -214,6 +214,89 @@ export async function logActivity(accountId: string, form: FormData) {
   back(`/crm/accounts/${accountId}`);
 }
 
+export async function setupDialerAction() {
+  await requireAdmin();
+  try {
+    const { setupDialer } = await import("@/lib/dialer");
+    await setupDialer();
+  } catch (err) {
+    unstable_rethrow(err);
+    back("/crm/settings", { error: `Dialer setup failed: ${errMsg(err)}` });
+  }
+  back("/crm/settings", { notice: "Dialer is set up. Open Dialer in the menu to start calling." });
+}
+
+const CALL_OUTCOMES: Record<string, string> = {
+  connected: "Connected",
+  booked: "Booked a meeting",
+  call_back: "Asked to call back",
+  voicemail: "Left voicemail",
+  no_answer: "No answer",
+  not_interested: "Not interested",
+  wrong_number: "Wrong number",
+};
+
+const NEXT_STEPS: Record<string, string> = {
+  call: "Call again",
+  email: "Send follow-up email",
+  demo: "Send demo line + extension",
+  prep: "Prepare demo receptionist for the meeting",
+};
+
+/**
+ * Dialer wrap-up: log the outcome and note on the call, queue next-step tasks, and move the
+ * account (booked → meeting/Demo stage, not interested → Lost when ticked, wrong number → review).
+ * Returns a plain result so the dialer can move on to the next prospect without a page reload.
+ */
+export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAdmin();
+  const accountId = str(form, "accountId");
+  const callSid = str(form, "callSid");
+  const outcome = str(form, "outcome");
+  if (!accountId || !CALL_OUTCOMES[outcome]) return { ok: false, error: "Pick an outcome" };
+  const { ensureCallActivity } = await import("@/lib/dialer");
+  const contactId = optStr(form, "contactId");
+  const note = str(form, "note").trim();
+
+  const call = callSid
+    ? await ensureCallActivity({ callSid, accountId, contactId, userId: session.sub })
+    : await recordActivity({ accountId, contactId, type: "CALL", direction: "OUTBOUND", subject: "Call", source: "dialer", createdById: session.sub });
+  if (call) {
+    const fresh = await db.activity.findUniqueOrThrow({ where: { id: call.id } });
+    await db.activity.update({
+      where: { id: call.id },
+      data: { outcome, subject: `Call — ${CALL_OUTCOMES[outcome]}`, body: note ? [note, fresh.body].filter(Boolean).join("\n\n") : fresh.body },
+    });
+  }
+
+  // Next steps -> tasks; the earliest becomes the account's next follow-up.
+  const dues: Date[] = [];
+  for (const key of form.getAll("next").map(String)) {
+    if (!NEXT_STEPS[key]) continue;
+    const days = Math.min(60, Math.max(0, Number(str(form, `days_${key}`) || (key === "call" ? 2 : 1))));
+    const due = addDays(new Date(), days);
+    dues.push(due);
+    await recordActivity({ accountId, contactId, type: "TASK", subject: NEXT_STEPS[key], body: note || null, dueAt: due, source: "dialer", createdById: session.sub });
+  }
+  const custom = str(form, "customTask").trim();
+  if (custom) {
+    const due = optStr(form, "customDue") ? new Date(str(form, "customDue")) : addDays(new Date(), 1);
+    dues.push(due);
+    await recordActivity({ accountId, contactId, type: "TASK", subject: custom, dueAt: due, source: "dialer", createdById: session.sub });
+  }
+  if (dues.length) await db.account.update({ where: { id: accountId }, data: { nextFollowUpAt: new Date(Math.min(...dues.map((d) => d.getTime()))) } });
+
+  if (outcome === "booked") {
+    await recordActivity({ accountId, contactId, type: "MEETING", direction: "OUTBOUND", subject: "Meeting booked by phone", body: note || null, source: "dialer", createdById: session.sub });
+  }
+  if (outcome === "not_interested" && form.get("markLost") === "on") await changeStage(accountId, "LOST", session.sub);
+  if (outcome === "wrong_number") {
+    await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: "Dialer: the number called was wrong. Update the phone number." } });
+  }
+  revalidatePath(`/crm/accounts/${accountId}`);
+  return { ok: true };
+}
+
 /** Quick note on an account, any time (shows in Notes and the timeline). */
 export async function addNote(accountId: string, form: FormData) {
   const session = await requireAdmin();

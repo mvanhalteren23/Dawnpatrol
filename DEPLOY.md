@@ -67,6 +67,10 @@ The demo number is a directory: callers enter an extension and reach the demo re
 
 On a receptionist, **Business line → Get business line** buys a local number in the area code you enter (or attaches one already on your Twilio account) and points its voice and SMS webhooks at `${APP_URL}/api/voice/business` and `/api/sms/business`. Nothing to configure in Twilio or ElevenLabs by hand. Leave these numbers **unassigned** in ElevenLabs, like the demo line. The Twilio account must be upgraded (trial accounts can't buy numbers or call unverified cells).
 
+## 5d. Dialer
+
+CRM → Settings → Dialer → **Set up dialer** creates a TwiML App (Voice URL `${APP_URL}/api/voice/outbound`) and an API key on your Twilio account; nothing to do in the Twilio Console. Caller ID is `DIALER_CALLER_ID`, else `TWILIO_DEMO_NUMBER`. The Twilio account must be upgraded, and voice geo permissions must allow Canada/US (the default). Calls are recorded; with `GEMINI_API_KEY` set they're transcribed and summarised automatically.
+
 ## 6. Connect Google (Drive folders, Gmail tracking, Calendar booking)
 
 1. In console.cloud.google.com, create a project. Enable the **Google Drive API**, **Gmail API** and **Google Calendar API**.

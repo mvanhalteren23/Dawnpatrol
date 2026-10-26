@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { aiConfigured } from "@/lib/ai";
 import { AiModels } from "./AiModels";
+import { dialerStatus } from "@/lib/dialer";
+import { setupDialerAction } from "../actions";
+import { formatPhone } from "@/lib/demo-line";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { googleConfigured, googleConnection } from "@/lib/google";
 import { stripeConfigured } from "@/lib/billing";
@@ -20,6 +23,7 @@ function Status({ ok, label }: { ok: boolean; label?: string }) {
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
   const company = await companyName();
+  const dialer = await dialerStatus();
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
     googleConnection(),
     getSetting("gmail.lastSyncAt"),
@@ -46,6 +50,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </div>
 
       <AiModels />
+
+      <div className="card space-y-2">
+        <h2>Dialer</h2>
+        <p className="text-xs text-slate-500">Call prospects from the browser (headset or earbuds) on the account page and the Dialer page. Calls show caller ID {dialer.callerId ? <b>{formatPhone(dialer.callerId)}</b> : "(set TWILIO_DEMO_NUMBER)"}, are recorded, and{dialer.notes ? " Gemini adds a transcript, summary and next step to the account." : " (add GEMINI_API_KEY for automatic call summaries)."} Twilio bills about US$0.02 per minute plus recording.</p>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <Badge className={dialer.ready ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{dialer.ready ? "ready" : dialer.twilio ? "not set up" : "needs Twilio keys"}</Badge>
+          {dialer.twilio ? <form action={setupDialerAction}><button className="btn-secondary">{dialer.ready ? "Re-run setup" : "Set up dialer"}</button></form> : null}
+        </div>
+        <p className="text-xs text-slate-500">Setup creates a &ldquo;CRM dialer&rdquo; TwiML App and API key on your Twilio account. The Twilio account must be upgraded (trial accounts can only call verified numbers).</p>
+      </div>
 
       <div className="card">
         <h2 className="mb-3">Your password</h2>

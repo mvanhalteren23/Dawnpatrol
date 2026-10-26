@@ -8,6 +8,8 @@ import { Badge, Empty, Field, PageHeader, StageBadge, StatusBadge, Notice } from
 import { Flash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { Dialer, type DialTarget } from "@/components/Dialer";
+import { dialerStatus } from "@/lib/dialer";
 import {
   addContact,
   checkoutLink,
@@ -68,7 +70,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   if (!account) notFound();
 
   const editing = sp.edit === "1";
-  const [prompts, plans, google, draftRun, typeCounts, emailStats, openTasks, callStats] = await Promise.all([
+  const [prompts, plans, google, draftRun, typeCounts, emailStats, openTasks, callStats, dialer] = await Promise.all([
     db.savedPrompt.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     googleConnection(),
@@ -77,7 +79,12 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
     db.activity.aggregate({ where: { accountId: id, type: "EMAIL", direction: "OUTBOUND" }, _count: true, _sum: { openCount: true, clickCount: true } }),
     db.activity.count({ where: { accountId: id, type: "TASK", completedAt: null } }),
     db.callLog.groupBy({ by: ["outcome"], where: { receptionist: { accountId: id } }, _count: true }),
+    dialerStatus(),
   ]);
+  const dialTargets: DialTarget[] = [
+    ...(account.phone ? [{ key: "main", accountId: account.id, accountName: account.name, contactId: account.contacts.find((c) => c.isPrimary)?.id ?? null, label: "Main line", phone: account.phone }] : []),
+    ...account.contacts.filter((c) => c.phone && c.phone !== account.phone).map((c) => ({ key: c.id, accountId: account.id, accountName: account.name, contactId: c.id, label: `${contactName(c)}${c.title ? ` (${c.title})` : ""}`, phone: c.phone! })),
+  ];
   const count = (type: string, direction?: "INBOUND" | "OUTBOUND") =>
     typeCounts.filter((t) => t.type === type && (!direction || t.direction === direction)).reduce((n, t) => n + t._count, 0);
   const receptionistCalls = callStats.reduce((n, c) => n + c._count, 0);
@@ -307,6 +314,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
 
         {/* RIGHT: research, outreach, timeline */}
         <div className="space-y-6 lg:col-span-3">
+          {dialer.ready && dialTargets.length ? <Dialer targets={dialTargets} title="Call" /> : null}
           <div className="card">
             <h2 className="mb-3">Claude research</h2>
             <form action={runResearch.bind(null, account.id)} className="space-y-2">
@@ -394,7 +402,8 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                       {a.type === "EMAIL" && a.direction === "OUTBOUND" ? <span className="text-xs text-slate-500">👁 {a.openCount} · 🔗 {a.clickCount}{a.repliedAt ? " · ↩ replied" : ""}</span> : null}
                       {a.type === "TASK" ? (a.completedAt ? <Badge className="bg-emerald-100 text-emerald-800">done</Badge> : <span className="text-xs text-amber-700">due {formatDate(a.dueAt)}</span>) : null}
                     </div>
-                    {a.subject ? <div className="font-medium">{a.subject}</div> : null}
+                    {a.subject ? <div className="font-medium">{a.subject}{a.durationSec ? <span className="ml-1 text-xs font-normal text-slate-500">({Math.floor(a.durationSec / 60)}:{String(a.durationSec % 60).padStart(2, "0")})</span> : null}</div> : null}
+                    {a.recordingSid ? <audio controls preload="none" src={`/api/dialer/recording/${a.id}`} className="my-1 h-8 w-full max-w-sm" /> : null}
                     {a.body ? <div className="whitespace-pre-wrap text-xs text-slate-600">{a.body.slice(0, 600)}</div> : null}
                   </li>
                 ))}

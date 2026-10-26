@@ -11,6 +11,7 @@ export const TASKS = {
   outreach: { label: "Outreach emails", web: false, help: "Draft personalised first-touch emails." },
   caller_summary: { label: "Caller summaries", web: false, help: "Texts and emails sent to callers after a call." },
   test_chat: { label: "Receptionist test chat", web: false, help: "The chat on receptionist pages (the live phone agents use the model set in ElevenLabs)." },
+  call_notes: { label: "Dialer call notes", web: false, help: "Listens to dialer call recordings and writes a summary and next step. Needs Gemini (Claude can't take audio)." },
 } as const;
 export type Task = keyof typeof TASKS;
 export const TASK_KEYS = Object.keys(TASKS) as Task[];

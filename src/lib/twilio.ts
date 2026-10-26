@@ -63,7 +63,7 @@ export function forwardSms(to: string, from: string, body: string): string {
   return twiml(`<Message to="${escapeXml(to)}">${escapeXml(`Text from ${from}: ${body}`)}</Message>`);
 }
 
-async function twilioApi<T>(path: string, init: { method?: string; form?: Record<string, string> } = {}): Promise<T> {
+export async function twilioApi<T>(path: string, init: { method?: string; form?: Record<string, string> } = {}): Promise<T> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   if (!sid || !token) throw new Error("TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are not configured");
@@ -126,6 +126,48 @@ export function ringFromForm(form: FormData) {
     ringSeconds: Number.isFinite(seconds) ? Math.min(40, Math.max(10, Math.round(seconds))) : 20,
     ringMode: ["always", "hours", "never"].includes(mode) ? mode : "hours",
   };
+}
+
+function b64url(input: string | Buffer): string {
+  return Buffer.from(input).toString("base64url");
+}
+
+/** Twilio Access Token (JWT) with a Voice grant for outbound browser calls through a TwiML App. */
+export function voiceAccessToken(o: { accountSid: string; apiKeySid: string; apiKeySecret: string; appSid: string; identity: string; ttlSec?: number; now?: number }): string {
+  const iat = Math.floor((o.now ?? Date.now()) / 1000);
+  const header = { alg: "HS256", typ: "JWT", cty: "twilio-fpa;v=1" };
+  const payload = {
+    jti: `${o.apiKeySid}-${iat}`,
+    iss: o.apiKeySid,
+    sub: o.accountSid,
+    iat,
+    exp: iat + (o.ttlSec ?? 3600),
+    grants: { identity: o.identity, voice: { incoming: { allow: false }, outgoing: { application_sid: o.appSid } } },
+  };
+  const unsigned = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
+  return `${unsigned}.${createHmac("sha256", o.apiKeySecret).update(unsigned).digest("base64url")}`;
+}
+
+/**
+ * Only North American numbers can be dialled from the CRM, and never premium-rate or
+ * pay-per-call codes (toll-fraud guard). Returns E.164 or null.
+ */
+export function dialableNumber(input: string): string | null {
+  const e164 = toE164(input);
+  if (!/^\+1[2-9]\d{2}[2-9]\d{6}$/.test(e164)) return null;
+  const area = e164.slice(2, 5);
+  if (["900", "976"].includes(area) || e164.slice(5, 8) === "976") return null;
+  return e164;
+}
+
+/** Outbound dialer call: bridge the browser to `to`, recorded from answer, with status/recording callbacks. */
+export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null }): string {
+  const rec = o.recordingCallback
+    ? ` record="record-from-answer-dual" recordingStatusCallback="${escapeXml(o.recordingCallback)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
+    : "";
+  return twiml(
+    `<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number>${escapeXml(o.to)}</Number></Dial>`,
+  );
 }
 
 /** Digits only, "#"/"*" stripped. */

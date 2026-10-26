@@ -104,3 +104,34 @@ describe("business line TwiML", () => {
     expect(forwardSms("+1604", "+1778", "Hi <there>")).toContain("Text from +1778: Hi &lt;there&gt;");
   });
 });
+
+describe("dialer helpers", () => {
+  it("signs a Twilio voice access token", async () => {
+    const { voiceAccessToken } = await import("@/lib/twilio");
+    const { createHmac } = await import("node:crypto");
+    const t = voiceAccessToken({ accountSid: "ACx", apiKeySid: "SKx", apiKeySecret: "secret", appSid: "APx", identity: "user1", ttlSec: 600, now: 1_700_000_000_000 });
+    const [h, p, sig] = t.split(".");
+    expect(JSON.parse(Buffer.from(h!, "base64url").toString())).toEqual({ alg: "HS256", typ: "JWT", cty: "twilio-fpa;v=1" });
+    const payload = JSON.parse(Buffer.from(p!, "base64url").toString());
+    expect(payload).toMatchObject({ iss: "SKx", sub: "ACx", iat: 1_700_000_000, exp: 1_700_000_600, grants: { identity: "user1", voice: { outgoing: { application_sid: "APx" } } } });
+    expect(sig).toBe(createHmac("sha256", "secret").update(`${h}.${p}`).digest("base64url"));
+  });
+
+  it("only dials North American non-premium numbers", async () => {
+    const { dialableNumber } = await import("@/lib/twilio");
+    expect(dialableNumber("(604) 988-2239")).toBe("+16049882239");
+    expect(dialableNumber("1-800-555-0199")).toBe("+18005550199");
+    expect(dialableNumber("+1 900 555 0100")).toBeNull();
+    expect(dialableNumber("+44 20 7946 0958")).toBeNull();
+    expect(dialableNumber("123")).toBeNull();
+  });
+
+  it("builds recorded outbound TwiML", async () => {
+    const { dialOut } = await import("@/lib/twilio");
+    const x = dialOut({ to: "+16049882239", callerId: "+17786504870", action: "https://a.test/s?a=1&c=2", recordingCallback: "https://a.test/r?a=1" });
+    expect(x).toContain('callerId="+17786504870"');
+    expect(x).toContain('record="record-from-answer-dual"');
+    expect(x).toContain('action="https://a.test/s?a=1&amp;c=2"');
+    expect(x).toContain("<Number>+16049882239</Number>");
+  });
+});

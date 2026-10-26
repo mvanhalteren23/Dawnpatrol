@@ -21,6 +21,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
           <NavLink href="/crm/accounts">Accounts</NavLink>
           <NavLink href="/crm/pipeline">Pipeline</NavLink>
           <NavLink href="/crm/outreach">Outreach</NavLink>
+          <NavLink href="/crm/dialer">Dialer</NavLink>
           <NavLink href="/crm/prospecting">Prospecting (Claude)</NavLink>
           <NavLink href="/crm/prompts">Saved prompts</NavLink>
           <NavLink href="/crm/receptionists">Receptionists & RAG</NavLink>
@@ -37,7 +38,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
       </aside>
       <div className="flex-1">
         <div className="flex items-center gap-3 overflow-x-auto bg-dawn-900 px-4 py-2 text-sm md:hidden">
-          {[["/crm", "Home"], ["/crm/accounts", "Accounts"], ["/crm/pipeline", "Pipeline"], ["/crm/outreach", "Outreach"], ["/crm/prospecting", "Prospect"], ["/crm/receptionists", "RAG"], ["/crm/demo-line", "Demo"], ["/crm/billing", "Billing"], ["/crm/settings", "Settings"]].map(([href, label]) => (
+          {[["/crm", "Home"], ["/crm/accounts", "Accounts"], ["/crm/pipeline", "Pipeline"], ["/crm/outreach", "Outreach"], ["/crm/dialer", "Dialer"], ["/crm/prospecting", "Prospect"], ["/crm/receptionists", "RAG"], ["/crm/demo-line", "Demo"], ["/crm/billing", "Billing"], ["/crm/settings", "Settings"]].map(([href, label]) => (
             <a key={href} href={href} className="whitespace-nowrap text-indigo-100">{label}</a>
           ))}
         </div>

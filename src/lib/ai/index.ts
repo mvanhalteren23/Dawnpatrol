@@ -169,3 +169,23 @@ export async function callerFollowUp(businessName: string, transcript: string, c
   );
   return ex.data;
 }
+
+// --- Dialer call notes (audio) --------------------------------------------------
+
+const CallNotesSchema = z.object({
+  summary: z.string().describe("2-4 sentences: who answered, what was discussed, how it ended"),
+  outcome: z.enum(["connected", "booked", "voicemail", "no_answer", "call_back", "not_interested", "wrong_number"]).describe("Best description of how the call went"),
+  nextStep: z.string().describe("One concrete suggested next step for the salesperson"),
+  transcript: z.string().describe("Speaker-labelled transcript (Rep: / Prospect:)"),
+});
+export type CallNotes = z.infer<typeof CallNotesSchema>;
+
+/** Transcribe and summarise a dialer call recording. Gemini only (Claude doesn't accept audio). */
+export async function summarizeCallRecording(audio: { data: Buffer; mimeType: string }, context: string): Promise<CallNotes> {
+  const company = await companyName();
+  const res = await runTask("call_notes", (t: Target) => {
+    if (t.provider !== "gemini") throw new Error("Dialer call notes need a Gemini model (Claude can't take audio)");
+    return gemini.structuredAudio(t.model, CallNotesSchema, `This is a recorded outbound sales call from ${company}, which sells AI receptionists to small businesses. ${context}\nThe rep is on one channel, the person called on the other. Transcribe it, then summarise only what was actually said. Don't invent details; if the call was a voicemail or nobody answered, say so.`, audio);
+  });
+  return res.data;
+}
