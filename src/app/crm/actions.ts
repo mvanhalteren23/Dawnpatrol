@@ -107,7 +107,7 @@ export async function updateAccount(accountId: string, form: FormData) {
       },
     });
   } catch (err) {
-    back(`/crm/accounts/${accountId}`, { error: `Could not save: ${errMsg(err)}` });
+    back(`/crm/accounts/${accountId}`, { error: `Could not save: ${errMsg(err)}`, edit: "1" });
   }
   const stage = str(form, "stage");
   if ((STAGES as readonly string[]).includes(stage)) await changeStage(accountId, stage as Stage, (await requireAdmin()).sub);
@@ -212,6 +212,15 @@ export async function logActivity(accountId: string, form: FormData) {
     createdById: session.sub,
   });
   back(`/crm/accounts/${accountId}`);
+}
+
+/** Quick note on an account, any time (shows in Notes and the timeline). */
+export async function addNote(accountId: string, form: FormData) {
+  const session = await requireAdmin();
+  const body = str(form, "body").trim();
+  if (!body) back(`/crm/accounts/${accountId}`, { error: "Write a note first" });
+  await recordActivity({ accountId, type: "NOTE", body, source: "manual", createdById: session.sub, contactId: optStr(form, "contactId") });
+  back(`/crm/accounts/${accountId}`, { notice: "Note added" });
 }
 
 export async function completeTask(activityId: string, redirectTo: string) {

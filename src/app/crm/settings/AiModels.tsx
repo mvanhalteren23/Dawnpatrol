@@ -5,6 +5,7 @@ import { CLAUDE_PRICES, PROVIDERS, TASK_KEYS, TASKS, estimateCost } from "@/lib/
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ModelPicker } from "@/components/ModelPicker";
 import { getSetting } from "@/lib/settings";
 import { AUTO_RESEARCH_BATCH_LIMIT, AUTO_RESEARCH_KEY } from "@/lib/jobs";
 import { resetAiRoutes, saveAiRoutes, saveAutoResearch } from "../actions";
@@ -26,6 +27,10 @@ export async function AiModels() {
     getSetting(AUTO_RESEARCH_KEY),
   ]);
   const claudeModels = Object.keys(CLAUDE_PRICES);
+  const providerOptions = PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABEL[p] }));
+  // Gemini: the models this key can call (newest aliases first), else the known aliases.
+  const geminiList = gModels.length ? [...gModels.filter((m) => m.endsWith("-latest")), ...gModels.filter((m) => !m.endsWith("-latest"))] : [DEFAULT_MODELS.gemini, "gemini-pro-latest"];
+  const modelLists: Record<string, string[]> = { anthropic: claudeModels, gemini: geminiList };
   const totalCost = usage.reduce((n, u) => n + (estimateCost(u.provider, u.model, u._sum.tokensIn ?? 0, u._sum.tokensOut ?? 0) ?? 0), 0);
 
   return (
@@ -45,7 +50,6 @@ export async function AiModels() {
         </div>
       </div>
 
-      <datalist id="ai-models">{[...claudeModels, ...(gModels.length ? gModels : [DEFAULT_MODELS.gemini, "gemini-pro-latest"])].map((m) => <option key={m} value={m} />)}</datalist>
 
       <form action={saveAutoResearch} className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" name="autoResearch" defaultChecked={autoResearch !== "off"} /> Research every new account automatically</label>
@@ -62,20 +66,13 @@ export async function AiModels() {
                 <div className="font-medium">{TASKS[t].label}</div>
                 <div className="text-xs text-slate-500">{TASKS[t].help}</div>
               </div>
-              <div className="space-y-1">
+              <div>
                 <div className="label">Use</div>
-                <select name={`${t}_provider`} defaultValue={r.provider} className="input">
-                  {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
-                </select>
-                <input name={`${t}_model`} defaultValue={r.model} list="ai-models" className="input font-mono text-xs" />
+                <ModelPicker name={t} providers={providerOptions} models={modelLists} defaultProvider={r.provider} defaultModel={r.model} />
               </div>
-              <div className="space-y-1">
+              <div>
                 <div className="label">Fallback</div>
-                <select name={`${t}_fb_provider`} defaultValue={r.fallback?.provider ?? ""} className="input">
-                  <option value="">None</option>
-                  {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
-                </select>
-                <input name={`${t}_fb_model`} defaultValue={r.fallback?.model ?? ""} list="ai-models" placeholder="model" className="input font-mono text-xs" />
+                <ModelPicker name={`${t}_fb`} providers={providerOptions} models={modelLists} defaultProvider={r.fallback?.provider ?? ""} defaultModel={r.fallback?.model ?? ""} allowNone />
               </div>
             </div>
           );
@@ -84,7 +81,7 @@ export async function AiModels() {
           <SubmitButton pendingText="Saving…">Save AI models</SubmitButton>
           <SubmitButton formAction={resetAiRoutes} className="btn-secondary" pendingText="Resetting…">Reset to defaults</SubmitButton>
         </div>
-        <p className="text-xs text-slate-500">Model names: Claude e.g. <code>claude-sonnet-5-5</code>, <code>claude-haiku-5-5</code>; Gemini e.g. <code>gemini-flash-latest</code>, <code>gemini-pro-latest</code>{gModels.length ? " (the list shows every Gemini model your key can use)" : ""}.</p>
+        <p className="text-xs text-slate-500">The model list follows the provider. {gModels.length ? "Gemini shows every model your key can use; " : ""}<code>-latest</code> models always point to Google&apos;s newest version. Pick &ldquo;Other…&rdquo; to type any model id.</p>
       </form>
 
       <div>

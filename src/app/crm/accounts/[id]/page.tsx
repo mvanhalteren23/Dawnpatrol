@@ -24,11 +24,30 @@ import {
   sendEmail,
   updateAccount,
   markReviewed,
+  addNote,
 } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
-type Search = { notice?: string; error?: string; draft?: string; checkout?: string };
+type Search = { notice?: string; error?: string; draft?: string; checkout?: string; edit?: string; tl?: string };
+
+const TIMELINE_FILTERS: { key: string; label: string; types: string[] }[] = [
+  { key: "", label: "All", types: [] },
+  { key: "email", label: "Emails", types: ["EMAIL"] },
+  { key: "call", label: "Calls & SMS", types: ["CALL", "SMS"] },
+  { key: "meeting", label: "Meetings", types: ["MEETING"] },
+  { key: "note", label: "Notes & tasks", types: ["NOTE", "TASK"] },
+  { key: "system", label: "Research & changes", types: ["RESEARCH", "STAGE_CHANGE", "BILLING", "LINKEDIN"] },
+];
+
+function Detail({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "col-span-2" : undefined}>
+      <div className="label">{label}</div>
+      <div className="text-sm text-slate-800">{children || <span className="text-slate-400">—</span>}</div>
+    </div>
+  );
+}
 
 export default async function AccountPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Search> }) {
   const { id } = await params;
@@ -48,12 +67,23 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   });
   if (!account) notFound();
 
-  const [prompts, plans, google, draftRun] = await Promise.all([
+  const editing = sp.edit === "1";
+  const [prompts, plans, google, draftRun, typeCounts, emailStats, openTasks, callStats] = await Promise.all([
     db.savedPrompt.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     googleConnection(),
     sp.draft ? db.researchRun.findUnique({ where: { id: sp.draft } }) : null,
+    db.activity.groupBy({ by: ["type", "direction"], where: { accountId: id }, _count: true }),
+    db.activity.aggregate({ where: { accountId: id, type: "EMAIL", direction: "OUTBOUND" }, _count: true, _sum: { openCount: true, clickCount: true } }),
+    db.activity.count({ where: { accountId: id, type: "TASK", completedAt: null } }),
+    db.callLog.groupBy({ by: ["outcome"], where: { receptionist: { accountId: id } }, _count: true }),
   ]);
+  const count = (type: string, direction?: "INBOUND" | "OUTBOUND") =>
+    typeCounts.filter((t) => t.type === type && (!direction || t.direction === direction)).reduce((n, t) => n + t._count, 0);
+  const receptionistCalls = callStats.reduce((n, c) => n + c._count, 0);
+  const filter = TIMELINE_FILTERS.find((f) => f.key === (sp.tl ?? "")) ?? TIMELINE_FILTERS[0]!;
+  const timeline = filter.types.length ? account.activities.filter((a) => filter.types.includes(a.type)) : account.activities;
+  const notes = account.activities.filter((a) => a.type === "NOTE");
   const draft = safeJson<{ subject?: string; body?: string }>(draftRun?.resultJson, {});
   const researchPrompts = prompts.filter((p) => p.kind === "RESEARCH");
   const outreachPrompts = prompts.filter((p) => p.kind === "OUTREACH");
@@ -70,6 +100,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
         title={account.name}
         subtitle={<span className="flex flex-wrap items-center gap-2"><StageBadge stage={account.stage} />{account.website ? <a href={account.website} target="_blank" rel="noreferrer">{account.domain ?? account.website}</a> : null}{account.phone ? <span>· {account.phone}</span> : null}{account.fitScore != null ? <Badge className="bg-dawn-100 text-dawn-700">Fit {account.fitScore}</Badge> : null}<span className="text-xs text-slate-400">source: {account.source}</span></span>}
         actions={<>
+          {editing ? <Link href={`/crm/accounts/${account.id}`} className="btn-secondary">Cancel editing</Link> : <Link href={`/crm/accounts/${account.id}?edit=1`} className="btn">✏️ Edit details</Link>}
           {account.driveFolderUrl ? <a href={account.driveFolderUrl} target="_blank" rel="noreferrer" className="btn-secondary">📁 Drive folder</a> : null}
           <form action={createDriveFolders.bind(null, account.id)}><SubmitButton className="btn-secondary" pendingText="Creating…">{account.driveFolderUrl ? "Sync Drive folders" : "Create Drive folders"}</SubmitButton></form>
           {isClient ? <Link href={`/portal?account=${account.id}`} className="btn-secondary">View portal</Link> : null}
@@ -87,34 +118,102 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       {sp.checkout ? <Notice kind="success">Checkout link: <a href={sp.checkout} target="_blank" rel="noreferrer" className="break-all">{sp.checkout}</a></Notice> : null}
       {!google.connected ? <Notice>Google isn&apos;t connected — Drive folders and Gmail sending are disabled. <Link href="/crm/settings">Connect in Settings</Link>.</Notice> : null}
 
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        {[
+          { label: "Last touch", value: account.lastContactedAt ? formatDate(account.lastContactedAt) : "Never" },
+          { label: "Next follow-up", value: account.nextFollowUpAt ? formatDate(account.nextFollowUpAt) : "—" },
+          { label: "Emails sent", value: emailStats._count, sub: `${emailStats._sum.openCount ?? 0} opens · ${replyRate ?? 0}% replied` },
+          { label: "Calls", value: count("CALL"), sub: `${count("CALL", "OUTBOUND")} out · ${count("CALL", "INBOUND")} in` },
+          { label: "Texts", value: count("SMS") },
+          { label: "Meetings", value: count("MEETING") },
+          { label: "Notes", value: count("NOTE"), sub: openTasks ? `${openTasks} open task${openTasks === 1 ? "" : "s"}` : undefined },
+          { label: "Receptionist calls", value: receptionistCalls, sub: callStats.find((c) => c.outcome === "BOOKED") ? `${callStats.find((c) => c.outcome === "BOOKED")!._count} booked` : undefined },
+        ].map((t) => (
+          <div key={t.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{t.label}</div>
+            <div className="text-lg font-semibold">{t.value}</div>
+            {t.sub ? <div className="text-[11px] text-slate-500">{t.sub}</div> : null}
+          </div>
+        ))}
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-5">
         {/* LEFT: details, contacts, billing, receptionist */}
         <div className="space-y-6 lg:col-span-2">
+          {editing ? (
           <form action={updateAccount.bind(null, account.id)} className="card grid grid-cols-2 gap-3">
-            <h2 className="col-span-2">Details</h2>
-            <Field label="Name" className="col-span-2"><input name="name" defaultValue={account.name} className="input" required /></Field>
-            <Field label="Stage">
-              <select name="stage" defaultValue={account.stage} className="input">{STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}</select>
-            </Field>
-            <Field label="Fit score"><input name="fitScore" type="number" min={0} max={100} defaultValue={account.fitScore ?? ""} className="input" /></Field>
-            <Field label="Website"><input name="website" defaultValue={account.website ?? ""} className="input" /></Field>
-            <Field label="Phone"><input name="phone" defaultValue={account.phone ?? ""} className="input" /></Field>
-            <Field label="Industry"><input name="industry" defaultValue={account.industry ?? ""} className="input" /></Field>
-            <Field label="Employees"><input name="employees" type="number" defaultValue={account.employees ?? ""} className="input" /></Field>
-            <Field label="City"><input name="city" defaultValue={account.city ?? ""} className="input" /></Field>
-            <Field label="State"><input name="state" defaultValue={account.state ?? ""} className="input" /></Field>
-            <Field label="Missed calls / week (est.)"><input name="estMissedCallsPerWeek" type="number" defaultValue={account.estMissedCallsPerWeek ?? ""} className="input" /></Field>
-            <Field label="Avg job value ($)"><input name="avgJobValue" defaultValue={account.avgJobValueCents != null ? account.avgJobValueCents / 100 : ""} className="input" /></Field>
-            <Field label="Next follow-up"><input name="nextFollowUpAt" type="date" defaultValue={account.nextFollowUpAt?.toISOString().slice(0, 10) ?? ""} className="input" /></Field>
-            <Field label="Tags"><input name="tags" defaultValue={account.tags} className="input" /></Field>
-            <Field label="Notes" className="col-span-2"><textarea name="notes" rows={3} defaultValue={account.notes} className="input" /></Field>
-            {account.estMissedCallsPerWeek && account.avgJobValueCents ? (
-              <div className="col-span-2 rounded-lg bg-dawn-50 p-3 text-sm text-dawn-700">
-                Revenue at risk: ~{formatMoney(account.estMissedCallsPerWeek * account.avgJobValueCents * 4.3 * 0.3)} / month <span className="text-xs">(missed calls × job value × 30% close rate)</span>
+              <h2 className="col-span-2">Edit details</h2>
+              <Field label="Name" className="col-span-2"><input name="name" defaultValue={account.name} className="input" required /></Field>
+              <Field label="Stage">
+                <select name="stage" defaultValue={account.stage} className="input">{STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}</select>
+              </Field>
+              <Field label="Fit score"><input name="fitScore" type="number" min={0} max={100} defaultValue={account.fitScore ?? ""} className="input" /></Field>
+              <Field label="Website"><input name="website" defaultValue={account.website ?? ""} className="input" /></Field>
+              <Field label="Phone"><input name="phone" defaultValue={account.phone ?? ""} className="input" /></Field>
+              <Field label="Industry"><input name="industry" defaultValue={account.industry ?? ""} className="input" /></Field>
+              <Field label="Employees"><input name="employees" type="number" defaultValue={account.employees ?? ""} className="input" /></Field>
+              <Field label="City"><input name="city" defaultValue={account.city ?? ""} className="input" /></Field>
+              <Field label="State"><input name="state" defaultValue={account.state ?? ""} className="input" /></Field>
+              <Field label="Missed calls / week (est.)"><input name="estMissedCallsPerWeek" type="number" defaultValue={account.estMissedCallsPerWeek ?? ""} className="input" /></Field>
+              <Field label="Avg job value ($)"><input name="avgJobValue" defaultValue={account.avgJobValueCents != null ? account.avgJobValueCents / 100 : ""} className="input" /></Field>
+              <Field label="Next follow-up"><input name="nextFollowUpAt" type="date" defaultValue={account.nextFollowUpAt?.toISOString().slice(0, 10) ?? ""} className="input" /></Field>
+              <Field label="Tags"><input name="tags" defaultValue={account.tags} className="input" /></Field>
+              <Field label="Notes" className="col-span-2"><textarea name="notes" rows={3} defaultValue={account.notes} className="input" /></Field>
+              {account.estMissedCallsPerWeek && account.avgJobValueCents ? (
+                <div className="col-span-2 rounded-lg bg-dawn-50 p-3 text-sm text-dawn-700">
+                  Revenue at risk: ~{formatMoney(account.estMissedCallsPerWeek * account.avgJobValueCents * 4.3 * 0.3)} / month <span className="text-xs">(missed calls × job value × 30% close rate)</span>
+                </div>
+              ) : null}
+              <div className="col-span-2 flex gap-2"><SubmitButton pendingText="Saving…">Save</SubmitButton><Link href={`/crm/accounts/${account.id}`} className="btn-secondary">Cancel</Link></div>
+            </form>
+          ) : (
+            <div className="card grid grid-cols-2 gap-3">
+              <div className="col-span-2 flex items-center justify-between">
+                <h2>Details</h2>
+                <Link href={`/crm/accounts/${account.id}?edit=1`} className="text-xs">Edit</Link>
               </div>
-            ) : null}
-            <div className="col-span-2"><SubmitButton pendingText="Saving…">Save</SubmitButton></div>
-          </form>
+              <Detail label="Stage">{STAGE_LABELS[account.stage as keyof typeof STAGE_LABELS] ?? account.stage}</Detail>
+              <Detail label="Fit score">{account.fitScore ?? ""}</Detail>
+              <Detail label="Website">{account.website ? <a href={account.website} target="_blank" rel="noreferrer" className="break-all">{account.domain ?? account.website}</a> : ""}</Detail>
+              <Detail label="Phone">{account.phone ? <a href={`tel:${account.phone}`}>{account.phone}</a> : ""}</Detail>
+              <Detail label="Industry">{account.industry ?? ""}</Detail>
+              <Detail label="Employees">{account.employees ?? ""}</Detail>
+              <Detail label="City">{account.city ?? ""}</Detail>
+              <Detail label="State / province">{account.state ?? ""}</Detail>
+              <Detail label="Missed calls / week (est.)">{account.estMissedCallsPerWeek ?? ""}</Detail>
+              <Detail label="Avg job value">{account.avgJobValueCents != null ? formatMoney(account.avgJobValueCents) : ""}</Detail>
+              <Detail label="Next follow-up">{account.nextFollowUpAt ? formatDate(account.nextFollowUpAt) : ""}</Detail>
+              <Detail label="Tags">{account.tags}</Detail>
+              <Detail label="Background" wide>{account.notes ? <span className="whitespace-pre-wrap">{account.notes}</span> : ""}</Detail>
+              {account.estMissedCallsPerWeek && account.avgJobValueCents ? (
+                <div className="col-span-2 rounded-lg bg-dawn-50 p-3 text-sm text-dawn-700">
+                  Revenue at risk: ~{formatMoney(account.estMissedCallsPerWeek * account.avgJobValueCents * 4.3 * 0.3)} / month <span className="text-xs">(missed calls × job value × 30% close rate)</span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className="card">
+            <h2 className="mb-2">Notes</h2>
+            <form action={addNote.bind(null, account.id)} className="mb-3 space-y-2">
+              <textarea name="body" rows={2} placeholder="Add a note: call outcome, something to remember…" className="input" required />
+              <div className="flex gap-2">
+                {account.contacts.length ? <select name="contactId" className="input"><option value="">About the account</option>{account.contacts.map((c) => <option key={c.id} value={c.id}>About {contactName(c)}</option>)}</select> : null}
+                <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="Saving…">Add note</SubmitButton>
+              </div>
+            </form>
+            {notes.length ? (
+              <ul className="space-y-2 text-sm">
+                {notes.slice(0, 8).map((n) => (
+                  <li key={n.id} className="rounded-lg bg-amber-50 px-3 py-2">
+                    <div className="whitespace-pre-wrap">{n.body ?? n.subject}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{formatDate(n.occurredAt, true)}{n.contact ? ` · ${contactName(n.contact)}` : ""}</div>
+                  </li>
+                ))}
+                {notes.length > 8 ? <li className="text-xs"><Link href={`/crm/accounts/${account.id}?tl=note`}>All {notes.length} notes in the timeline</Link></li> : null}
+              </ul>
+            ) : <p className="text-xs text-slate-500">No notes yet.</p>}
+          </div>
 
           <div className="card">
             <h2 className="mb-3">Contacts</h2>
@@ -275,10 +374,17 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
           </div>
 
           <div className="card">
-            <h2 className="mb-3">Timeline</h2>
-            {account.activities.length ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2>Activity</h2>
+              <div className="flex flex-wrap gap-1 text-xs">
+                {TIMELINE_FILTERS.map((f) => (
+                  <Link key={f.key} href={`/crm/accounts/${account.id}${f.key ? `?tl=${f.key}` : ""}`} className={`rounded-full px-2 py-0.5 hover:no-underline ${filter.key === f.key ? "bg-dawn-600 text-white" : "bg-slate-100 text-slate-600"}`}>{f.label}</Link>
+                ))}
+              </div>
+            </div>
+            {timeline.length ? (
               <ol className="space-y-3">
-                {account.activities.map((a) => (
+                {timeline.map((a) => (
                   <li key={a.id} className="border-l-2 border-slate-200 pl-3 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge>{a.type.toLowerCase()}</Badge>
