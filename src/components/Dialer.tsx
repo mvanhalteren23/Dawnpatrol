@@ -124,8 +124,11 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
       c.on("disconnect", end);
       c.on("cancel", end);
       c.on("reject", end);
-      c.on("error", (e: { message?: string }) => {
-        setError(e.message ?? "Call failed");
+      c.on("error", (e: { message?: string; code?: number }) => {
+        // 31005 = Twilio ended the call because the outbound leg failed; the reason is logged on the account timeline.
+        setError(e.code === 31005 || e.message?.includes("31005")
+          ? "Twilio couldn't connect the call. The reason (Twilio's error code) is added to this call on the account's timeline within a few seconds."
+          : e.message ?? "Call failed");
         end();
       });
     } catch (e) {

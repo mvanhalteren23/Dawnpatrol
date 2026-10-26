@@ -5,7 +5,7 @@ import { getSetting, setSetting } from "./settings";
 import { recordActivity } from "./outreach";
 import { summarizeCallRecording } from "./ai";
 import { geminiConfigured } from "./ai/gemini";
-import { twilioApi, voiceAccessToken } from "./twilio";
+import { toE164, twilioApi, voiceAccessToken } from "./twilio";
 import { appBase } from "./twilio-request";
 
 // Browser dialer: the CRM issues a Twilio Voice access token to admins; the browser connects
@@ -16,7 +16,25 @@ import { appBase } from "./twilio-request";
 const KEYS = { apiKeySid: "dialer.apiKeySid", apiKeySecret: "dialer.apiKeySecret", appSid: "dialer.appSid" };
 
 export function dialerCallerId(): string | null {
-  return process.env.DIALER_CALLER_ID || process.env.TWILIO_DEMO_NUMBER || null;
+  const raw = process.env.DIALER_CALLER_ID || process.env.TWILIO_DEMO_NUMBER;
+  return raw ? toE164(raw) : null; // tolerate "+1 778-650-4870"-style values
+}
+
+/** Twilio's reason for a failed call (Monitor alerts for the call), e.g. "13227: No international permission". */
+async function twilioFailureReason(callSids: string[]): Promise<string | null> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return null;
+  const since = new Date(Date.now() - 15 * 60_000).toISOString();
+  const res = await fetch(`https://monitor.twilio.com/v1/Alerts?StartDate=${encodeURIComponent(since)}&PageSize=50`, {
+    headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` },
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const { alerts = [] } = (await res.json()) as { alerts?: { error_code?: string; alert_text?: string; resource_sid?: string }[] };
+  const hit = alerts.find((a) => a.resource_sid && callSids.includes(a.resource_sid));
+  if (!hit) return null;
+  const text = new URLSearchParams(hit.alert_text ?? "").get("Msg") ?? hit.alert_text ?? "";
+  return `Twilio error ${hit.error_code}${text ? `: ${text}` : ""} (twilio.com/docs/api/errors/${hit.error_code})`;
 }
 
 export async function dialerStatus() {
@@ -75,8 +93,14 @@ export async function ensureCallActivity(o: { callSid: string; accountId: string
   return db.activity.findUniqueOrThrow({ where: { externalId: externalId(o.callSid) } });
 }
 
-export async function recordDialStatus(o: { callSid: string; accountId: string; contactId?: string | null; status: string; durationSec: number }) {
+export async function recordDialStatus(o: { callSid: string; accountId: string; contactId?: string | null; status: string; durationSec: number; dialCallSid?: string | null }) {
   const a = await ensureCallActivity(o);
+  if (o.status === "failed") {
+    // Alerts can lag the callback by a few seconds.
+    await new Promise((r) => setTimeout(r, 4000));
+    const reason = await twilioFailureReason([o.callSid, o.dialCallSid].filter((x): x is string => Boolean(x)));
+    await db.activity.update({ where: { id: a.id }, data: { body: [a.body, reason ?? "Twilio couldn't place the call. Twilio Console → Monitor → Logs → Errors has the reason."].filter(Boolean).join("\n") } });
+  }
   const unanswered = ["no-answer", "busy", "failed", "canceled"].includes(o.status);
   await db.activity.update({
     where: { id: a.id },
