@@ -4,7 +4,12 @@ import { db } from "@/lib/db";
 import { PROSPECT_STAGES, STAGE_LABELS, type Stage } from "@/lib/constants";
 import { dialerStatus } from "@/lib/dialer";
 import { Notice, PageHeader } from "@/components/ui";
-import { Dialer, type DialTarget } from "@/components/Dialer";
+import { Dialer, type DialTarget, type DialerControls } from "@/components/Dialer";
+import { VoicemailRecorder } from "@/components/VoicemailRecorder";
+import { SubmitButton } from "@/components/SubmitButton";
+import { Flash } from "@/components/Flash";
+import { audioUrl, DEFAULT_VM_PROMPT, voicemailSettings } from "@/lib/voicemail";
+import { deleteVoicemail, saveVoicemailSettings, setDefaultVoicemail, uploadVoicemail } from "../actions";
 import { dialAccountInclude, toDialTarget } from "@/lib/dial-targets";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +25,7 @@ const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithR
 };
 
 
-export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string }> }) {
+export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string; vm?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
   const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "best";
   const stages = sp.stage && (PROSPECT_STAGES as string[]).includes(sp.stage) ? [sp.stage as Stage] : PROSPECT_STAGES;
@@ -32,11 +37,20 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
   };
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const [status, accounts, today] = await Promise.all([
+  const [status, accounts, today, vmSettings, voicemails, voices] = await Promise.all([
     dialerStatus(),
     db.account.findMany({ where, orderBy: SORTS[sort]!.orderBy, take: 200, include: dialAccountInclude }),
     db.activity.groupBy({ by: ["outcome"], where: { source: "dialer", type: "CALL", occurredAt: { gte: startOfDay } }, _count: true }),
+    voicemailSettings(),
+    db.voicemailAudio.findMany({ where: { kind: { in: ["recorded", "upload"] } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, durationSec: true, createdAt: true } }),
+    db.receptionist.findMany({ where: { voiceId: { not: null } }, select: { name: true, voiceId: true } }),
   ]);
+  const controls: DialerControls = {
+    voicemails: voicemails.map((v) => ({ id: v.id, name: v.name })),
+    defaultVoicemailId: vmSettings.defaultId && voicemails.some((v) => v.id === vmSettings.defaultId) ? vmSettings.defaultId : (voicemails[0]?.id ?? null),
+    aiVoice: Boolean(vmSettings.voiceId),
+    consent: vmSettings.consent,
+  };
 
   const rows = accounts.map((a) => toDialTarget(a)).filter((t) => t.numbers.length);
   if (sort === "best") rows.sort((x, y) => y.priority - x.priority);
@@ -62,7 +76,59 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
         <label className="flex items-center gap-1 pb-2"><input type="checkbox" name="due" value="1" defaultChecked={sp.due === "1"} /> Follow-up due only</label>
         <button className="btn-secondary">Apply</button>
       </form>
-      <Dialer targets={targets} title="Call list" emptyText="No active prospects with a phone number match these filters." />
+      <Flash params={sp} />
+      <Dialer targets={targets} title="Call list" emptyText="No active prospects with a phone number match these filters." controls={controls} />
+
+      <details id="voicemail" className="card mt-6" open={sp.vm === "1"}>
+        <summary className="cursor-pointer font-semibold">Voicemail settings</summary>
+        <div className="mt-4 grid gap-6 lg:grid-cols-2">
+          <div className="space-y-3">
+            <h3 className="font-medium">Your recorded voicemails</h3>
+            <VoicemailRecorder />
+            <form action={uploadVoicemail} className="flex flex-wrap items-center gap-2 text-sm">
+              <input name="name" placeholder="Name (optional)" className="input w-40" />
+              <input name="file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" className="text-xs" required />
+              <SubmitButton className="btn-secondary" pendingText="Uploading…">Upload MP3/WAV</SubmitButton>
+            </form>
+            {voicemails.length ? (
+              <ul className="space-y-2 text-sm">
+                {voicemails.map((v) => (
+                  <li key={v.id} className="rounded-lg border border-slate-200 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">{v.name}{controls.defaultVoicemailId === v.id ? <span className="ml-2 text-xs text-emerald-700">default</span> : null}</span>
+                      <span className="flex gap-3 text-xs">
+                        {controls.defaultVoicemailId !== v.id ? <form action={setDefaultVoicemail.bind(null, v.id)}><button className="underline">Make default</button></form> : null}
+                        <form action={deleteVoicemail.bind(null, v.id)}><button className="text-red-600">Delete</button></form>
+                      </span>
+                    </div>
+                    <audio controls preload="none" src={audioUrl(v.id)} className="mt-1 h-8 w-full" />
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-xs text-slate-500">No recorded voicemail yet. Record one with your headset, or upload an MP3/WAV.</p>}
+          </div>
+
+          <form action={saveVoicemailSettings} className="space-y-3">
+            <h3 className="font-medium">AI voicemail</h3>
+            <p className="text-xs text-slate-500">While the phone rings, the AI writes a short voicemail from this prompt and the account&apos;s research, and ElevenLabs voices it, so it&apos;s ready at the beep. It&apos;s reused for that account for 3 days. Variables: <code>{"{{contacts}}"}</code>, <code>{"{{company}}"}</code>, <code>{"{{industry}}"}</code>, <code>{"{{location}}"}</code>, <code>{"{{my_company}}"}</code>, <code>{"{{callback_number}}"}</code>.</p>
+            <textarea name="prompt" rows={7} defaultValue={vmSettings.prompt} placeholder={DEFAULT_VM_PROMPT} className="input text-xs" />
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-sm"><span className="label">ElevenLabs voice ID</span>
+                <input name="voiceId" defaultValue={vmSettings.voiceId ?? ""} list="vm-voices" placeholder="voice id" className="input font-mono text-xs" />
+                <datalist id="vm-voices">{voices.map((v) => <option key={v.voiceId} value={v.voiceId!}>{v.name}</option>)}</datalist>
+              </label>
+              <label className="space-y-1 text-sm"><span className="label">Callback number to say</span>
+                <input name="callback" defaultValue={vmSettings.callback} className="input" />
+              </label>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <b>Before using pre-recorded or AI voicemails:</b> in Canada, the CRTC&apos;s rules on automatic dialing-announcing devices restrict pre-recorded solicitation messages without consent, and in the US the FCC treats pre-recorded and AI-voiced voicemails as robocalls that need prior consent. Leaving your own voicemail live avoids this. This isn&apos;t legal advice; check before using these at scale, especially on cell phones.
+              <label className="mt-2 flex items-center gap-2"><input type="checkbox" name="consent" defaultChecked={vmSettings.consent} /> I understand, and will only use recorded/AI voicemails where it&apos;s allowed</label>
+            </div>
+            <SubmitButton className="btn-secondary" pendingText="Saving…">Save voicemail settings</SubmitButton>
+          </form>
+        </div>
+      </details>
     </div>
   );
 }

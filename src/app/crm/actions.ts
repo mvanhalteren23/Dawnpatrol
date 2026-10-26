@@ -298,6 +298,59 @@ export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; er
   return { ok: true };
 }
 
+// --- Dialer voicemails -------------------------------------------------------------
+
+export async function saveVoicemailSettings(form: FormData) {
+  await requireAdmin();
+  const { setSetting } = await import("@/lib/settings");
+  const { VM_KEYS } = await import("@/lib/voicemail");
+  await setSetting(VM_KEYS.prompt, str(form, "prompt").trim());
+  await setSetting(VM_KEYS.voiceId, str(form, "voiceId").trim());
+  await setSetting(VM_KEYS.callback, str(form, "callback").trim());
+  await setSetting(VM_KEYS.consent, form.get("consent") === "on" ? "yes" : "no");
+  back("/crm/dialer", { notice: "Voicemail settings saved", vm: "1" });
+}
+
+export async function uploadVoicemail(form: FormData) {
+  await requireAdmin();
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) back("/crm/dialer", { error: "Choose an MP3 or WAV file", vm: "1" });
+  if (file.size > 5 * 1024 * 1024) back("/crm/dialer", { error: "Voicemail files must be under 5 MB", vm: "1" });
+  const mime = file.type === "audio/wav" || file.type === "audio/x-wav" || file.name.toLowerCase().endsWith(".wav") ? "audio/wav" : "audio/mpeg";
+  if (!/\.(mp3|wav)$/i.test(file.name) && !/audio\/(mpeg|mp3|wav|x-wav)/.test(file.type)) back("/crm/dialer", { error: "Twilio can only play MP3 or WAV files", vm: "1" });
+  const saved = await db.voicemailAudio.create({ data: { kind: "upload", name: str(form, "name") || file.name, mimeType: mime, data: new Uint8Array(await file.arrayBuffer()) } });
+  const { getSetting, setSetting } = await import("@/lib/settings");
+  const { VM_KEYS } = await import("@/lib/voicemail");
+  if (!(await getSetting(VM_KEYS.defaultId))) await setSetting(VM_KEYS.defaultId, saved.id);
+  back("/crm/dialer", { notice: "Voicemail uploaded", vm: "1" });
+}
+
+export async function setDefaultVoicemail(id: string) {
+  await requireAdmin();
+  const { setSetting } = await import("@/lib/settings");
+  const { VM_KEYS } = await import("@/lib/voicemail");
+  await setSetting(VM_KEYS.defaultId, id);
+  back("/crm/dialer", { notice: "Default voicemail set", vm: "1" });
+}
+
+export async function deleteVoicemail(id: string) {
+  await requireAdmin();
+  await db.voicemailAudio.deleteMany({ where: { id, kind: { in: ["recorded", "upload"] } } });
+  back("/crm/dialer", { notice: "Voicemail deleted", vm: "1" });
+}
+
+/** Pre-generate an account's AI voicemail while its phone rings, so it's ready at the beep. */
+export async function prepareVoicemail(accountId: string): Promise<{ ok: boolean; script?: string; error?: string }> {
+  await requireAdmin();
+  try {
+    const { aiVoicemail } = await import("@/lib/voicemail");
+    const vm = await aiVoicemail(accountId);
+    return { ok: true, script: vm.script };
+  } catch (err) {
+    return { ok: false, error: errMsg(err) };
+  }
+}
+
 /** Quick note on an account, any time (shows in Notes and the timeline). */
 export async function addNote(accountId: string, form: FormData) {
   const session = await requireAdmin();

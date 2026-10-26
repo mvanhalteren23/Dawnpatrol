@@ -1,7 +1,23 @@
 "use client";
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { Call, Device } from "@twilio/voice-sdk";
-import { saveCallOutcome } from "@/app/crm/actions";
+import { prepareVoicemail, saveCallOutcome } from "@/app/crm/actions";
+
+export type DialerControls = {
+  voicemails: { id: string; name: string }[];
+  defaultVoicemailId: string | null;
+  aiVoice: boolean; // an ElevenLabs voice is set for AI voicemails
+  consent: boolean; // compliance note acknowledged in voicemail settings
+};
+
+type Mode = "oneclick" | "auto";
+type VmMode = "self" | "recorded" | "ai" | "hangup";
+const VM_LABELS: Record<VmMode, string> = {
+  self: "I'll leave voicemails myself",
+  recorded: "Drop my recorded voicemail, then move on",
+  ai: "AI assistant leaves a personalised voicemail, then move on",
+  hangup: "Hang up on voicemail and move on",
+};
 
 export type DialNumber = { contactId: string | null; label: string; phone: string }; // label e.g. "Main line" or "Jane Smith (Owner)"
 
@@ -50,7 +66,7 @@ function fmt(sec: number) {
  * Browser dialer (Twilio Voice SDK). One click per call; after hanging up, pick an outcome and
  * next steps, then "Save & next" moves to the next prospect ready to dial.
  */
-export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; title?: string; emptyText?: string }) {
+export function Dialer({ targets, title, emptyText, controls }: { targets: DialTarget[]; title?: string; emptyText?: string; controls?: DialerControls }) {
   const device = useRef<Device | null>(null);
   const call = useRef<Call | null>(null);
   const [active, setActive] = useState(0);
@@ -63,6 +79,20 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
   const [done, setDone] = useState<Set<string>>(new Set());
   const [outcome, setOutcome] = useState<Outcome | "">("");
   const [saving, startSaving] = useTransition();
+  // Power-dialer options (dialer page only), remembered in this browser.
+  const [mode, setMode] = useState<Mode>("oneclick");
+  const [vmMode, setVmMode] = useState<VmMode>("self");
+  const [vmId, setVmId] = useState<string>(controls?.defaultVoicemailId ?? "");
+  const [delay, setDelay] = useState(5);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [amd, setAmd] = useState<string | null>(null);
+  const [aiScript, setAiScript] = useState<string | null>(null);
+  const opts = useRef({ mode, vmMode, vmId, delay });
+  opts.current = { mode, vmMode, vmId, delay };
+  const answered = useRef(false);
+  const doneRef = useRef(done);
+  doneRef.current = done;
+  const nextIndex = useRef<number | null>(null);
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
   const target = targets[active];
@@ -78,6 +108,105 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
   }, [phase]);
 
   useEffect(() => () => device.current?.destroy(), []);
+
+  useEffect(() => {
+    if (!controls) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("dialer.options") ?? "{}") as Partial<typeof opts.current>;
+      if (saved.mode) setMode(saved.mode);
+      if (saved.vmMode) setVmMode(saved.vmMode);
+      if (saved.vmId && controls.voicemails.some((v) => v.id === saved.vmId)) setVmId(saved.vmId);
+      if (saved.delay) setDelay(saved.delay);
+    } catch {
+      // storage unavailable: defaults
+    }
+  }, [controls]);
+
+  useEffect(() => {
+    if (!controls) return;
+    try {
+      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay }));
+    } catch {
+      // ignore
+    }
+  }, [controls, mode, vmMode, vmId, delay]);
+
+  // Live answering-machine result while a call is up.
+  useEffect(() => {
+    if (!(phase === "ringing" || phase === "live")) return;
+    const t = setInterval(async () => {
+      const sid = call.current?.parameters.CallSid;
+      if (!sid) return;
+      const st = (await fetch(`/api/dialer/state?sid=${sid}`, { cache: "no-store" }).then((r) => r.json()).catch(() => ({}))) as { answeredBy?: string };
+      if (st.answeredBy) setAmd(st.answeredBy);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  // Auto-dial countdown.
+  useEffect(() => {
+    if (countdown == null) return;
+    if (countdown <= 0) {
+      setCountdown(null);
+      if (nextIndex.current != null) void dial(nextIndex.current);
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c == null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function nextAfter(index: number): number {
+    return targets.findIndex((t, i) => i > index && !doneRef.current.has(t.key));
+  }
+
+  function moveOn(fromIndex: number, autoDial: boolean) {
+    const n = nextAfter(fromIndex);
+    if (n < 0) return;
+    setActive(n);
+    rowRefs.current[targets[n]!.key]?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (autoDial) {
+      nextIndex.current = n;
+      setCountdown(opts.current.delay);
+    }
+  }
+
+  async function finish(c: Call, index: number) {
+    const t = targets[index];
+    const sid = c.parameters.CallSid ?? "";
+    setCallSid((x) => x || sid);
+    call.current = null;
+    // Give Twilio's status and machine-detection callbacks a moment to land.
+    await new Promise((r) => setTimeout(r, 1500));
+    const st = sid ? ((await fetch(`/api/dialer/state?sid=${sid}`, { cache: "no-store" }).then((r) => r.json()).catch(() => ({}))) as { outcome?: string; subject?: string; answeredBy?: string }) : {};
+    if (st.subject?.includes("failed")) {
+      setMode("oneclick"); // don't keep dialling into an error
+      setPhase("wrapup");
+      return;
+    }
+    const auto: Outcome | null = st.outcome === "voicemail" || st.outcome === "no_answer" ? (st.outcome as Outcome) : !answered.current ? "no_answer" : null;
+    if (opts.current.mode === "auto" && auto && t) {
+      const f = new FormData();
+      f.set("outcome", auto);
+      for (const [k, v] of Object.entries(DEFAULT_NEXT[auto])) {
+        if (!v) continue;
+        f.append("next", k);
+        if (k === "call") f.set("days_call", String(v));
+      }
+      f.set("accountId", t.accountId);
+      f.set("contactId", numberFor(t)?.contactId ?? "");
+      f.set("callSid", sid);
+      const res = await saveCallOutcome(f);
+      if (res.ok) {
+        setDone((s) => new Set(s).add(t.key));
+        doneRef.current = new Set(doneRef.current).add(t.key);
+        setPhase("idle");
+        moveOn(index, true);
+        return;
+      }
+    }
+    setOutcome(auto ?? "");
+    setPhase("wrapup");
+  }
 
   async function getDevice(): Promise<Device> {
     if (device.current) return device.current;
@@ -105,21 +234,32 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
     setKeypad(false);
     setCallSid("");
     setOutcome("");
+    setAmd(null);
+    setAiScript(null);
+    setCountdown(null);
+    answered.current = false;
     setPhase("connecting");
+    const o = opts.current;
+    const useAmd = Boolean(controls) && (o.vmMode !== "self" || o.mode === "auto");
+    if (controls && o.vmMode === "ai") void prepareVoicemail(t.accountId).then((r) => setAiScript(r.script ?? (r.error ? `(${r.error})` : null)));
     try {
       const d = await getDevice();
       const n = numberFor(t)!;
-      const c = await d.connect({ params: { To: n.phone, accountId: t.accountId, contactId: n.contactId ?? "" } });
+      const c = await d.connect({
+        params: { To: n.phone, accountId: t.accountId, contactId: n.contactId ?? "", ...(useAmd ? { vm: o.vmMode, vmId: o.vmId } : {}) },
+      });
       call.current = c;
       c.on("ringing", () => setPhase("ringing"));
       c.on("accept", () => {
+        answered.current = true;
         setCallSid(c.parameters.CallSid ?? "");
         setPhase("live");
       });
+      let ended = false;
       const end = () => {
-        setCallSid((sid) => sid || c.parameters.CallSid || "");
-        call.current = null;
-        setPhase("wrapup");
+        if (ended) return;
+        ended = true;
+        void finish(c, index);
       };
       c.on("disconnect", end);
       c.on("cancel", end);
@@ -153,14 +293,9 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
         return;
       }
       setDone((s) => new Set(s).add(target.key));
+      doneRef.current = new Set(doneRef.current).add(target.key);
       setPhase("idle");
-      if (next) {
-        const n = targets.findIndex((t, i) => i > active && !done.has(t.key));
-        if (n >= 0) {
-          setActive(n);
-          rowRefs.current[targets[n]!.key]?.scrollIntoView({ block: "center", behavior: "smooth" });
-        }
-      }
+      if (next) moveOn(active, opts.current.mode === "auto");
     });
   }
 
@@ -173,6 +308,47 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
         <h2>{title ?? "Dialer"}</h2>
         {busy ? <span className="text-xs text-rose-700">● {phase === "live" ? `On call ${fmt(seconds)}` : phase === "ringing" ? "Ringing…" : "Connecting…"}</span> : null}
       </div>
+      {controls ? (
+        <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm md:grid-cols-[auto_1fr]">
+          <div className="flex rounded-lg border border-slate-300 bg-white p-0.5 text-xs" role="radiogroup" aria-label="Dialing mode">
+            {(["oneclick", "auto"] as const).map((m) => (
+              <button key={m} type="button" onClick={() => { setMode(m); if (m === "oneclick") setCountdown(null); }} className={`rounded-md px-3 py-1 ${mode === m ? "bg-dawn-600 text-white" : "text-slate-600"}`} aria-pressed={mode === m}>
+                {m === "oneclick" ? "One-click" : "Auto-dial"}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-auto py-1 text-xs" aria-label="Voicemail handling" disabled={busy}>
+              {(Object.keys(VM_LABELS) as VmMode[]).map((v) => (
+                <option key={v} value={v} disabled={(v === "recorded" && (!controls.voicemails.length || !controls.consent)) || (v === "ai" && (!controls.aiVoice || !controls.consent))}>
+                  {VM_LABELS[v]}{v === "recorded" && !controls.voicemails.length ? " (record one first)" : ""}{v === "ai" && !controls.aiVoice ? " (set a voice first)" : ""}{(v === "recorded" || v === "ai") && !controls.consent ? " (see settings)" : ""}
+                </option>
+              ))}
+            </select>
+            {vmMode === "recorded" && controls.voicemails.length > 1 ? (
+              <select value={vmId} onChange={(e) => setVmId(e.target.value)} className="input w-auto py-1 text-xs" aria-label="Voicemail to drop">
+                {controls.voicemails.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            ) : null}
+            {mode === "auto" ? (
+              <label className="flex items-center gap-1 text-xs text-slate-600">next call after
+                <select value={delay} onChange={(e) => setDelay(Number(e.target.value))} className="input w-auto py-1 text-xs">{[3, 5, 10, 15].map((d) => <option key={d} value={d}>{d}s</option>)}</select>
+              </label>
+            ) : null}
+          </div>
+          {mode === "auto" ? <p className="text-xs text-slate-500 md:col-span-2">Auto-dial calls the next prospect after each call. No-answers and voicemails are logged automatically (with a follow-up task); live conversations still get the wrap-up form, then it continues.</p> : null}
+        </div>
+      ) : null}
+      {countdown != null && targets[active] ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dawn-200 bg-dawn-50 px-3 py-2 text-sm">
+          <span>Calling <b>{targets[active]!.accountName}</b> in {countdown}s…</span>
+          <span className="flex gap-2">
+            <button type="button" onClick={() => setCountdown(0)} className="btn py-1">Call now</button>
+            <button type="button" onClick={() => { setCountdown(null); moveOn(active, false); }} className="btn-secondary py-1">Skip</button>
+            <button type="button" onClick={() => { setCountdown(null); setMode("oneclick"); }} className="btn-secondary py-1">Pause</button>
+          </span>
+        </div>
+      ) : null}
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
 
       {busy && target ? (
@@ -182,6 +358,12 @@ export function Dialer({ targets, title, emptyText }: { targets: DialTarget[]; t
           {target.reasons?.length ? <div className="mt-1 text-xs text-slate-600">Why: {target.reasons.join(" · ")}</div> : null}
           {target.research?.opener ? <div className="mt-1 text-xs italic text-slate-600">Opener: {target.research.opener}</div> : null}
           <p className="mt-1 text-xs text-slate-500">Calls are recorded. Mention it early: &ldquo;Just so you know, this call may be recorded.&rdquo;</p>
+          {amd && amd !== "unknown" ? (
+            <p className={`mt-1 text-xs font-medium ${amd === "human" ? "text-emerald-700" : "text-amber-700"}`}>
+              {amd === "human" ? "A person answered." : amd.startsWith("machine") ? (vmMode === "recorded" || vmMode === "ai" ? "Voicemail detected: leaving the message after the beep and moving on…" : vmMode === "hangup" ? "Voicemail detected: hanging up." : "Voicemail detected: leave your message after the beep.") : amd === "fax" ? "Fax line: hanging up." : null}
+            </p>
+          ) : null}
+          {vmMode === "ai" && aiScript ? <p className="mt-1 text-xs text-slate-500">AI voicemail ready: &ldquo;{aiScript}&rdquo;</p> : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={hangUp} className="btn-danger">Hang up</button>
             <button type="button" onClick={() => { call.current?.mute(!muted); setMuted(!muted); }} className="btn-secondary">{muted ? "Unmute" : "Mute"}</button>

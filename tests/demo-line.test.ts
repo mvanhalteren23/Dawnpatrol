@@ -135,3 +135,16 @@ describe("dialer helpers", () => {
     expect(x).toContain("<Number>+16049882239</Number>");
   });
 });
+
+describe("voicemail drop TwiML", () => {
+  it("adds answering-machine detection to the dialled number", async () => {
+    const { dialOut, voicemailDrop, isMachineEnd } = await import("@/lib/twilio");
+    const x = dialOut({ to: "+16049882239", callerId: "+17786504870", action: "https://a.test/s", recordingCallback: null, amdCallback: "https://a.test/amd?a=1&vm=ai" });
+    expect(x).toContain('<Number machineDetection="DetectMessageEnd"');
+    expect(x).toContain('amdStatusCallback="https://a.test/amd?a=1&amp;vm=ai"');
+    expect(voicemailDrop({ audioUrl: "https://a.test/v/1?t=x" })).toContain("<Play>https://a.test/v/1?t=x</Play><Hangup/>");
+    expect(voicemailDrop({ script: "Hi <there>" })).toContain("Hi &lt;there&gt;");
+    expect(isMachineEnd("machine_end_beep")).toBe(true);
+    expect(isMachineEnd("human")).toBe(false);
+  });
+});

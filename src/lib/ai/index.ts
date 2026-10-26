@@ -205,3 +205,13 @@ export async function summarizeCallRecording(audio: { data: Buffer; mimeType: st
   });
   return res.data;
 }
+
+// --- AI voicemail scripts ------------------------------------------------------
+
+const VoicemailSchema = z.object({ script: z.string().describe("Exactly what to say, as plain spoken sentences. No stage directions, labels or brackets.") });
+
+/** A short personalised voicemail script from your voicemail prompt and the account's research. */
+export async function writeVoicemailScript(renderedPrompt: string, research: string): Promise<string> {
+  const ex = await structured("voicemail", VoicemailSchema, `${renderedPrompt}\n\nUse only facts from the research below; if it's thin, keep the message general rather than guessing.`, research || "No research available.");
+  return ex.data.script.trim();
+}

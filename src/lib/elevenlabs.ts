@@ -271,3 +271,16 @@ export async function fetchConversationAudio(conversationId: string, range?: str
   if (!res.ok) throw new Error(`ElevenLabs ${res.status} on audio: ${(await res.text()).slice(0, 300)}`);
   return res;
 }
+
+/** Text to speech (mp3) in an ElevenLabs voice, for AI voicemails. */
+export async function textToSpeech(text: string, voiceId: string, modelId = process.env.ELEVENLABS_TTS_MODEL || "eleven_flash_v2_5"): Promise<Buffer> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_22050_32`, {
+    method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+    body: JSON.stringify({ text, model_id: modelId }),
+  });
+  if (!res.ok) throw new Error(`ElevenLabs TTS ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return Buffer.from(await res.arrayBuffer());
+}

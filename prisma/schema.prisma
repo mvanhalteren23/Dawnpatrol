@@ -129,6 +129,7 @@ model Activity {
   outcome      String? // connected | booked | voicemail | no_answer | call_back | not_interested | wrong_number
   durationSec  Int?
   recordingSid String?
+  answeredBy   String? // Twilio answering-machine detection: human | machine_end_beep | … (auto-dialer)
   occurredAt  DateTime  @default(now())
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id])
@@ -417,4 +418,19 @@ model EmailDraft {
   updatedAt      DateTime @updatedAt
 
   @@index([createdAt])
+}
+
+/** Voicemails the dialer can leave: recorded by you (by phone or upload), or AI-written and voiced per account. */
+model VoicemailAudio {
+  id          String   @id @default(cuid())
+  kind        String // recorded | upload | ai
+  name        String
+  mimeType    String   @default("audio/mpeg")
+  data        Bytes
+  script      String? // AI voicemails: what it says
+  accountId   String? // AI voicemails are per account
+  durationSec Int?
+  createdAt   DateTime @default(now())
+
+  @@index([accountId, createdAt])
 }

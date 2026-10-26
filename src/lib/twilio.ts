@@ -160,14 +160,32 @@ export function dialableNumber(input: string): string | null {
   return e164;
 }
 
-/** Outbound dialer call: bridge the browser to `to`, recorded from answer, with status/recording callbacks. */
-export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null }): string {
+/**
+ * Outbound dialer call: bridge the browser to `to`, recorded from answer, with status/recording
+ * callbacks. With `amdCallback`, Twilio runs answering-machine detection on the dialled leg and
+ * reports the result (after the greeting's beep) so a voicemail can be dropped.
+ */
+export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null; amdCallback?: string | null }): string {
   const rec = o.recordingCallback
     ? ` record="record-from-answer-dual" recordingStatusCallback="${escapeXml(o.recordingCallback)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
     : "";
+  const amd = o.amdCallback
+    ? ` machineDetection="DetectMessageEnd" machineDetectionTimeout="30" amdStatusCallback="${escapeXml(o.amdCallback)}" amdStatusCallbackMethod="POST"`
+    : "";
   return twiml(
-    `<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number>${escapeXml(o.to)}</Number></Dial>`,
+    `<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}>${escapeXml(o.to)}</Number></Dial>`,
   );
+}
+
+/** TwiML for a voicemail drop: play the audio (or speak a script) after the beep, then hang up. */
+export function voicemailDrop(o: { audioUrl?: string | null; script?: string | null }): string {
+  if (o.audioUrl) return twiml(`<Play>${escapeXml(o.audioUrl)}</Play><Hangup/>`);
+  return twiml(`<Say voice="Polly.Matthew-Neural">${escapeXml(o.script ?? "")}</Say><Hangup/>`);
+}
+
+/** Is a Twilio AnsweredBy value a voicemail/machine whose greeting has finished? */
+export function isMachineEnd(answeredBy: string | null | undefined): boolean {
+  return /^machine_end_/.test(answeredBy ?? "");
 }
 
 /** Digits only, "#"/"*" stripped. */
