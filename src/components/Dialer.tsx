@@ -270,16 +270,25 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
       prepAll(list);
       setSessionNote("Writing voicemails before the first call…");
       await prep(list[0]!); // the first one must be ready before we dial; the rest finish while we call
-      setSessionNote(null);
       if (sessionRef.current !== keys) return; // stopped meanwhile
+      setSessionNote(null);
     }
     void dial(first);
   }
 
+  /**
+   * Stop the auto-dialer now: no further calls. A call still ringing is hung up; a live
+   * conversation carries on and gets the normal wrap-up form.
+   */
   function stopSession() {
+    opts.current.mode = "oneclick"; // immediately, so a call ending right now doesn't move on
+    nextIndex.current = null;
     setSession(null);
+    sessionRef.current = null;
     setCountdown(null);
     setMode("oneclick");
+    if (phase === "connecting" || phase === "ringing") call.current?.disconnect();
+    setSessionNote("Auto-dialer stopped.");
   }
 
   async function getDevice(): Promise<Device> {
@@ -379,7 +388,14 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
         <h2>{title ?? "Dialer"}</h2>
-        {busy ? <span className="text-xs text-rose-700">● {phase === "live" ? `On call ${fmt(seconds)}` : phase === "ringing" ? "Ringing…" : "Connecting…"}</span> : null}
+        <div className="flex items-center gap-3">
+          {busy ? <span className="text-xs text-rose-700">● {phase === "live" ? `On call ${fmt(seconds)}` : phase === "ringing" ? "Ringing…" : "Connecting…"}</span> : null}
+          {controls && (mode === "auto" || session || countdown != null) ? (
+            <button type="button" onClick={stopSession} className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700" title={phase === "live" ? "Stops dialing after this call; your current call stays connected" : "Stops dialing; a call that's still ringing is hung up"}>
+              ■ Stop auto-dialer
+            </button>
+          ) : null}
+        </div>
       </div>
       {controls ? (
         <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm md:grid-cols-[auto_1fr]">
