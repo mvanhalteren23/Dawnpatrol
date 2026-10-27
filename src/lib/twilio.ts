@@ -170,7 +170,7 @@ export function dialOut(o: { to: string; callerId: string; action: string; recor
     ? ` record="record-from-answer-dual" recordingStatusCallback="${escapeXml(o.recordingCallback)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
     : "";
   const amd = o.amdCallback
-    ? ` machineDetection="DetectMessageEnd" machineDetectionTimeout="30" amdStatusCallback="${escapeXml(o.amdCallback)}" amdStatusCallbackMethod="POST"`
+    ? ` machineDetection="DetectMessageEnd" machineDetectionTimeout="20" machineDetectionSpeechEndThreshold="900" machineDetectionSilenceTimeout="3000" amdStatusCallback="${escapeXml(o.amdCallback)}" amdStatusCallbackMethod="POST"`
     : "";
   return twiml(
     `<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}>${escapeXml(o.to)}</Number></Dial>`,
@@ -180,7 +180,7 @@ export function dialOut(o: { to: string; callerId: string; action: string; recor
 /** TwiML for a voicemail drop: play the audio (or speak a script) after the beep, then hang up. */
 export function voicemailDrop(o: { audioUrl?: string | null; script?: string | null }): string {
   if (o.audioUrl) return twiml(`<Play>${escapeXml(o.audioUrl)}</Play><Hangup/>`);
-  return twiml(`<Say voice="Polly.Matthew-Neural">${escapeXml(o.script ?? "")}</Say><Hangup/>`);
+  return twiml(`<Say voice="Google.en-US-Chirp3-HD-Charon">${escapeXml(o.script ?? "")}</Say><Hangup/>`);
 }
 
 /** Is a Twilio AnsweredBy value a voicemail/machine whose greeting has finished? */

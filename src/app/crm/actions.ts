@@ -339,13 +339,13 @@ export async function deleteVoicemail(id: string) {
   back("/crm/dialer", { notice: "Voicemail deleted", vm: "1" });
 }
 
-/** Pre-generate an account's AI voicemail while its phone rings, so it's ready at the beep. */
-export async function prepareVoicemail(accountId: string): Promise<{ ok: boolean; script?: string; error?: string }> {
+/** Pre-generate an account's AI voicemail (at auto-dial session start, or while it rings), so it's ready at the beep. */
+export async function prepareVoicemail(accountId: string): Promise<{ ok: boolean; script?: string; voiced?: boolean; voiceError?: string; error?: string }> {
   await requireAdmin();
   try {
     const { aiVoicemail } = await import("@/lib/voicemail");
     const vm = await aiVoicemail(accountId);
-    return { ok: true, script: vm.script };
+    return { ok: true, script: vm.script, voiced: Boolean(vm.id), voiceError: vm.voiceError };
   } catch (err) {
     return { ok: false, error: errMsg(err) };
   }

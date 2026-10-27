@@ -69,28 +69,43 @@ export async function saveTwilioRecording(recordingSid: string, name: string, du
   return saved;
 }
 
+export type AiVoicemail = { id: string | null; script: string; voiceError?: string };
+
+/** A pre-generated AI voicemail for the account (last 3 days), or null. Script-only ones have no audio. */
+export async function cachedAiVoicemail(accountId: string): Promise<AiVoicemail | null> {
+  const recent = await db.voicemailAudio.findFirst({ where: { accountId, kind: "ai", createdAt: { gte: new Date(Date.now() - 3 * 86400_000) } }, orderBy: { createdAt: "desc" }, select: { id: true, script: true, data: true } });
+  if (!recent) return null;
+  return { id: recent.data.length ? recent.id : null, script: recent.script ?? "" };
+}
+
 /**
  * The AI voicemail for an account: reuse one made in the last 3 days, else write a script from the
- * voicemail prompt + research and voice it with ElevenLabs. Falls back to a script only (Twilio
- * speaks it) if the voice can't be generated.
+ * voicemail prompt + research and voice it with ElevenLabs. If the voice can't be generated the
+ * script is kept (Twilio reads it) and the ElevenLabs error is returned so the dialer can show it.
  */
-export async function aiVoicemail(accountId: string): Promise<{ id: string | null; script: string }> {
-  const recent = await db.voicemailAudio.findFirst({ where: { accountId, kind: "ai", createdAt: { gte: new Date(Date.now() - 3 * 86400_000) } }, orderBy: { createdAt: "desc" }, select: { id: true, script: true } });
-  if (recent) return { id: recent.id, script: recent.script ?? "" };
+export async function aiVoicemail(accountId: string): Promise<AiVoicemail> {
+  const cached = await cachedAiVoicemail(accountId);
+  if (cached?.id) return cached;
 
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { contacts: true, research: { where: { kind: "RESEARCH", status: "DONE" }, orderBy: { createdAt: "desc" }, take: 1 } } });
   const settings = await voicemailSettings();
-  const prompt = renderPrompt(settings.prompt, { ...accountVariables(account), my_company: await companyName(), callback_number: settings.callback });
-  const script = await writeVoicemailScript(prompt, account.research[0]?.output ?? "");
-  if (!settings.voiceId) return { id: null, script };
-  try {
-    const data = new Uint8Array(await textToSpeech(script, settings.voiceId));
-    const saved = await db.voicemailAudio.create({ data: { kind: "ai", name: `AI voicemail: ${account.name}`, data, script, accountId } });
-    return { id: saved.id, script };
-  } catch (err) {
-    console.error("AI voicemail voice failed; Twilio will read the script", err);
-    return { id: null, script };
+  const script = cached?.script || (await writeVoicemailScript(
+    renderPrompt(settings.prompt, { ...accountVariables(account), my_company: await companyName(), callback_number: settings.callback }),
+    account.research[0]?.output ?? "",
+  ));
+  let data = new Uint8Array();
+  let voiceError: string | undefined;
+  if (!settings.voiceId) voiceError = "No ElevenLabs voice set";
+  else {
+    try {
+      data = new Uint8Array(await textToSpeech(script, settings.voiceId));
+    } catch (err) {
+      voiceError = (err as Error).message;
+      console.error("AI voicemail voice failed; Twilio will read the script", err);
+    }
   }
+  const saved = await db.voicemailAudio.create({ data: { kind: "ai", name: `AI voicemail: ${account.name}`, data, script, accountId } });
+  return { id: data.length ? saved.id : null, script, voiceError };
 }
 
 /** Take over the prospect's leg (after the beep) to play the voicemail; the rep's browser is freed. */

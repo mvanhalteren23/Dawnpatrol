@@ -13,6 +13,7 @@ import { deleteVoicemail, saveVoicemailSettings, setDefaultVoicemail, uploadVoic
 import { dialAccountInclude, toDialTarget } from "@/lib/dial-targets";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // pre-writing + voicing AI voicemails
 
 const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithRelationInput[] }> = {
   best: { label: "Best to call now (tasks due, replies, opens…)", orderBy: [{ lastContactedAt: { sort: "asc", nulls: "first" } }] },

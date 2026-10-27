@@ -273,14 +273,19 @@ export async function fetchConversationAudio(conversationId: string, range?: str
 }
 
 /** Text to speech (mp3) in an ElevenLabs voice, for AI voicemails. */
-export async function textToSpeech(text: string, voiceId: string, modelId = process.env.ELEVENLABS_TTS_MODEL || "eleven_flash_v2_5"): Promise<Buffer> {
+export async function textToSpeech(text: string, voiceId: string, modelId = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2"): Promise<Buffer> {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_22050_32`, {
+  // Full-quality model and 44.1kHz/128kbps audio: the fast, low-bitrate settings sound robotic on a phone line.
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-    body: JSON.stringify({ text, model_id: modelId }),
+    body: JSON.stringify({
+      text,
+      model_id: modelId,
+      voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true, speed: 1.0 },
+    }),
   });
-  if (!res.ok) throw new Error(`ElevenLabs TTS ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`ElevenLabs voice ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return Buffer.from(await res.arrayBuffer());
 }

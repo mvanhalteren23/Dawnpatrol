@@ -86,7 +86,6 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
   const [delay, setDelay] = useState(5);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [amd, setAmd] = useState<string | null>(null);
-  const [aiScript, setAiScript] = useState<string | null>(null);
   const opts = useRef({ mode, vmMode, vmId, delay });
   opts.current = { mode, vmMode, vmId, delay };
   const answered = useRef(false);
@@ -94,6 +93,15 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
   doneRef.current = done;
   const nextIndex = useRef<number | null>(null);
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  // Auto-dial session: the accounts ticked in the list, called in list order.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [session, setSession] = useState<string[] | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const [sessionNote, setSessionNote] = useState<string | null>(null);
+  type Prep = { state: "writing" | "ready" | "script" | "error"; script?: string; error?: string };
+  const [vmPrep, setVmPrep] = useState<Record<string, Prep>>({});
+  const prepJobs = useRef<Record<string, Promise<void>>>({});
 
   const target = targets[active];
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -156,12 +164,24 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
   }, [countdown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function nextAfter(index: number): number {
+    const q = sessionRef.current;
+    if (q) {
+      const key = q.find((k, i) => i > q.indexOf(targets[index]?.key ?? "") && !doneRef.current.has(k));
+      return key ? targets.findIndex((t) => t.key === key) : -1;
+    }
     return targets.findIndex((t, i) => i > index && !doneRef.current.has(t.key));
   }
 
   function moveOn(fromIndex: number, autoDial: boolean) {
     const n = nextAfter(fromIndex);
-    if (n < 0) return;
+    if (n < 0) {
+      if (sessionRef.current) {
+        setSessionNote(`Session done: ${sessionRef.current.filter((k) => doneRef.current.has(k)).length} of ${sessionRef.current.length} called.`);
+        setSession(null);
+        setSelected(new Set());
+      }
+      return;
+    }
     setActive(n);
     rowRefs.current[targets[n]!.key]?.scrollIntoView({ block: "center", behavior: "smooth" });
     if (autoDial) {
@@ -208,6 +228,60 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
     setPhase("wrapup");
   }
 
+  /** Write (and voice) one account's AI voicemail ahead of its call. */
+  function prep(t: DialTarget): Promise<void> {
+    const existing = prepJobs.current[t.key];
+    if (existing) return existing;
+    setVmPrep((p) => ({ ...p, [t.key]: { state: "writing" } }));
+    const job = prepareVoicemail(t.accountId)
+      .then((r) => {
+        const next: Prep = !r.ok ? { state: "error", error: r.error } : r.voiced ? { state: "ready", script: r.script } : { state: "script", script: r.script, error: r.voiceError };
+        setVmPrep((p) => ({ ...p, [t.key]: next }));
+      })
+      .catch((e: Error) => {
+        setVmPrep((p) => ({ ...p, [t.key]: { state: "error", error: e.message } }));
+        delete prepJobs.current[t.key]; // allow a retry on the next dial
+      });
+    prepJobs.current[t.key] = job;
+    return job;
+  }
+
+  /** Pre-write voicemails for the whole session, 3 at a time, in calling order. */
+  function prepAll(list: DialTarget[]) {
+    const queue = [...list];
+    const worker = async () => {
+      for (let t = queue.shift(); t; t = queue.shift()) await prep(t);
+    };
+    for (let i = 0; i < 3; i++) void worker();
+  }
+
+  async function startSession() {
+    const list = targets.filter((t) => selected.has(t.key) && !done.has(t.key) && t.numbers.length);
+    if (!list.length) return;
+    setSessionNote(null);
+    setMode("auto");
+    opts.current.mode = "auto";
+    const keys = list.map((t) => t.key);
+    setSession(keys);
+    sessionRef.current = keys;
+    const first = targets.findIndex((t) => t.key === keys[0]);
+    setActive(first);
+    if (opts.current.vmMode === "ai") {
+      prepAll(list);
+      setSessionNote("Writing voicemails before the first call…");
+      await prep(list[0]!); // the first one must be ready before we dial; the rest finish while we call
+      setSessionNote(null);
+      if (sessionRef.current !== keys) return; // stopped meanwhile
+    }
+    void dial(first);
+  }
+
+  function stopSession() {
+    setSession(null);
+    setCountdown(null);
+    setMode("oneclick");
+  }
+
   async function getDevice(): Promise<Device> {
     if (device.current) return device.current;
     const res = await fetch("/api/dialer/token", { cache: "no-store" });
@@ -235,13 +309,12 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
     setCallSid("");
     setOutcome("");
     setAmd(null);
-    setAiScript(null);
     setCountdown(null);
     answered.current = false;
     setPhase("connecting");
     const o = opts.current;
     const useAmd = Boolean(controls) && (o.vmMode !== "self" || o.mode === "auto");
-    if (controls && o.vmMode === "ai") void prepareVoicemail(t.accountId).then((r) => setAiScript(r.script ?? (r.error ? `(${r.error})` : null)));
+    if (controls && o.vmMode === "ai") void prep(t);
     try {
       const d = await getDevice();
       const n = numberFor(t)!;
@@ -337,8 +410,32 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
             ) : null}
           </div>
           {mode === "auto" ? <p className="text-xs text-slate-500 md:col-span-2">Auto-dial calls the next prospect after each call. No-answers and voicemails are logged automatically (with a follow-up task); live conversations still get the wrap-up form, then it continues.</p> : null}
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2 md:col-span-2">
+            {session ? (
+              <>
+                <span className="text-xs text-slate-700">
+                  Session: <b>{session.filter((k) => done.has(k)).length}</b> of {session.length} called
+                  {vmMode === "ai" ? <> · voicemails ready {session.filter((k) => vmPrep[k] && vmPrep[k]!.state !== "writing").length}/{session.length}</> : null}
+                </span>
+                {mode === "oneclick" && !busy && countdown == null ? (
+                  <button type="button" onClick={() => { setMode("auto"); opts.current.mode = "auto"; if (phase !== "wrapup") moveOn(-1, true); }} className="btn py-1 text-xs">Resume</button>
+                ) : null}
+                <button type="button" onClick={stopSession} className="btn-secondary py-1 text-xs">Stop session</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => void startSession()} disabled={busy || phase === "wrapup" || !selected.size} className="btn py-1 text-xs">
+                  ▶ Start auto-dial session{selected.size ? ` (${selected.size})` : ""}
+                </button>
+                <button type="button" onClick={() => setSelected(new Set(targets.filter((t) => !done.has(t.key) && t.numbers.length).map((t) => t.key)))} className="text-xs">Select all</button>
+                <button type="button" onClick={() => setSelected(new Set())} className="text-xs">None</button>
+                <span className="text-xs text-slate-500">{selected.size ? `${selected.size} selected` : "Tick the accounts to call in the list below."}{vmMode === "ai" ? " AI voicemails are written for all of them as the session starts." : ""}</span>
+              </>
+            )}
+          </div>
         </div>
       ) : null}
+      {sessionNote ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{sessionNote}</div> : null}
       {countdown != null && targets[active] ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dawn-200 bg-dawn-50 px-3 py-2 text-sm">
           <span>Calling <b>{targets[active]!.accountName}</b> in {countdown}s…</span>
@@ -346,6 +443,7 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
             <button type="button" onClick={() => setCountdown(0)} className="btn py-1">Call now</button>
             <button type="button" onClick={() => { setCountdown(null); moveOn(active, false); }} className="btn-secondary py-1">Skip</button>
             <button type="button" onClick={() => { setCountdown(null); setMode("oneclick"); }} className="btn-secondary py-1">Pause</button>
+            {session ? <button type="button" onClick={stopSession} className="btn-secondary py-1">Stop session</button> : null}
           </span>
         </div>
       ) : null}
@@ -363,7 +461,7 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
               {amd === "human" ? "A person answered." : amd.startsWith("machine") ? (vmMode === "recorded" || vmMode === "ai" ? "Voicemail detected: leaving the message after the beep and moving on…" : vmMode === "hangup" ? "Voicemail detected: hanging up." : "Voicemail detected: leave your message after the beep.") : amd === "fax" ? "Fax line: hanging up." : null}
             </p>
           ) : null}
-          {vmMode === "ai" && aiScript ? <p className="mt-1 text-xs text-slate-500">AI voicemail ready: &ldquo;{aiScript}&rdquo;</p> : null}
+          {vmMode === "ai" && vmPrep[target.key] ? <p className="mt-1 text-xs text-slate-500"><PrepBadge p={vmPrep[target.key]!} />{vmPrep[target.key]!.script ? <> &ldquo;{vmPrep[target.key]!.script}&rdquo;</> : null}</p> : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={hangUp} className="btn-danger">Hang up</button>
             <button type="button" onClick={() => { call.current?.mute(!muted); setMuted(!muted); }} className="btn-secondary">{muted ? "Unmute" : "Mute"}</button>
@@ -417,8 +515,19 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
             return (
               <li key={t.key} ref={(el) => { rowRefs.current[t.key] = el; }} className={`px-1 py-2 text-sm ${i === active ? "bg-dawn-50" : ""} ${done.has(t.key) ? "opacity-60" : ""}`}>
                 <div className="flex items-center justify-between gap-3">
+                  {controls ? (
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0"
+                      aria-label={`Include ${t.accountName} in the auto-dial session`}
+                      checked={session ? session.includes(t.key) : selected.has(t.key)}
+                      disabled={Boolean(session) || done.has(t.key) || !t.numbers.length}
+                      onChange={(e) => setSelected((s) => { const n = new Set(s); if (e.target.checked) n.add(t.key); else n.delete(t.key); return n; })}
+                    />
+                  ) : null}
                   <button type="button" onClick={() => setExpanded(open ? null : t.key)} className="min-w-0 flex-1 text-left" aria-expanded={open}>
                     <div className="font-medium text-slate-900"><span className="mr-1 text-xs text-slate-400">{open ? "▾" : "▸"}</span>{t.accountName}</div>
+                    {vmMode === "ai" && vmPrep[t.key] ? <div className="text-xs"><PrepBadge p={vmPrep[t.key]!} /></div> : null}
                     <div className="truncate text-xs text-slate-500">{t.reasons?.[0] ? <span className="text-amber-700">{t.reasons[0]}</span> : null}{t.reasons?.[0] && t.meta ? " · " : ""}{t.meta}</div>
                   </button>
                   {t.numbers.length > 1 ? (
@@ -475,4 +584,11 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
       ) : <p className="text-sm text-slate-500">{emptyText ?? "No numbers to call."}</p>}
     </div>
   );
+}
+
+function PrepBadge({ p }: { p: { state: string; error?: string } }) {
+  if (p.state === "writing") return <span className="text-slate-500">✎ Writing voicemail…</span>;
+  if (p.state === "ready") return <span className="text-emerald-700">✓ AI voicemail ready</span>;
+  if (p.state === "script") return <span className="text-amber-700" title={p.error}>⚠ Voicemail written, but the AI voice failed ({p.error ?? "unknown error"}); Twilio&rsquo;s voice will read it</span>;
+  return <span className="text-red-700">✗ Voicemail not written: {p.error}</span>;
 }
