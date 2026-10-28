@@ -24,6 +24,10 @@ model User {
   passwordHash String
   role         String    @default("CLIENT") // ADMIN | REP | CLIENT
   disabled     Boolean   @default(false) // can't sign in (kept for history: their calls, emails, notes)
+  failedLogins Int       @default(0) // wrong passwords in a row; 10 locks the login for 15 minutes
+  lockedUntil  DateTime?
+  // Sessions signed in before this are signed out (set on password change/reset and on disabling).
+  sessionsValidAfter DateTime?
   accountId    String? // set for CLIENT users (portal access)
   account      Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   lastLoginAt  DateTime?

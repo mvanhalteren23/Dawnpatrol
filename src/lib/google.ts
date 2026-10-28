@@ -2,7 +2,7 @@ import "server-only";
 import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
 import { getSetting, setSetting } from "./settings";
-import { open, seal } from "./secret-box";
+import { isSealed, open, openStored, seal } from "./secret-box";
 
 // Two kinds of Google connection:
 // - The company connection (CRM → Settings, admins): Drive folders and client receptionists'
@@ -64,7 +64,7 @@ export async function completeOAuth(code: string, target: { kind: "company" } | 
     email = ticket.getPayload()?.email?.toLowerCase() ?? null;
   }
   if (target.kind === "company") {
-    if (tokens.refresh_token) await setSetting(REFRESH_KEY, tokens.refresh_token);
+    if (tokens.refresh_token) await setSetting(REFRESH_KEY, seal(tokens.refresh_token));
     if (tokens.scope) await setSetting(SCOPES_KEY, tokens.scope);
     if (email) await setSetting(EMAIL_KEY, email);
     return email;
@@ -80,8 +80,11 @@ export async function completeOAuth(code: string, target: { kind: "company" } | 
 type Creds = { refresh: string; email: string | null; scopes: string; personal: boolean };
 
 async function companyCreds(): Promise<Creds | null> {
-  const [refresh, email, scopes] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY), getSetting(SCOPES_KEY)]);
-  return refresh ? { refresh, email, scopes: scopes ?? "", personal: false } : null;
+  const [stored, email, scopes] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY), getSetting(SCOPES_KEY)]);
+  if (!stored) return null;
+  // Connected before tokens were encrypted: encrypt it now.
+  if (!isSealed(stored)) await setSetting(REFRESH_KEY, seal(stored));
+  return { refresh: openStored(stored)!, email, scopes: scopes ?? "", personal: false };
 }
 
 /**

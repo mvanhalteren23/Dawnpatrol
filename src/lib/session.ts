@@ -9,6 +9,7 @@ export type SessionPayload = {
   email: string;
   role: "ADMIN" | "REP" | "CLIENT";
   accountId: string | null;
+  iat?: number; // issued-at (seconds), set when read back from the cookie
 };
 
 function secretKey(): Uint8Array {
@@ -34,7 +35,7 @@ export async function verifySession(token: string | undefined): Promise<SessionP
     if (typeof payload.sub !== "string" || typeof payload.email !== "string") return null;
     const role = payload.role === "ADMIN" || payload.role === "REP" ? payload.role : "CLIENT";
     const accountId = typeof payload.accountId === "string" ? payload.accountId : null;
-    return { sub: payload.sub, email: payload.email, role, accountId };
+    return { sub: payload.sub, email: payload.email, role, accountId, iat: typeof payload.iat === "number" ? payload.iat : 0 };
   } catch {
     return null;
   }

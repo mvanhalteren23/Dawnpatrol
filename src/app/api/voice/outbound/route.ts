@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { OwnershipError, touchAccount } from "@/lib/team";
 import { dialerCallerId, ensureCallActivity } from "@/lib/dialer";
-import { dialableNumber, dialOut, say, twiml } from "@/lib/twilio";
+import { dialableNumber, dialOut, samePhone, say, twiml } from "@/lib/twilio";
 import { appBase, twilioParams, xml } from "@/lib/twilio-request";
 
 // TwiML App Voice URL for the browser dialer: Twilio posts here when the browser connects,
@@ -18,8 +18,13 @@ export async function POST(req: Request) {
   }
   const to = dialableNumber(params.To ?? "");
   const callerId = dialerCallerId();
-  const account = params.accountId ? await db.account.findUnique({ where: { id: params.accountId }, select: { id: true } }) : null;
+  const account = params.accountId ? await db.account.findUnique({ where: { id: params.accountId }, select: { id: true, phone: true, contacts: { select: { phone: true } } } }) : null;
   if (!to || !callerId || !account) return xml(twiml(`${say(!to ? "That number can't be dialled from the CRM." : "The dialer isn't set up.")}<Hangup/>`));
+  // Only the account's own numbers (main line or a contact) can be dialled, so the dialer can't be
+  // used to call arbitrary numbers at the company's expense.
+  if (![account.phone, ...account.contacts.map((c) => c.phone)].some((p) => samePhone(p, to))) {
+    return xml(twiml(`${say("That number isn't on this account. Add it to the account or a contact first.")}<Hangup/>`));
+  }
   // One rep per account: the caller (token identity = user id) must own it, or it's unassigned and becomes theirs.
   const caller = await db.user.findUnique({ where: { id: params.From.slice("client:".length) }, select: { id: true, role: true, disabled: true } });
   if (!caller || caller.disabled || (caller.role !== "ADMIN" && caller.role !== "REP")) return xml(twiml("<Reject/>"));

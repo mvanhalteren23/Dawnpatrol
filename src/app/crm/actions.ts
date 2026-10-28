@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { db } from "@/lib/db";
-import { hashPassword, requireAdmin, requireStaff } from "@/lib/auth";
+import { hashPassword, issueSession, requireAdmin, requireStaff } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/session";
 import { canTouch, findDuplicateAccount, OwnershipError, touchAccount } from "@/lib/team";
 import { STAGES, isClientStage, type Stage } from "@/lib/constants";
@@ -33,7 +33,7 @@ import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
 import { availability } from "@/lib/agent-booking";
 import { provisionLine, removeLine } from "@/lib/business-line";
 import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
-import { cleanDigits, nextFreeExtension, ringFromForm } from "@/lib/twilio";
+import { cleanDigits, dialableNumber, nextFreeExtension, ringFromForm } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 
 function back(path: string, params?: Record<string, string>): never {
@@ -657,7 +657,7 @@ export async function addProspects(runId: string, form: FormData) {
         contact: p.contactName || p.contactEmail ? { firstName: firstName || null, lastName: rest.join(" ") || null, title: p.contactTitle, email: p.contactEmail?.toLowerCase() ?? null, phone: null, linkedin: null } : null,
       };
     }),
-    { source: "claude", ownerId: session.sub, defaultTags: tags, updateExisting: false },
+    { source: "claude", ownerId: session.sub, defaultTags: tags, updateExisting: false, canUpdate: (ownerId) => canTouch(session, ownerId) },
   );
   // Carry Claude's fit score over to new accounts.
   for (const p of picked) {
@@ -691,8 +691,14 @@ export async function savePrompt(form: FormData) {
     kind: ["RESEARCH", "PROSPECTING", "OUTREACH"].includes(kind) ? kind : "RESEARCH",
     description: str(form, "description"),
     template: str(form, "template"),
-    isDefault: form.get("isDefault") === "on",
+    // The default prompt is shared by the whole team: only admins choose it.
+    isDefault: session.role === "ADMIN" && form.get("isDefault") === "on",
   };
+  // Reps edit their own prompts; the team's shared ones are admin-managed.
+  if (id && session.role !== "ADMIN") {
+    const existing = await db.savedPrompt.findUnique({ where: { id }, select: { createdById: true } });
+    if (existing?.createdById !== session.sub) back("/crm/prompts", { error: "Only an administrator can change a prompt someone else wrote. Duplicate it to make your own version." });
+  }
   if (data.isDefault) await db.savedPrompt.updateMany({ where: { kind: data.kind }, data: { isDefault: false } });
   if (id) await db.savedPrompt.update({ where: { id }, data });
   else await db.savedPrompt.create({ data: { ...data, createdById: session.sub } });
@@ -701,7 +707,9 @@ export async function savePrompt(form: FormData) {
 }
 
 export async function deletePrompt(id: string) {
-  await requireStaff();
+  const session = await requireStaff();
+  const existing = await db.savedPrompt.findUnique({ where: { id }, select: { createdById: true } });
+  if (session.role !== "ADMIN" && existing?.createdById !== session.sub) back("/crm/prompts", { error: "Only an administrator can delete a prompt someone else wrote" });
   await db.savedPrompt.delete({ where: { id } });
   back("/crm/prompts");
 }
@@ -727,6 +735,8 @@ export async function updateReceptionist(id: string, form: FormData) {
   const session = await requireReceptionist(id);
   const isAdmin = session.role === "ADMIN";
   const ext = cleanDigits(str(form, "demoExtension"));
+  const transfer = optStr(form, "escalationPhone");
+  if (transfer && !dialableNumber(transfer)) back(`/crm/receptionists/${id}`, { error: "The transfer number must be a Canadian or US number with area code" });
   if (ext) {
     const taken = await db.receptionist.findFirst({ where: { demoExtension: ext, id: { not: id } } });
     if (taken) back(`/crm/receptionists/${id}`, { error: `Extension ${ext} is already used by ${taken.businessName}` });
@@ -1004,8 +1014,11 @@ export async function changePassword(form: FormData) {
   const next = str(form, "next");
   if (next.length < 10) back("/crm/settings", { error: "New password must be at least 10 characters" });
   if (next !== str(form, "confirm")) back("/crm/settings", { error: "New passwords don't match" });
-  await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(next) } });
-  back("/crm/settings", { notice: "Password changed" });
+  // Signs out every other session (stolen cookies included); this browser gets a fresh one.
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(next), sessionsValidAfter: new Date() } });
+  await new Promise((r) => setTimeout(r, 1000)); // the new cookie must be issued after the cut-off second
+  await issueSession(user);
+  back("/crm/settings", { notice: "Password changed. You've been signed out everywhere else." });
 }
 
 /** Remove your own Gmail & Calendar connection (the company connection is untouched). */

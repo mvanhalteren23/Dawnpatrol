@@ -118,7 +118,8 @@ export async function releaseNumber(sid: string): Promise<void> {
 /** Read the RingFields form (ringFirstNumber, ringSeconds, ringMode). Throws on a bad cell number. */
 export function ringFromForm(form: FormData) {
   const cell = String(form.get("ringFirstNumber") ?? "").trim();
-  if (cell && cleanDigits(cell).length < 10) throw new Error("Enter the cell number with area code, e.g. 604-555-1234");
+  // Twilio dials this on every call at our expense: North American, non-premium numbers only.
+  if (cell && !dialableNumber(cell)) throw new Error("Enter a Canadian or US cell number with area code, e.g. 604-555-1234");
   const mode = String(form.get("ringMode") ?? "");
   const seconds = Number(form.get("ringSeconds") ?? 20);
   return {

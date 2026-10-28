@@ -10,12 +10,13 @@ const db = new PrismaClient();
 async function main() {
   const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
-  if (!password) throw new Error("Set ADMIN_PASSWORD before seeding");
-  const admin = await db.user.upsert({
-    where: { email },
-    create: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password, 12) },
-    update: { role: "ADMIN" },
-  });
+  // ADMIN_PASSWORD is only needed to create the first admin; once that login exists it can be
+  // removed from the environment (it never changes an existing password).
+  const existing = await db.user.findUnique({ where: { email } });
+  if (!existing && !password) throw new Error("Set ADMIN_PASSWORD before seeding");
+  const admin = existing
+    ? await db.user.update({ where: { email }, data: { role: "ADMIN" } })
+    : await db.user.create({ data: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password!, 12) } });
   console.log(`Admin: ${admin.email}`);
 
   for (const p of DEFAULT_PROMPTS) {

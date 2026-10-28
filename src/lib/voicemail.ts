@@ -28,7 +28,9 @@ Mention one specific, true detail about their business from the research, the re
 Say the callback number twice, in groups. Warm, plain, no hype, no pressure.`;
 
 function sign(id: string): string {
-  return createHmac("sha256", process.env.AUTH_SECRET ?? "dev").update(`vm:${id}`).digest("base64url").slice(0, 32);
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error("AUTH_SECRET must be set");
+  return createHmac("sha256", secret).update(`vm:${id}`).digest("base64url").slice(0, 32);
 }
 
 export function verifyAudioToken(id: string, token: string | null): boolean {

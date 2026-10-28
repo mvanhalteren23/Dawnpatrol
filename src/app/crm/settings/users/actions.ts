@@ -50,8 +50,8 @@ export async function resetUserPassword(userId: string, form: FormData) {
   await requireAdmin();
   const password = str(form, "password");
   if (password.length < 10) back({ error: "The new password must be at least 10 characters" });
-  const user = await db.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password) } });
-  back({ notice: `Password reset for ${user.email}` });
+  const user = await db.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password), sessionsValidAfter: new Date(), failedLogins: 0, lockedUntil: null } });
+  back({ notice: `Password reset for ${user.email}. They've been signed out everywhere.` });
 }
 
 /**

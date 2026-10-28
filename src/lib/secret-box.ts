@@ -16,6 +16,16 @@ export function seal(plain: string): string {
   return ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), data.toString("base64url")].join(".");
 }
 
+export function isSealed(value: string): boolean {
+  return value.startsWith("v1.");
+}
+
+/** Read a stored secret that may predate encryption (plain text); null passes through. */
+export function openStored(value: string | null): string | null {
+  if (!value) return value;
+  return isSealed(value) ? open(value) : value;
+}
+
 export function open(sealed: string): string {
   const [v, iv, tag, data] = sealed.split(".");
   if (v !== "v1" || !iv || !tag || !data) throw new Error("Unreadable stored secret");

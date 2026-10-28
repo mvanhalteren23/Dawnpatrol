@@ -1,4 +1,5 @@
 import "server-only";
+import { isSealed, openStored, seal } from "./secret-box";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { getSetting, setSetting } from "./settings";
@@ -38,7 +39,10 @@ async function twilioFailureReason(callSids: string[]): Promise<string | null> {
 }
 
 export async function dialerStatus() {
-  const [apiKeySid, apiKeySecret, appSid] = await Promise.all([getSetting(KEYS.apiKeySid), getSetting(KEYS.apiKeySecret), getSetting(KEYS.appSid)]);
+  const [apiKeySid, storedSecret, appSid] = await Promise.all([getSetting(KEYS.apiKeySid), getSetting(KEYS.apiKeySecret), getSetting(KEYS.appSid)]);
+  // Stored encrypted; a key saved before encryption is encrypted on first read.
+  if (storedSecret && !isSealed(storedSecret)) await setSetting(KEYS.apiKeySecret, seal(storedSecret));
+  const apiKeySecret = openStored(storedSecret);
   const twilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
   return { ready: Boolean(twilio && apiKeySid && apiKeySecret && appSid && dialerCallerId()), twilio, apiKeySid, apiKeySecret, appSid, callerId: dialerCallerId(), notes: geminiConfigured() };
 }
@@ -58,7 +62,7 @@ export async function setupDialer(): Promise<void> {
   if (!status.apiKeySid || !status.apiKeySecret) {
     const key = await twilioApi<{ sid: string; secret: string }>("/Keys.json", { form: { FriendlyName: "CRM dialer" } });
     await setSetting(KEYS.apiKeySid, key.sid);
-    await setSetting(KEYS.apiKeySecret, key.secret);
+    await setSetting(KEYS.apiKeySecret, seal(key.secret));
   }
 }
 
