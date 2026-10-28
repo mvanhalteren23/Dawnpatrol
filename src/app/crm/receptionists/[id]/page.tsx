@@ -1,4 +1,6 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
+import { canAccessReceptionist } from "@/lib/access";
+import { demoLineConfig, formatPhone } from "@/lib/demo-line";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -19,9 +21,11 @@ import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLin
 export const dynamic = "force-dynamic";
 
 export default async function ReceptionistPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ notice?: string; error?: string; kbRun?: string }> }) {
-  await requireAdmin();
+  const session = await requireStaff();
+  const isAdmin = session.role === "ADMIN";
   const { id } = await params;
   const sp = await searchParams;
+  if (!(await canAccessReceptionist(session, id))) notFound();
   await syncCallsThrottled(id);
   const r = await db.receptionist.findUnique({
     where: { id },
@@ -31,7 +35,12 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const kbRun = await db.researchRun.findFirst({ where: { kind: "KB_DRAFT", accountId: r.accountId }, orderBy: { createdAt: "desc" } });
   const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
   const returnTo = `/crm/receptionists/${r.id}`;
-  const google = await googleConnection();
+  // The Google account this receptionist books into: a person's own, or the company account.
+  const google = await googleConnection(r.googleUserId);
+  const calendarOwners = isAdmin
+    ? await db.user.findMany({ where: { role: { in: ["ADMIN", "REP"] }, disabled: false, google: { isNot: null } }, select: { id: true, name: true, email: true } })
+    : (await googleConnection(session.sub)).connected ? [{ id: session.sub, name: "You", email: session.email }] : [];
+  const { number: demoNumber } = await demoLineConfig();
 
   return (
     <div>
@@ -45,6 +54,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
         </>}
       />
       <Flash params={sp} />
+      {r.demoExtension ? <Notice kind="success">Demo: call <b>{demoNumber ? formatPhone(demoNumber) : "the demo line"}</b> and enter extension <b>{r.demoExtension}</b> to hear {r.name} answer for {r.businessName}. Send the prospect the same number and extension.</Notice> : null}
       {!elevenLabsConfigured() ? <Notice kind="error">ELEVENLABS_API_KEY is not set — sync is disabled.</Notice> : null}
       {r.syncStatus === "DIRTY" ? <Notice>Knowledge or settings changed since the last sync. Sync to push them to the live agent.</Notice> : null}
       {r.syncError && r.syncStatus === "FAILED" ? <Notice kind="error">Last sync failed: {r.syncError}</Notice> : null}
@@ -67,7 +77,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <Field label="Escalation rules" className="col-span-2"><textarea name="escalationRules" rows={2} defaultValue={r.escalationRules} className="input" /></Field>
             <Field label="Extra instructions" className="col-span-2"><textarea name="extraInstructions" rows={3} defaultValue={r.extraInstructions} className="input" /></Field>
             <Field label="ElevenLabs voice id"><input name="voiceId" defaultValue={r.voiceId ?? ""} className="input" /></Field>
-            <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field>
+            {isAdmin ? <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field> : null}
             <Field label="Demo line extension" className="col-span-2"><input name="demoExtension" defaultValue={r.demoExtension ?? ""} placeholder="e.g. 101 — leave blank if this isn't a demo" className="input" inputMode="numeric" /></Field>
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>
           </form>
@@ -77,8 +87,14 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <p className="col-span-2 text-xs text-slate-500">
               {google.connected
                 ? <>The agent checks <b>{google.email}</b>&apos;s Google Calendar for openings and books calls into it. To book into a client&apos;s calendar, have them share it with that account (“Make changes to events”) and enter its address below.</>
-                : <>Google isn&apos;t connected yet — connect it in <Link href="/crm/settings">Settings</Link>. Until then the agent collects preferred times instead.</>}
+                : <>{r.googleUserId ? "That person's" : "The company"} Google account isn&apos;t connected — connect it in <Link href="/crm/settings">Settings</Link>. Until then the agent collects preferred times instead.</>}
             </p>
+            <Field label="Book into whose Google account" className="col-span-2">
+              <select name="bookingGoogle" defaultValue={r.googleUserId ?? ""} className="input">
+                {isAdmin ? <option value="">Company Google account</option> : r.googleUserId !== session.sub ? <option value={r.googleUserId ?? ""}>{r.googleUserId ? "Another person's calendar" : "Company Google account"} (only an admin can change)</option> : null}
+                {calendarOwners.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}{u.id === session.sub ? " (your calendar)" : ""}</option>)}
+              </select>
+            </Field>
             <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingEnabled" defaultChecked={r.bookingEnabled} /> Let the agent check availability and book</label>
             <Field label="Appointment name"><input name="bookingTitle" defaultValue={r.bookingTitle} className="input" /></Field>
             <Field label="Calendar"><input name="bookingCalendarId" defaultValue={r.bookingCalendarId} placeholder="primary" className="input" /></Field>
@@ -96,14 +112,14 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             </Field>
             <FollowUpFields r={r} />
             <Field label="Questions to ask before booking (one per line)" className="col-span-2"><textarea name="bookingQuestions" rows={3} defaultValue={r.bookingQuestions} placeholder="What do your customers usually call about?" className="input" /></Field>
-            <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM: match or create the account, research new ones with Claude, and flag them for review (for your own line)</label>
+            {isAdmin ? <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM: match or create the account, research new ones with Claude, and flag them for review (for your own line)</label> : null}
             <div className="col-span-2 flex gap-2">
               <SubmitButton pendingText="Saving…">Save booking</SubmitButton>
               {google.connected ? <SubmitButton formAction={previewOpenings.bind(null, r.id)} className="btn-secondary" pendingText="Checking…">Preview openings</SubmitButton> : null}
             </div>
           </form>
 
-          <div className="card space-y-3">
+          {isAdmin ? <div className="card space-y-3">
             <h2>Business line</h2>
             {r.businessNumber ? (
               <>
@@ -126,11 +142,11 @@ export default async function ReceptionistPage({ params, searchParams }: { param
                 <div className="col-span-2"><SubmitButton pendingText="Setting up…">Get business line</SubmitButton></div>
               </form>
             )}
-          </div>
+          </div> : null}
 
           <TestChat receptionistId={r.id} greeting={r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 
-          <div className="card space-y-3 text-sm">
+          {isAdmin ? <div className="card space-y-3 text-sm">
             <h2>RAG endpoints</h2>
             <p className="text-xs text-slate-500">Send <code>Authorization: Bearer &lt;token&gt;</code>. Add the search endpoint to the ElevenLabs agent as a <b>webhook tool</b> for live lookups; export feeds any Claude workflow.</p>
             <div><div className="label">Search (GET ?q=)</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{app}/api/rag/{r.id}/search?q=…</code></div>
@@ -138,7 +154,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <div><div className="label">Token</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{r.ragToken}</code></div>
             <form action={rotateRagToken.bind(null, r.id)}><button className="text-xs text-red-600">Rotate token</button></form>
             <div><div className="label">ElevenLabs post-call webhook</div><code className="block break-all rounded bg-slate-100 p-2 text-xs">{app}/api/webhooks/elevenlabs</code><p className="mt-1 text-xs text-slate-500">Optional: calls are also pulled from ElevenLabs automatically, so they log even without the webhook.</p></div>
-          </div>
+          </div> : null}
         </div>
 
         <div className="space-y-6 lg:col-span-3">

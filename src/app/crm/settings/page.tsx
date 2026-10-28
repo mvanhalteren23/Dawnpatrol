@@ -15,7 +15,7 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
-import { changePassword, disconnectGoogle, saveCompanyName, saveGoal, seedDefaultPrompts } from "../actions";
+import { changePassword, disconnectGoogle, disconnectMyGoogle, saveCompanyName, saveGoal, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,29 @@ function Status({ ok, label }: { ok: boolean; label?: string }) {
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
   const session = await requireStaff();
+  const [me, myRow] = await Promise.all([googleConnection(session.sub), db.googleAccount.findUnique({ where: { userId: session.sub }, select: { lastSyncAt: true, lastError: true } })]);
+  const myGoogleCard = (
+    <div className="card space-y-2 text-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2>Your Gmail &amp; Calendar</h2>
+          <p className="text-xs text-slate-500">Emails you send from the CRM go from your own Gmail with open and click tracking, your replies are logged on the account, and your demo receptionists book meetings straight into your calendar.</p>
+          {me.connected ? (
+            <p className="mt-1 text-xs">Connected as <b>{me.email}</b>{me.personal ? "" : " (the company Google account, which is yours)"}{myRow?.lastSyncAt ? ` · Gmail synced ${formatDate(myRow.lastSyncAt, true)}` : ""}</p>
+          ) : null}
+          {myRow?.lastError ? <p className="mt-1 text-xs text-red-700">{myRow.lastError} Click Reconnect.</p> : null}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {!googleConfigured() ? <Status ok={false} /> : (
+            <>
+              <a href="/api/google/auth?for=me" className={me.connected ? "btn-secondary" : "btn"}>{me.connected ? (me.personal ? "Reconnect" : "Use a different account") : "Connect Gmail & Calendar"}</a>
+              {me.personal ? <form action={disconnectMyGoogle}><button className="btn-secondary">Disconnect</button></form> : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
   const passwordCard = (
         <div className="card">
           <h2 className="mb-3">Your password</h2>
@@ -42,6 +65,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <div className="max-w-3xl space-y-6">
         <PageHeader title="Settings" subtitle={`Signed in as ${session.email}`} />
         <Flash params={await searchParams} />
+        {myGoogleCard}
         {passwordCard}
       </div>
     );
@@ -93,6 +117,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <p className="text-xs text-slate-500">Setup creates a &ldquo;CRM dialer&rdquo; TwiML App and API key on your Twilio account. The Twilio account must be upgraded (trial accounts can only call verified numbers).</p>
       </div>
 
+      {myGoogleCard}
+
       {passwordCard}
 
       <div className="card">
@@ -109,8 +135,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <h2>Integrations</h2>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="font-medium">Google Drive + Gmail + Calendar</div>
-            <div className="text-xs text-slate-500">Folder system for every account, research docs, outreach logs, automatic Gmail outreach tracking + tracked sending, and Calendar availability + booking for receptionists.</div>
+            <div className="font-medium">Company Google (Drive + client receptionists)</div>
+            <div className="text-xs text-slate-500">The company Google account: the Drive folder system for every account, research docs and outreach logs, and Calendar availability + booking (and email confirmations) for client receptionists. Each person connects their own Gmail above.</div>
             {google.connected ? <div className="mt-1 text-xs">Connected as <b>{google.email}</b>{lastSync ? ` · last Gmail sync ${formatDate(lastSync, true)}` : ""}{driveRoot ? <> · <a href={`https://drive.google.com/drive/folders/${driveRoot}`} target="_blank" rel="noreferrer">open Drive root</a></> : null}</div> : null}
             {google.connected && !google.calendar ? <div className="mt-1 text-xs text-amber-700">Connected before Calendar access was added — click Connect Google again to grant it.</div> : null}
           </div>

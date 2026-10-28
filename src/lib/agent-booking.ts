@@ -30,13 +30,13 @@ const FALLBACK = "Live booking is unavailable right now. Collect two preferred d
 
 async function ready(r: Receptionist): Promise<string | null> {
   if (!r.bookingEnabled) return "Booking is turned off for this receptionist. " + FALLBACK;
-  if (!(await googleConnection()).connected) return FALLBACK;
+  if (!(await googleConnection(r.googleUserId)).connected) return FALLBACK;
   return null;
 }
 
 async function openSlots(r: Receptionist, now: Date) {
   const rules = slotRules(r);
-  const busy = await busyIntervals(r.bookingCalendarId, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000));
+  const busy = await busyIntervals(r.bookingCalendarId, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000), r.googleUserId);
   return { rules, slots: freeSlots(rules, now, busy) };
 }
 
@@ -134,6 +134,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     attendeeEmail: email,
     googleMeet: meetingType === "google_meet",
     requestId: randomUUID(),
+    as: r.googleUserId,
   });
 
   let lead: LeadResult | null = null;
@@ -146,7 +147,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
 
   let sent = false;
   if (channel) {
-    const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await connectedEmail()].filter(Boolean).join(" or email ");
+    const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await connectedEmail(r.googleUserId)].filter(Boolean).join(" or email ");
     const how = meetingType === "google_meet" ? `Google Meet — the link is in your calendar invite${email ? ` (${email})` : ""}` : `we'll call you at ${input.caller_phone.trim()}`;
     const topic = input.interest ? ` We'll cover: ${input.interest.trim()}.` : "";
     const body = channel === "sms"

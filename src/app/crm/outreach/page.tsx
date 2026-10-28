@@ -21,9 +21,10 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
   const scope = sp.scope === "me" || sp.scope === "team" ? sp.scope : session.role === "ADMIN" ? "team" : "me";
   const scoped: Prisma.ActivityWhereInput = scope === "me" ? { account: { ownerId: session.sub } } : {};
   const where: Prisma.ActivityWhereInput = { occurredAt: { gte: since }, direction: { not: null }, ...scoped, ...(sp.type ? { type: sp.type } : {}) };
-  const [activities, google, lastSync, outbound, replied, opened, inbound] = await Promise.all([
+  const [activities, google, myGoogle, lastSync, outbound, replied, opened, inbound] = await Promise.all([
     db.activity.findMany({ where, orderBy: { occurredAt: "desc" }, take: 200, include: { account: true, contact: true } }),
     googleConnection(),
+    googleConnection(session.sub),
     getSetting("gmail.lastSyncAt"),
     db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, direction: "OUTBOUND" } }),
     db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, direction: "OUTBOUND", repliedAt: { not: null } } }),
@@ -39,7 +40,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
         subtitle={`Every touch across all accounts — last ${days} days`}
         actions={<>
           <Link href="/crm/outreach/writer" className="btn-secondary">✍️ Email writer</Link>
-          {google.connected ? <form action={syncOutreachNow}><SubmitButton className="btn-secondary" pendingText="Syncing…">Sync Gmail now</SubmitButton></form> : <Link href="/crm/settings" className="btn">Connect Gmail</Link>}
+          {google.connected || myGoogle.connected ? <form action={syncOutreachNow}><SubmitButton className="btn-secondary" pendingText="Syncing…">Sync Gmail now</SubmitButton></form> : <Link href="/crm/settings" className="btn">Connect Gmail</Link>}
         </>}
       />
       <Flash params={sp} />

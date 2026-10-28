@@ -4,11 +4,14 @@ import { completeOAuth } from "@/lib/google";
 import { ensureRootFolders } from "@/lib/drive";
 
 export async function GET(req: NextRequest) {
-  if (!(await apiSession("ADMIN"))) return NextResponse.redirect(new URL("/login", req.url));
+  const [expected, kind] = (req.cookies.get("g_oauth_state")?.value ?? "").split(".");
+  const personal = kind === "me";
+  const session = await apiSession(personal ? "STAFF" : "ADMIN");
+  if (!session) return NextResponse.redirect(new URL("/login", req.url));
   const url = req.nextUrl;
   const settings = new URL("/crm/settings", req.url);
   const state = url.searchParams.get("state");
-  if (!state || state !== req.cookies.get("g_oauth_state")?.value) {
+  if (!state || !expected || state !== expected) {
     settings.searchParams.set("error", "Google sign-in expired, try again");
     return NextResponse.redirect(settings);
   }
@@ -18,9 +21,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(settings);
   }
   try {
-    const email = await completeOAuth(code);
-    await ensureRootFolders();
-    settings.searchParams.set("notice", `Google connected${email ? ` as ${email}` : ""}. Drive folders created.`);
+    if (personal) {
+      const email = await completeOAuth(code, { kind: "personal", userId: session.sub });
+      settings.searchParams.set("notice", `Your Gmail & Calendar are connected (${email}). Emails you send from the CRM now go from this address, and replies are tracked.`);
+    } else {
+      const email = await completeOAuth(code, { kind: "company" });
+      await ensureRootFolders();
+      settings.searchParams.set("notice", `Company Google connected${email ? ` as ${email}` : ""}. Drive folders created.`);
+    }
   } catch (err) {
     settings.searchParams.set("error", `Google connection failed: ${(err as Error).message}`);
   }

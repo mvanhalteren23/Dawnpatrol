@@ -29,6 +29,7 @@ model User {
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
 
+  google        GoogleAccount?
   ownedAccounts Account[]      @relation("AccountOwner")
   activities    Activity[]
   prompts       SavedPrompt[]
@@ -268,6 +269,10 @@ model Receptionist {
   ragToken          String  @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
   demoExtension     String? @unique
+  // Whose Google Calendar/Gmail this receptionist books into and confirms from: a rep's own
+  // connection (their demo receptionists), or null = the company Google connection.
+  googleUserId String?
+  createdById  String?
   // Calendar booking (Google Calendar of the connected Google account; a client can share
   // their calendar with that account and put its address in bookingCalendarId).
   bookingEnabled        Boolean @default(false)
@@ -434,4 +439,19 @@ model VoicemailAudio {
   createdAt   DateTime @default(now())
 
   @@index([accountId, createdAt])
+}
+
+/** A person's own Google connection (Gmail sending + tracking, Calendar). The company connection lives in Setting. */
+model GoogleAccount {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  refreshToken String // encrypted (AES-256-GCM, key from AUTH_SECRET)
+  scopes       String    @default("")
+  gmailCursor  Int? // unix seconds of the last Gmail sync
+  lastSyncAt   DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }

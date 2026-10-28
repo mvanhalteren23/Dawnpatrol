@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { hashPassword, requireAdmin, requireStaff } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/session";
 import { canTouch, findDuplicateAccount, OwnershipError, touchAccount } from "@/lib/team";
-import { STAGES, type Stage } from "@/lib/constants";
+import { STAGES, isClientStage, type Stage } from "@/lib/constants";
+import { googleConnection } from "@/lib/google";
 import { addDays, joinTags, normalizeDomain, optInt, optStr, parseMoneyToCents, safeJson, str, websiteUrl } from "@/lib/utils";
 import { changeStage, recordActivity, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
 import { ensureAccountFolders } from "@/lib/drive";
@@ -56,6 +57,14 @@ async function guard(session: SessionPayload, accountId: string, path = `/crm/ac
     if (err instanceof OwnershipError) back(path, { error: err.message });
     throw err;
   }
+}
+
+/** Receptionist settings: admins any; reps their own prospects' demo receptionists (see canAccessReceptionist). */
+async function requireReceptionist(id: string): Promise<SessionPayload> {
+  const session = await requireStaff();
+  const { canAccessReceptionist } = await import("@/lib/access");
+  if (!(await canAccessReceptionist(session, id))) back("/crm", { error: "Only an administrator can change this receptionist (it belongs to a client or another rep's account)" });
+  return session;
 }
 
 /** Same check for actions that return a result instead of redirecting. */
@@ -544,7 +553,10 @@ export async function syncOutreachNow() {
   try {
     const r = await syncGmail();
     for (const id of r.accountsTouched) await writeOutreachLog(id).catch(() => undefined);
-    back("/crm/outreach", { notice: `Gmail synced: ${r.recorded} new touches from ${r.scanned} messages` });
+    back("/crm/outreach", {
+      notice: `Gmail synced: ${r.recorded} new touches from ${r.scanned} messages`,
+      ...(r.errors.length ? { error: `Some mailboxes couldn't be read: ${r.errors.join("; ")}` } : {}),
+    });
   } catch (err) {
     unstable_rethrow(err);
     back("/crm/outreach", { error: errMsg(err) });
@@ -712,7 +724,8 @@ export async function createReceptionist(accountId: string, form: FormData) {
 }
 
 export async function updateReceptionist(id: string, form: FormData) {
-  await requireAdmin();
+  const session = await requireReceptionist(id);
+  const isAdmin = session.role === "ADMIN";
   const ext = cleanDigits(str(form, "demoExtension"));
   if (ext) {
     const taken = await db.receptionist.findFirst({ where: { demoExtension: ext, id: { not: id } } });
@@ -734,7 +747,8 @@ export async function updateReceptionist(id: string, form: FormData) {
       escalationRules: str(form, "escalationRules"),
       bookingUrl: optStr(form, "bookingUrl"),
       extraInstructions: str(form, "extraInstructions"),
-      elevenLabsAgentId: optStr(form, "elevenLabsAgentId"),
+      // Linking an existing ElevenLabs agent is an admin job (it could point at another client's agent).
+      ...(isAdmin ? { elevenLabsAgentId: optStr(form, "elevenLabsAgentId") } : {}),
       demoExtension: ext || null,
     },
   });
@@ -750,7 +764,8 @@ export async function markReviewed(accountId: string) {
 }
 
 export async function updateBooking(id: string, form: FormData) {
-  await requireAdmin();
+  const session = await requireReceptionist(id);
+  const isAdmin = session.role === "ADMIN";
   const path = `/crm/receptionists/${id}`;
   let availability: ReturnType<typeof availabilityFromForm>;
   try {
@@ -773,7 +788,8 @@ export async function updateBooking(id: string, form: FormData) {
       bookingQuestions: str(form, "bookingQuestions"),
       ...availability,
       ...followUpFromForm(form),
-      bookingAddsToCrm: form.get("bookingAddsToCrm") === "on",
+      ...(isAdmin ? { bookingAddsToCrm: form.get("bookingAddsToCrm") === "on" } : {}),
+      ...(await bookingGoogleFromForm(session, form)),
     },
   });
   await markDirty(id);
@@ -821,7 +837,7 @@ export async function removeBusinessLine(id: string, form: FormData) {
 
 /** Run the same lookup the agent's get_available_times tool does, so you can sanity-check it. */
 export async function previewOpenings(id: string) {
-  await requireAdmin();
+  await requireReceptionist(id);
   const path = `/crm/receptionists/${id}`;
   try {
     const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
@@ -835,7 +851,7 @@ export async function previewOpenings(id: string) {
 }
 
 export async function syncToElevenLabs(id: string) {
-  await requireAdmin();
+  await requireReceptionist(id);
   try {
     const r = await syncReceptionist(id);
     back(`/crm/receptionists/${id}`, { notice: `Synced to ElevenLabs agent ${r.agentId} (${r.docs} KB documents)` });
@@ -846,7 +862,7 @@ export async function syncToElevenLabs(id: string) {
 }
 
 export async function draftKbFromWebsite(id: string) {
-  await requireAdmin();
+  await requireReceptionist(id);
   let runId: string;
   try {
     runId = await startKbDraft(id);
@@ -992,6 +1008,14 @@ export async function changePassword(form: FormData) {
   back("/crm/settings", { notice: "Password changed" });
 }
 
+/** Remove your own Gmail & Calendar connection (the company connection is untouched). */
+export async function disconnectMyGoogle() {
+  const session = await requireStaff();
+  const { disconnectPersonal } = await import("@/lib/google");
+  await disconnectPersonal(session.sub);
+  back("/crm/settings", { notice: "Your Gmail & Calendar are disconnected. You can also remove the app at myaccount.google.com/permissions." });
+}
+
 export async function disconnectGoogle() {
   await requireAdmin();
   const { deleteSetting } = await import("@/lib/settings");
@@ -1000,6 +1024,61 @@ export async function disconnectGoogle() {
 }
 
 // --- Demo line ---------------------------------------------------------------------
+
+/**
+ * Whose Google Calendar a receptionist books into: "" = the company account (admins only), or a
+ * person with their own connection. Reps can only pick themselves.
+ */
+async function bookingGoogleFromForm(session: SessionPayload, form: FormData): Promise<{ googleUserId?: string | null }> {
+  if (!form.has("bookingGoogle")) return {};
+  const pick = str(form, "bookingGoogle") || null;
+  if (session.role !== "ADMIN" && pick !== session.sub) return {};
+  if (pick && !(await googleConnection(pick)).connected) return {};
+  return { googleUserId: pick };
+}
+
+/**
+ * One click from a prospect's account: a demo receptionist for their business, answering on the
+ * demo line under its own extension. Claude drafts its knowledge from their website, the drafts
+ * go live (it's a demo built from public info) and it syncs to ElevenLabs; meetings booked on a
+ * demo call land in the rep's own calendar. Re-running it opens the existing demo.
+ */
+export async function createDemoReceptionist(accountId: string, form: FormData) {
+  const session = await requireStaff();
+  await guard(session, accountId);
+  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { receptionists: { where: { demoExtension: { not: null } }, take: 1 } } });
+  if (isClientStage(account.stage) && session.role !== "ADMIN") back(`/crm/accounts/${accountId}`, { error: "This account is a client: an administrator sets up its production receptionist" });
+  if (account.receptionists[0]) back(`/crm/receptionists/${account.receptionists[0].id}`, { notice: "This prospect already has a demo receptionist" });
+  if (!account.website && !account.domain) back(`/crm/accounts/${accountId}?edit=1`, { error: "Add the prospect's website first: the demo's knowledge is drafted from it" });
+  const mine = await googleConnection(session.sub);
+  const r = await db.receptionist.create({
+    data: {
+      accountId,
+      name: str(form, "name") || "Ava",
+      businessName: account.name,
+      ragToken: randomBytes(24).toString("base64url"),
+      demoExtension: await freeExtension(),
+      createdById: session.sub,
+      googleUserId: mine.connected ? session.sub : null,
+      bookingEnabled: mine.calendar,
+      bookingTitle: `Demo booking (${account.name})`,
+      bookingAddsToCrm: false, // demo bookings are pretend customers, not leads
+    },
+  });
+  const runId = await startKbDraft(r.id);
+  after(async () => {
+    await executeKbDraft(runId);
+    await db.knowledgeItem.updateMany({ where: { receptionistId: r.id, tags: "claude-draft" }, data: { isActive: true } });
+    try {
+      await syncReceptionist(r.id);
+      const { number } = await demoLineConfig();
+      await recordActivity({ accountId, type: "NOTE", source: "system", subject: "Demo receptionist ready", body: `Call ${number ? formatPhone(number) : "the demo line"}, extension ${r.demoExtension}, to hear ${r.name} answer for ${account.name}.`, createdById: session.sub });
+    } catch (err) {
+      console.error("demo receptionist sync", err);
+    }
+  });
+  back(`/crm/receptionists/${r.id}`, { notice: `Building ${account.name}'s demo: Claude is reading their website, then it syncs to ElevenLabs (a minute or two). Demo line extension ${r.demoExtension}.`, kbRun: runId });
+}
 
 async function freeExtension(): Promise<string> {
   const taken = await db.receptionist.findMany({ where: { demoExtension: { not: null } }, select: { demoExtension: true } });

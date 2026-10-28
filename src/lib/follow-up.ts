@@ -15,13 +15,13 @@ import { followUpEnabled, pickChannel, type Channel } from "./follow-up-rules";
 export { followUpEnabled, pickChannel, type Channel };
 
 export async function sendFollowUp(
-  r: Pick<Receptionist, "id" | "businessName" | "businessNumber">,
+  r: Pick<Receptionist, "id" | "businessName" | "businessNumber" | "googleUserId">,
   msg: { kind: "booking" | "call"; channel: Channel; to: string; subject: string; body: string; conversationId?: string | null },
 ): Promise<boolean> {
   let error: string | null = null;
   try {
     if (msg.channel === "sms") await sendSms(msg.to, msg.body, r.businessNumber); // from the client's own line when they have one
-    else await sendPlainEmail({ to: msg.to, subject: msg.subject, body: msg.body, fromName: r.businessName });
+    else await sendPlainEmail({ to: msg.to, subject: msg.subject, body: msg.body, fromName: r.businessName, as: r.googleUserId });
   } catch (e) {
     error = (e as Error).message.slice(0, 500);
     console.error(`follow-up ${msg.channel} failed`, e);

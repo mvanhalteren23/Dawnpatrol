@@ -14,6 +14,7 @@ import { Dialer, type DialTarget } from "@/components/Dialer";
 import { dialerStatus } from "@/lib/dialer";
 import {
   setAccountOwner,
+  createDemoReceptionist,
   addContact,
   checkoutLink,
   createDriveFolders,
@@ -80,10 +81,11 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const ownerChoices = session.role === "ADMIN" ? team : team.filter((u) => u.id === session.sub);
 
   const editing = sp.edit === "1";
-  const [prompts, plans, google, draftRun, typeCounts, emailStats, openTasks, callStats, dialer] = await Promise.all([
+  const [prompts, plans, google, myGoogle, draftRun, typeCounts, emailStats, openTasks, callStats, dialer] = await Promise.all([
     db.savedPrompt.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     googleConnection(),
+    googleConnection(session.sub),
     sp.draft ? db.emailDraft.findFirst({ where: { id: sp.draft, accountId: id } }) : null,
     db.activity.groupBy({ by: ["type", "direction"], where: { accountId: id }, _count: true }),
     db.activity.aggregate({ where: { accountId: id, type: "EMAIL", direction: "OUTBOUND" }, _count: true, _sum: { openCount: true, clickCount: true } }),
@@ -139,7 +141,8 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
         </Notice>
       ) : null}
       {sp.checkout ? <Notice kind="success">Checkout link: <a href={sp.checkout} target="_blank" rel="noreferrer" className="break-all">{sp.checkout}</a></Notice> : null}
-      {!google.connected ? <Notice>Google isn&apos;t connected — Drive folders and Gmail sending are disabled. <Link href="/crm/settings">Connect in Settings</Link>.</Notice> : null}
+      {!myGoogle.connected ? <Notice>Your Gmail isn&apos;t connected, so you can&apos;t send email from here yet. <Link href="/crm/settings">Connect your Gmail &amp; Calendar in Settings</Link>.</Notice> : null}
+      {!google.connected && session.role === "ADMIN" ? <Notice>The company Google account isn&apos;t connected, so Drive folders are off. <Link href="/crm/settings">Connect in Settings</Link>.</Notice> : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         {[
@@ -320,13 +323,25 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <div className="text-xs text-slate-500">{r._count.knowledge} KB items · {r._count.calls} calls{r.demoExtension ? ` · demo ext ${r.demoExtension}` : ""}</div>
               </Link>
             ))}
-            <form action={createReceptionist.bind(null, account.id)} className="space-y-2">
-              <div className="flex gap-2">
-                <input name="name" placeholder="Receptionist name (e.g. Ava)" className="input" />
-                <button className="btn-secondary whitespace-nowrap">+ Receptionist</button>
-              </div>
-              <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="demo" defaultChecked={!isClient} /> Demo for this prospect — give it an extension on the demo line</label>
-            </form>
+            {!isClient && mine && !account.receptionists.some((r) => r.demoExtension) ? (
+              <form action={createDemoReceptionist.bind(null, account.id)} className="mb-3 space-y-2 rounded-lg bg-dawn-50 p-3">
+                <div className="text-sm font-medium">Demo receptionist</div>
+                <p className="text-xs text-slate-600">One click: Claude reads {account.domain ?? "their website"}, builds the knowledge base, and puts a receptionist for {account.name} on the demo line under its own extension. Meetings booked on a demo call go into {myGoogle.calendar ? "your calendar" : "the company calendar (connect your own in Settings)"}.</p>
+                <div className="flex gap-2">
+                  <input name="name" placeholder="Receptionist name (Ava)" className="input" />
+                  <SubmitButton className="btn whitespace-nowrap" pendingText="Building…">Create demo</SubmitButton>
+                </div>
+              </form>
+            ) : null}
+            {session.role === "ADMIN" ? (
+              <form action={createReceptionist.bind(null, account.id)} className="space-y-2">
+                <div className="flex gap-2">
+                  <input name="name" placeholder="Receptionist name (e.g. Ava)" className="input" />
+                  <button className="btn-secondary whitespace-nowrap">+ Receptionist</button>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="demo" defaultChecked={!isClient} /> Demo for this prospect — give it an extension on the demo line</label>
+              </form>
+            ) : null}
           </div>
 
           <div className="card">
@@ -419,7 +434,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                   <select name="contactId" className="input" defaultValue={draftRun?.contactId ?? undefined}>{emailable.map((c) => <option key={c.id} value={c.id}>{contactName(c)} &lt;{c.email}&gt;</option>)}</select>
                   <input name="subject" placeholder="Subject" className="input" defaultValue={draft.subject} required />
                   <textarea name="body" rows={draft.body ? 9 : 5} className="input" defaultValue={draft.body} placeholder="Plain text. Links are click-tracked; opens are tracked." required />
-                  <SubmitButton pendingText="Sending…">{google.connected ? "Send via Gmail (tracked)" : "Connect Google to send"}</SubmitButton>
+                  <SubmitButton pendingText="Sending…">{myGoogle.connected ? `Send from ${myGoogle.email} (tracked)` : "Connect your Gmail to send"}</SubmitButton>
                 </form>
               </>
             ) : <Empty>Add a contact with an email to send tracked outreach.</Empty>}

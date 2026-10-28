@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { connectedEmail, googleFetch } from "./google";
+import { connectedEmail, googleFetch, type GoogleAs } from "./google";
 import { getSetting, setSetting } from "./settings";
 import { writeAccountDoc } from "./drive";
 import { buildMatchIndex, matchAddresses, nextFollowUp, nextStageAfterActivity } from "./outreach-rules";
@@ -113,11 +113,51 @@ type GmailMessage = {
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
-export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<{ scanned: number; recorded: number; accountsTouched: string[] }> {
-  const me = (await connectedEmail())?.toLowerCase();
-  if (!me) throw new Error("Google is not connected");
-  const cursor = Number((await getSetting("gmail.cursor")) ?? 0);
-  const since = cursor || Math.floor(Date.now() / 1000) - 14 * 86400;
+type SyncResult = { scanned: number; recorded: number; accountsTouched: string[]; errors: string[] };
+
+/**
+ * Track outreach from every connected mailbox: the company Google account and each person's
+ * own Gmail. Emails a person sent are credited to them (Team page); replies mark the thread.
+ */
+export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<SyncResult> {
+  const total: SyncResult = { scanned: 0, recorded: 0, accountsTouched: [], errors: [] };
+  const add = (r: Omit<SyncResult, "errors">) => {
+    total.scanned += r.scanned;
+    total.recorded += r.recorded;
+    total.accountsTouched = Array.from(new Set([...total.accountsTouched, ...r.accountsTouched]));
+  };
+  const companyEmail = (await connectedEmail())?.toLowerCase() ?? null;
+  if (companyEmail) {
+    try {
+      const owner = await db.user.findFirst({ where: { email: { equals: companyEmail, mode: "insensitive" }, role: { in: ["ADMIN", "REP"] } }, select: { id: true } });
+      const cursor = Number((await getSetting("gmail.cursor")) ?? 0);
+      const r = await syncMailbox({ as: null, me: companyEmail, userId: owner?.id ?? null, since: cursor, maxMessages: opts.maxMessages });
+      await setSetting("gmail.cursor", String(r.startedAt - 300)); // small overlap; externalId dedupes
+      await setSetting("gmail.lastSyncAt", new Date().toISOString());
+      add(r);
+    } catch (err) {
+      total.errors.push(`Company Gmail (${companyEmail}): ${(err as Error).message}`);
+    }
+  }
+  const mailboxes = await db.googleAccount.findMany({ include: { user: { select: { disabled: true } } } });
+  for (const g of mailboxes) {
+    if (g.user.disabled || g.email.toLowerCase() === companyEmail) continue; // same mailbox as the company one
+    try {
+      const r = await syncMailbox({ as: g.userId, me: g.email.toLowerCase(), userId: g.userId, since: g.gmailCursor ?? 0, maxMessages: opts.maxMessages });
+      await db.googleAccount.update({ where: { id: g.id }, data: { gmailCursor: r.startedAt - 300, lastSyncAt: new Date(), lastError: null } });
+      add(r);
+    } catch (err) {
+      total.errors.push(`${g.email}: ${(err as Error).message}`);
+      await db.googleAccount.update({ where: { id: g.id }, data: { lastError: (err as Error).message.slice(0, 500) } });
+    }
+  }
+  if (!companyEmail && !mailboxes.length) throw new Error("Google is not connected");
+  return total;
+}
+
+async function syncMailbox(o: { as: string | null; me: string; userId: string | null; since: number; maxMessages?: number }) {
+  const me = o.me;
+  const since = o.since || Math.floor(Date.now() / 1000) - 14 * 86400;
   const startedAt = Math.floor(Date.now() / 1000);
 
   const [contacts, accounts] = await Promise.all([
@@ -129,10 +169,10 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<{ 
 
   const ids: { id: string; threadId: string }[] = [];
   let pageToken: string | undefined;
-  const max = opts.maxMessages ?? 500;
+  const max = o.maxMessages ?? 500;
   do {
     const q = encodeURIComponent(`after:${since} -in:chats -category:promotions -category:social`);
-    const page = await googleFetch<GmailList>(`${GMAIL}/messages?q=${q}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ""}`);
+    const page = await googleFetch<GmailList>(`${GMAIL}/messages?q=${q}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ""}`, {}, o.as);
     ids.push(...(page.messages ?? []));
     pageToken = page.nextPageToken;
   } while (pageToken && ids.length < max);
@@ -145,7 +185,7 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<{ 
   const touched = new Set<string>();
   for (const { id } of ids.slice(0, max)) {
     if (known.has(`gmail:${id}`)) continue;
-    const msg = await googleFetch<GmailMessage>(`${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject`);
+    const msg = await googleFetch<GmailMessage>(`${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject`, {}, o.as);
     const header = (n: string) => msg.payload?.headers?.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value ?? "";
     const from = extractEmailAddresses(header("From"));
     const outbound = from.includes(me);
@@ -165,15 +205,14 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<{ 
       externalId: `gmail:${msg.id}`,
       threadId: msg.threadId,
       occurredAt: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+      createdById: outbound ? o.userId : null,
     });
     if (created) {
       recorded++;
       touched.add(match.accountId);
     }
   }
-  await setSetting("gmail.cursor", String(startedAt - 300)); // small overlap; externalId dedupes
-  await setSetting("gmail.lastSyncAt", new Date().toISOString());
-  return { scanned: ids.length, recorded, accountsTouched: Array.from(touched) };
+  return { scanned: ids.length, recorded, accountsTouched: Array.from(touched), startedAt };
 }
 
 function encodeHeader(value: string): string {
@@ -182,8 +221,8 @@ function encodeHeader(value: string): string {
 }
 
 /** Plain-text email from the connected Gmail account (no tracking, no activity). */
-export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null }) {
-  const me = await connectedEmail();
+export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null; as?: GoogleAs }) {
+  const me = await connectedEmail(params.as);
   if (!me) throw new Error("Google is not connected");
   const mime = [
     `From: ${params.fromName ? `${encodeHeader(params.fromName)} <${me}>` : me}`,
@@ -199,15 +238,18 @@ export async function sendPlainEmail(params: { to: string; subject: string; body
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ raw: Buffer.from(mime).toString("base64url") }),
-  });
+  }, params.as);
 }
 
-/** Send from the connected Gmail account with open/click tracking, and log it as an activity. */
+/**
+ * Send with open/click tracking from the sender's own Gmail (or the company Gmail when no user is
+ * given), and log it as an activity.
+ */
 export async function sendTrackedEmail(params: { accountId: string; contactId: string; subject: string; body: string; userId?: string }) {
   const contact = await db.contact.findUniqueOrThrow({ where: { id: params.contactId } });
   if (!contact.email) throw new Error("Contact has no email address");
-  const me = await connectedEmail();
-  if (!me) throw new Error("Google is not connected");
+  const me = await connectedEmail(params.userId);
+  if (!me) throw new Error(params.userId ? "Connect your Gmail first: CRM → Settings → Your Gmail & Calendar." : "Google is not connected");
 
   const activity = await recordActivity({
     accountId: params.accountId,
@@ -236,7 +278,7 @@ export async function sendTrackedEmail(params: { accountId: string; contactId: s
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw: Buffer.from(mime).toString("base64url") }),
-    });
+    }, params.userId);
     await db.activity.update({ where: { id: activity.id }, data: { externalId: `gmail:${sent.id}`, threadId: sent.threadId } });
   } catch (err) {
     await db.activity.update({ where: { id: activity.id }, data: { subject: `[NOT SENT] ${params.subject}`, body: `${params.body}\n\nSend failed: ${(err as Error).message}` } });
