@@ -29,6 +29,7 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
       <h1 className="mb-6">Welcome back</h1>
       {!receptionist ? <Empty>Your receptionist is being set up by the {await companyName()} team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
         <>
+          <div className="mb-2 flex justify-end text-sm"><Link href={`/portal/reports${q}`}>Weekly &amp; monthly reports →</Link></div>
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Calls answered (30d)" value={calls} sub="Every call picked up, 24/7" />
             <Stat label="Appointments booked" value={outcome.BOOKED ?? 0} />

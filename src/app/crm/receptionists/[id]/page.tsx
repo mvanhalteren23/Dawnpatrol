@@ -1,5 +1,6 @@
 import { requireStaff } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
+import { KeepNumberCard } from "@/components/KeepNumberCard";
 import { demoLineConfig, formatPhone } from "@/lib/demo-line";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -143,6 +144,9 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               </form>
             )}
           </div> : null}
+
+          {isAdmin && !r.demoExtension ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
+          {!r.demoExtension ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
 
           <TestChat receptionistId={r.id} greeting={r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 

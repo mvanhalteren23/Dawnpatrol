@@ -4,8 +4,9 @@ import { formatDate } from "@/lib/utils";
 import { Badge, Empty, Notice } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
 import { SubmitButton } from "@/components/SubmitButton";
-import { AvailabilityFields, FollowUpFields, RingFields } from "@/components/ReceptionistOptions";
-import { saveReceptionistOptions } from "@/app/receptionist-actions";
+import { AvailabilityFields, FollowUpFields, ReportFields, RingFields } from "@/components/ReceptionistOptions";
+import { saveReceptionistOptions, sendReportNow } from "@/app/receptionist-actions";
+import { KeepNumberCard } from "@/components/KeepNumberCard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +17,14 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   return (
     <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-2">Receptionist settings</h1>
-      <p className="mb-6 text-sm text-slate-500">When your receptionist can book appointments, and whether callers get a summary afterwards.</p>
+      <p className="mb-6 text-sm text-slate-500">When your receptionist can book appointments, whether callers get a summary afterwards, and your call reports.</p>
       {sp.notice ? <Notice kind="success">{sp.notice}</Notice> : null}
       {sp.error ? <Notice kind="error">{sp.error}</Notice> : null}
       {!receptionist ? <Empty>Your receptionist hasn&apos;t been created yet.</Empty> : (
         <div className="grid gap-6 lg:grid-cols-5">
           <form action={saveReceptionistOptions.bind(null, receptionist.id, `/portal/settings${q}`)} className="card grid grid-cols-2 gap-3 lg:col-span-3">
             <h2 className="col-span-2">Booking hours &amp; holidays</h2>
-            {!receptionist.bookingEnabled ? <p className="col-span-2 text-xs text-slate-500">Live calendar booking isn&apos;t switched on for your receptionist yet; until it is, callers leave preferred times instead, and these hours apply once itthese hours are used once it is, and callers leave preferred times instead.apos;s on.</p> : null}
+            {!receptionist.bookingEnabled ? <p className="col-span-2 text-xs text-slate-500">Live calendar booking isn&apos;t switched on for your receptionist yet; until it is, callers leave preferred times instead, and callers leave preferred times instead. These hours apply once it&apos;s on.</p> : null}
             <AvailabilityFields r={receptionist} />
             {receptionist.businessNumber ? (
               <>
@@ -33,9 +34,21 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
             ) : null}
             <h2 className="col-span-2 mt-2">Caller summaries</h2>
             <FollowUpFields r={receptionist} />
+            <h2 className="col-span-2 mt-2" id="reports">Reports</h2>
+            <ReportFields r={receptionist} />
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>
           </form>
-          <div className="card lg:col-span-2">
+          <div className="space-y-6 lg:col-span-2">
+          <KeepNumberCard r={receptionist} returnTo={`/portal/settings${q}`} admin={session.role === "ADMIN"} />
+          <form action={sendReportNow.bind(null, receptionist.id, `/portal/settings${q}`)} className="card space-y-2 text-sm">
+            <h2>Send a report now</h2>
+            <p className="text-xs text-slate-500">Emails the report to {receptionist.reportEmails || "your portal login"}. Save your settings first if you changed who it goes to.</p>
+            <div className="flex gap-2">
+              <select name="kind" className="input w-auto" aria-label="Which report"><option value="week">Last week</option><option value="month">Last month</option></select>
+              <SubmitButton className="btn-secondary" pendingText="Sending…">Send</SubmitButton>
+            </div>
+          </form>
+          <div className="card">
             <h2 className="mb-3">Recent summaries sent</h2>
             {sent.length ? (
               <ul className="space-y-3 text-sm">
@@ -52,6 +65,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 ))}
               </ul>
             ) : <p className="text-sm text-slate-500">Nothing sent yet.</p>}
+          </div>
           </div>
         </div>
       )}

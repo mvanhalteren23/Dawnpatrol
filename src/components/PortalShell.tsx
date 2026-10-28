@@ -20,6 +20,7 @@ export async function PortalShell({ accountName, adminAccountId, email, children
             <Link href={`/portal${q}`}>Overview</Link>
             <Link href={`/portal/knowledge${q}`}>Knowledge base</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
+            <Link href={`/portal/reports${q}`}>Reports</Link>
             <Link href={`/portal/billing${q}`}>Billing</Link>
             <Link href={`/portal/settings${q}`}>Settings</Link>
           </nav>

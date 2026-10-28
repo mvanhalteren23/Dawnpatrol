@@ -56,6 +56,24 @@ export function FollowUpFields({ r }: { r: Pick<Receptionist, "followUpOn" | "fo
   );
 }
 
+/** Emailed call reports (totals only). Parsed by reportFromForm. */
+export function ReportFields({ r }: { r: Pick<Receptionist, "reportFrequency" | "reportEmails"> }) {
+  return (
+    <>
+      <Field label="Email me a call report">
+        <select name="reportFrequency" defaultValue={r.reportFrequency} className="input">
+          <option value="">Never (view it in the portal)</option>
+          <option value="weekly">Every Monday (last week)</option>
+          <option value="monthly">On the 1st (last month)</option>
+          <option value="both">Weekly and monthly</option>
+        </select>
+      </Field>
+      <Field label="Send to (blank = your portal login)"><input name="reportEmails" defaultValue={r.reportEmails} placeholder="owner@business.com, office@business.com" className="input" /></Field>
+      <p className="col-span-2 text-xs text-slate-500">Reports show totals only: calls answered, after-hours calls, bookings, messages and transfers. Callers&apos; names, numbers and conversations stay here in your portal.</p>
+    </>
+  );
+}
+
 /** Ring-the-owner-first settings for a business line. Parsed by ringFromForm. */
 export function RingFields({ r }: { r: Pick<Receptionist, "ringFirstNumber" | "ringSeconds" | "ringMode" | "businessNumber"> }) {
   return (

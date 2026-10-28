@@ -83,6 +83,15 @@ export function hoursFromDays(days: Record<number, string>): string {
   return text;
 }
 
+/** Read the ReportFields form. Throws on a bad email address. */
+export function reportFromForm(form: FormData): { reportFrequency: string; reportEmails: string } {
+  const freq = String(form.get("reportFrequency") ?? "");
+  const emails = String(form.get("reportEmails") ?? "").split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const bad = emails.find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  if (bad) throw new Error(`"${bad}" isn't a valid email address`);
+  return { reportFrequency: ["weekly", "monthly", "both"].includes(freq) ? freq : "", reportEmails: Array.from(new Set(emails)).join(", ") };
+}
+
 /** Read the AvailabilityFields form (hours_<weekday>, bookingHolidays, bookingClosedDates). Throws on bad hours. */
 export function availabilityFromForm(form: FormData) {
   const days = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, String(form.get(`hours_${d}`) ?? "")]));
@@ -139,6 +148,12 @@ export function zonedTime(y: number, m: number, d: number, minutes: number, tz: 
 export function localDate(date: Date, tz: string): { y: number; m: number; d: number; weekday: number } {
   const p = partsInZone(date, tz);
   return { y: p.y, m: p.m, d: p.d, weekday: new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay() };
+}
+
+/** Weekday (0 = Sunday) and minutes past local midnight in `tz`. */
+export function localClock(date: Date, tz: string): { weekday: number; minutes: number } {
+  const p = partsInZone(date, tz);
+  return { weekday: new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(), minutes: p.h * 60 + p.min };
 }
 
 export function isoDate(y: number, m: number, d: number): string {

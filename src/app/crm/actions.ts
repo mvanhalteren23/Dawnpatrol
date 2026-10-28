@@ -35,6 +35,7 @@ import { provisionLine, removeLine } from "@/lib/business-line";
 import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
 import { cleanDigits, dialableNumber, nextFreeExtension, ringFromForm } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
+import { forwardingLoop, LOOP_MESSAGE, type KeepMethod } from "@/lib/keep-number";
 
 function back(path: string, params?: Record<string, string>): never {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -825,7 +826,12 @@ export async function saveRingSettings(id: string, form: FormData) {
   await requireAdmin();
   const path = `/crm/receptionists/${id}`;
   try {
-    await db.receptionist.update({ where: { id }, data: ringFromForm(form) });
+    const ring = ringFromForm(form);
+    const r = await db.receptionist.findUniqueOrThrow({ where: { id }, select: { existingNumber: true, keepNumberMethod: true } });
+    if (forwardingLoop({ method: r.keepNumberMethod as KeepMethod, existingNumber: r.existingNumber, ringFirstNumber: ring.ringFirstNumber, ringMode: ring.ringMode })) {
+      throw new Error(LOOP_MESSAGE);
+    }
+    await db.receptionist.update({ where: { id }, data: ring });
   } catch (err) {
     back(path, { error: errMsg(err) });
   }
