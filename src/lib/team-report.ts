@@ -30,9 +30,8 @@ export type RepRow = {
 
 /** Expected MRR of a new client: average of current paying clients, else the cheapest active plan. */
 export async function expectedDealMrrCents(): Promise<number> {
-  const subs = await db.subscription.findMany({ select: { status: true, mrrCents: true } });
-  const paying = payingSubscriptions(subs).filter((s) => s.mrrCents > 0);
-  if (paying.length) return Math.round(paying.reduce((n, s) => n + s.mrrCents, 0) / paying.length);
+  const avg = await db.subscription.aggregate({ where: { status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] }, mrrCents: { gt: 0 } }, _avg: { mrrCents: true } });
+  if (avg._avg.mrrCents != null) return Math.round(avg._avg.mrrCents);
   const plan = await db.plan.findFirst({ where: { isActive: true, priceCents: { gt: 0 } }, orderBy: { priceCents: "asc" } });
   return plan?.priceCents ?? 0;
 }
@@ -58,17 +57,17 @@ export async function teamReport(since: Date) {
     const sum = (f: (a: (typeof acts)[number]) => boolean) => acts.filter(f).reduce((n, a) => n + a._count, 0);
     const owned = accounts.filter((a) => a.ownerId === id);
     const byStage = Object.fromEntries(owned.map((a) => [a.stage, a._count]));
-    const forecastable = owned.flatMap((a) => Array.from({ length: a._count }, () => ({ stage: a.stage })));
-    // Onboarding accounts that already pay count in MRR, not the forecast.
-    let paidOnboarding = paidAccountStages.get(id) ?? 0;
-    const open = forecastable.filter((a) => !(a.stage === "ONBOARDING" && paidOnboarding-- > 0));
+    // Open deals per stage. Onboarding accounts that already pay count in MRR, not the forecast.
+    const paidOnboarding = paidAccountStages.get(id) ?? 0;
+    const open = owned.map((a) => ({ stage: a.stage, count: a.stage === "ONBOARDING" ? Math.max(0, a._count - paidOnboarding) : a._count }));
+    const openIn = (stages: string[]) => open.filter((a) => stages.includes(a.stage)).reduce((n, a) => n + a.count, 0);
     const myTasks = tasks.filter((t) => t.account.ownerId === id);
     return {
       id,
       name,
       role,
       accounts: owned.reduce((n, a) => n + a._count, 0),
-      openPipeline: open.filter((a) => STAGE_PROBABILITY[a.stage] != null && a.stage !== "ONBOARDING").length,
+      openPipeline: openIn(Object.keys(STAGE_PROBABILITY).filter((st) => st !== "ONBOARDING")),
       byStage,
       calls: sum((a) => a.type === "CALL" && a.direction !== "INBOUND"),
       conversations: sum((a) => a.type === "CALL" && CONVERSATION_OUTCOMES.includes(a.outcome ?? "")),
@@ -81,7 +80,7 @@ export async function teamReport(since: Date) {
       won: won.find((w) => w.ownerId === id)?._count ?? 0,
       mrrCents: computeMrr(subs.filter((s) => s.account.ownerId === id)),
       forecastCents: weightedForecastCents(open, dealMrr),
-      commitCents: open.filter((a) => ["DEMO", "PROPOSAL", "ONBOARDING"].includes(a.stage)).length * dealMrr,
+      commitCents: openIn(["DEMO", "PROPOSAL", "ONBOARDING"]) * dealMrr,
     };
   };
 

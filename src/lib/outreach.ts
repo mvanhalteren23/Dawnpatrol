@@ -127,11 +127,17 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<Sy
     total.accountsTouched = Array.from(new Set([...total.accountsTouched, ...r.accountsTouched]));
   };
   const companyEmail = (await connectedEmail())?.toLowerCase() ?? null;
+  // Who's who (contact emails, account domains) is the same for every mailbox: build it once.
+  const [contacts, accounts] = await Promise.all([
+    db.contact.findMany({ where: { email: { not: null } }, select: { id: true, accountId: true, email: true } }),
+    db.account.findMany({ where: { domain: { not: null } }, select: { id: true, domain: true } }),
+  ]);
+  const index = buildMatchIndex(contacts, accounts);
   if (companyEmail) {
     try {
       const owner = await db.user.findFirst({ where: { email: { equals: companyEmail, mode: "insensitive" }, role: { in: ["ADMIN", "REP"] } }, select: { id: true } });
       const cursor = Number((await getSetting("gmail.cursor")) ?? 0);
-      const r = await syncMailbox({ as: null, me: companyEmail, userId: owner?.id ?? null, since: cursor, maxMessages: opts.maxMessages });
+      const r = await syncMailbox({ index, as: null, me: companyEmail, userId: owner?.id ?? null, since: cursor, maxMessages: opts.maxMessages });
       await setSetting("gmail.cursor", String(r.startedAt - 300)); // small overlap; externalId dedupes
       await setSetting("gmail.lastSyncAt", new Date().toISOString());
       add(r);
@@ -143,7 +149,7 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<Sy
   for (const g of mailboxes) {
     if (g.user.disabled || g.email.toLowerCase() === companyEmail) continue; // same mailbox as the company one
     try {
-      const r = await syncMailbox({ as: g.userId, me: g.email.toLowerCase(), userId: g.userId, since: g.gmailCursor ?? 0, maxMessages: opts.maxMessages });
+      const r = await syncMailbox({ index, as: g.userId, me: g.email.toLowerCase(), userId: g.userId, since: g.gmailCursor ?? 0, maxMessages: opts.maxMessages });
       await db.googleAccount.update({ where: { id: g.id }, data: { gmailCursor: r.startedAt - 300, lastSyncAt: new Date(), lastError: null } });
       add(r);
     } catch (err) {
@@ -155,16 +161,12 @@ export async function syncGmail(opts: { maxMessages?: number } = {}): Promise<Sy
   return total;
 }
 
-async function syncMailbox(o: { as: string | null; me: string; userId: string | null; since: number; maxMessages?: number }) {
+async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: string | null; me: string; userId: string | null; since: number; maxMessages?: number }) {
   const me = o.me;
   const since = o.since || Math.floor(Date.now() / 1000) - 14 * 86400;
   const startedAt = Math.floor(Date.now() / 1000);
 
-  const [contacts, accounts] = await Promise.all([
-    db.contact.findMany({ where: { email: { not: null } }, select: { id: true, accountId: true, email: true } }),
-    db.account.findMany({ where: { domain: { not: null } }, select: { id: true, domain: true } }),
-  ]);
-  const index = buildMatchIndex(contacts, accounts);
+  const index = o.index;
   const myDomain = me.split("@")[1];
 
   const ids: { id: string; threadId: string }[] = [];

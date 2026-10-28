@@ -45,7 +45,51 @@ export const STAGE_PROBABILITY: Record<string, number> = {
   ONBOARDING: 0.9,
 };
 
-/** Weighted monthly recurring revenue expected from open pipeline. */
-export function weightedForecastCents(accounts: { stage: string }[], expectedMrrCents: number): number {
-  return Math.round(accounts.reduce((sum, a) => sum + (STAGE_PROBABILITY[a.stage] ?? 0) * expectedMrrCents, 0));
+/** Weighted monthly recurring revenue expected from open pipeline (`count` accounts per row, default 1). */
+export function weightedForecastCents(accounts: { stage: string; count?: number }[], expectedMrrCents: number): number {
+  return Math.round(accounts.reduce((sum, a) => sum + (STAGE_PROBABILITY[a.stage] ?? 0) * (a.count ?? 1) * expectedMrrCents, 0));
+}
+
+type Dupable = { id: string; domain: string | null; phone: string | null; name: string; city: string | null };
+
+/**
+ * In-memory version of the team-wide duplicate check (same rules as findDuplicateAccount: same
+ * website, same phone, or same name in the same city), for bulk imports: load the accounts once
+ * instead of querying per row.
+ */
+export class DuplicateIndex<T extends Dupable> {
+  private byDomain = new Map<string, T>();
+  private byPhone = new Map<string, T>();
+  private byName = new Map<string, T[]>();
+
+  constructor(accounts: Iterable<T> = []) {
+    for (const a of accounts) this.add(a);
+  }
+
+  add(a: T) {
+    if (a.domain && !this.byDomain.has(a.domain)) this.byDomain.set(a.domain, a);
+    const p = phoneKey(a.phone);
+    if (p && !this.byPhone.has(p)) this.byPhone.set(p, a);
+    const n = accountKeyName(a.name);
+    if (n.length < 4) return;
+    const list = this.byName.get(n);
+    if (!list) this.byName.set(n, [a]);
+    else if (!list.includes(a)) list.push(a);
+  }
+
+  find(q: { domain?: string | null; phone?: string | null; name?: string | null; city?: string | null }): T | null {
+    if (q.domain) {
+      const hit = this.byDomain.get(q.domain);
+      if (hit) return hit;
+    }
+    const p = phoneKey(q.phone);
+    if (p) {
+      const hit = this.byPhone.get(p);
+      if (hit) return hit;
+    }
+    const n = accountKeyName(q.name);
+    if (n.length < 4) return null;
+    const city = (q.city ?? "").trim().toLowerCase();
+    return this.byName.get(n)?.find((a) => !city || !a.city || a.city.trim().toLowerCase() === city) ?? null;
+  }
 }

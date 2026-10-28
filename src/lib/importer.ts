@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { dedupeKey, parseAccountsCsv, type ImportRow } from "./csv";
 import { joinTags, splitTags } from "./utils";
-import { findDuplicateAccount } from "./team";
+import { DuplicateIndex } from "./team-rules";
 
 export type ImportOptions = {
   defaultTags?: string[];
@@ -13,11 +13,6 @@ export type ImportOptions = {
   canUpdate?: (ownerId: string | null) => boolean;
 };
 
-/** The same business already in the CRM (domain, phone, or name in the same city): never added twice. */
-async function findExisting(row: ImportRow["account"]) {
-  const dup = await findDuplicateAccount(row);
-  return dup ? db.account.findUnique({ where: { id: dup.id } }) : null;
-}
 
 /** Upsert accounts + contacts. Existing accounts (same domain, phone, or name+city) only get blanks filled and tags merged. */
 export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
@@ -28,13 +23,17 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
   const errors: { row: number; message: string }[] = [];
   const seen = new Map<string, string>(); // dedupeKey -> accountId (within this file)
   const locked = new Set<string>(); // another rep's accounts: leave them (and their contacts) alone
+  // The same business already in the CRM (domain, phone, or name in the same city) is never added
+  // twice. Load every account once rather than querying per row; accounts created by this file
+  // are added as we go, so a later row with the same phone also matches.
+  const existingIndex = new DuplicateIndex(await db.account.findMany());
 
   for (const row of rows) {
     try {
       const key = dedupeKey(row);
       let accountId = seen.get(key);
       if (!accountId) {
-        const existing = await findExisting(row.account);
+        const existing = existingIndex.find(row.account);
         const tags = joinTags([...row.account.tags, ...(opts.defaultTags ?? [])]);
         if (existing) {
           const othersAccount = Boolean(opts.canUpdate && !opts.canUpdate(existing.ownerId));
@@ -44,7 +43,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
             seen.set(key, existing.id);
             accountId = existing.id;
           } else {
-            await db.account.update({
+            const saved = await db.account.update({
               where: { id: existing.id },
               data: {
                 website: existing.website ?? row.account.website,
@@ -58,6 +57,9 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
                 notes: row.account.notes && !existing.notes.includes(row.account.notes) ? `${existing.notes}\n${row.account.notes}`.trim() : existing.notes,
               },
             });
+            // Later rows in this file see the filled-in fields (and match on a newly added phone).
+            Object.assign(existing, saved);
+            existingIndex.add(existing);
             updated++;
             accountId = existing.id;
           }
@@ -80,6 +82,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
               ownerId: opts.ownerId ?? null,
             },
           });
+          existingIndex.add(a);
           created++;
           createdIds.push(a.id);
           accountId = a.id;

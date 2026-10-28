@@ -8,6 +8,7 @@ import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate,
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
 import { samePhone } from "./twilio";
+import { findAccountIdByPhone } from "./team";
 import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
 import { queueProfileResearch } from "./jobs";
 
@@ -98,13 +99,16 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const channel = followUpEnabled(r, "booking") ? pickChannel(r.followUpChannel, preference, input.caller_phone.trim(), email) : null;
 
   // The slot must still be a valid opening (rules + calendar), so a stale or invented time can't book.
-  const rules = slotRules(r);
-  if (!candidateSlots(rules, now).some((s) => s.getTime() === start.getTime())) {
-    return { booked: false, message: "That time isn't a bookable slot. Call get_available_times and offer one of its times." };
-  }
-  const { slots } = await openSlots(r, now);
+  const { rules, slots } = await openSlots(r, now);
   if (!slots.some((s) => s.getTime() === start.getTime())) {
-    return { booked: false, message: "That time was just taken. Call get_available_times again and offer the caller new times." };
+    // Only on a miss: work out whether it was never a valid slot or was just taken.
+    const valid = candidateSlots(rules, now).some((s) => s.getTime() === start.getTime());
+    return {
+      booked: false,
+      message: valid
+        ? "That time was just taken. Call get_available_times again and offer the caller new times."
+        : "That time isn't a bookable slot. Call get_available_times and offer one of its times.",
+    };
   }
 
   const end = new Date(start.getTime() + r.bookingSlotMinutes * 60_000);
@@ -215,8 +219,8 @@ async function addLead(r: Receptionist, input: BookingInput, label: string, subj
     if (account) matchedBy = `email domain (${domain})`;
   }
   if (!account) {
-    const withPhones = await db.account.findMany({ where: { OR: [{ phone: { not: null } }, { contacts: { some: { phone: { not: null } } } }] }, include: { contacts: { select: { phone: true } } } });
-    account = withPhones.find((a) => samePhone(a.phone, phone) || a.contacts.some((c) => samePhone(c.phone, phone))) ?? null;
+    const id = await findAccountIdByPhone(phone);
+    account = id ? await db.account.findUnique({ where: { id } }) : null;
     if (account) matchedBy = `phone number (${phone})`;
   }
   if (!account && businessName) {

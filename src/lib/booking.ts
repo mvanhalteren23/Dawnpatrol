@@ -109,8 +109,16 @@ export function followUpFromForm(form: FormData) {
 
 // --- Timezone helpers (Intl only, DST-safe) ---------------------------------------
 
+// Building an Intl.DateTimeFormat is slow (~0.1 ms); slot searches call this hundreds of times
+// per request while a caller waits, so keep one per time zone.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 function partsInZone(date: Date, tz: string) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  let f = formatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    formatters.set(tz, f);
+  }
   const p = Object.fromEntries(f.formatToParts(date).map((x) => [x.type, x.value]));
   return { y: +p.year!, m: +p.month!, d: +p.day!, h: +p.hour!, min: +p.minute!, s: +p.second! };
 }

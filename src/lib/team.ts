@@ -45,6 +45,23 @@ export async function touchAccount(session: Pick<SessionPayload, "sub" | "role">
   return touchAccount(session, accountId); // someone else claimed it a moment ago
 }
 
+/**
+ * The account whose main line or any contact has this phone number (last 10 digits), found in
+ * the database rather than by loading every account. Used to match callers on live calls.
+ */
+export async function findAccountIdByPhone(phone: string | null | undefined): Promise<string | null> {
+  const key = phoneKey(phone);
+  if (!key) return null;
+  const rows = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT a.id FROM "Account" a
+    WHERE right(regexp_replace(coalesce(a.phone, ''), '\\D', '', 'g'), 10) = ${key}
+    UNION ALL
+    SELECT c."accountId" FROM "Contact" c
+    WHERE right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 10) = ${key}
+    LIMIT 1`);
+  return rows[0]?.id ?? null;
+}
+
 export type DuplicateMatch = { id: string; name: string; owner: string; reason: string };
 
 /** An existing account that is the same business: same website domain, phone number, or name (in the same city). */

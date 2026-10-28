@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountKeyName, canTouch, isStaff, phoneKey, weightedForecastCents } from "../src/lib/team-rules";
+import { accountKeyName, canTouch, DuplicateIndex, isStaff, phoneKey, weightedForecastCents } from "../src/lib/team-rules";
 
 describe("canTouch", () => {
   const rep = { sub: "rep1", role: "REP" };
@@ -36,5 +36,25 @@ describe("duplicate keys", () => {
 describe("weightedForecastCents", () => {
   it("weights each open account by its stage", () => {
     expect(weightedForecastCents([{ stage: "PROPOSAL" }, { stage: "DEMO" }, { stage: "ACTIVE" }], 100_00)).toBe(95_00);
+  });
+});
+
+describe("DuplicateIndex", () => {
+  const acct = (id: string, o: Partial<{ domain: string; phone: string; name: string; city: string }>) => ({ id, domain: o.domain ?? null, phone: o.phone ?? null, name: o.name ?? "x", city: o.city ?? null });
+  const index = new DuplicateIndex([
+    acct("a", { domain: "acme.com", name: "Acme Plumbing" }),
+    acct("b", { phone: "(604) 966-8897", name: "Coastal Heating", city: "Burnaby" }),
+    acct("c", { name: "Shine 99 Co.", city: "Vancouver" }),
+  ]);
+  it("matches on website, phone, or name in the same city, like the SQL check", () => {
+    expect(index.find({ domain: "acme.com" })?.id).toBe("a");
+    expect(index.find({ phone: "+1 604 966 8897" })?.id).toBe("b");
+    expect(index.find({ name: "shine99", city: "vancouver" })?.id).toBe("c");
+    expect(index.find({ name: "Shine 99", city: "Surrey" })).toBeNull();
+    expect(index.find({ name: "Coastal Heating" })?.id).toBe("b"); // no city given: name alone
+  });
+  it("finds accounts added during an import", () => {
+    index.add(acct("d", { phone: "604-555-0199", name: "New Co" }));
+    expect(index.find({ phone: "6045550199" })?.id).toBe("d");
   });
 });
