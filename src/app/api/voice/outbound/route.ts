@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { OwnershipError, touchAccount } from "@/lib/team";
 import { dialerCallerId, ensureCallActivity } from "@/lib/dialer";
 import { dialableNumber, dialOut, say, twiml } from "@/lib/twilio";
 import { appBase, twilioParams, xml } from "@/lib/twilio-request";
@@ -19,6 +20,15 @@ export async function POST(req: Request) {
   const callerId = dialerCallerId();
   const account = params.accountId ? await db.account.findUnique({ where: { id: params.accountId }, select: { id: true } }) : null;
   if (!to || !callerId || !account) return xml(twiml(`${say(!to ? "That number can't be dialled from the CRM." : "The dialer isn't set up.")}<Hangup/>`));
+  // One rep per account: the caller (token identity = user id) must own it, or it's unassigned and becomes theirs.
+  const caller = await db.user.findUnique({ where: { id: params.From.slice("client:".length) }, select: { id: true, role: true, disabled: true } });
+  if (!caller || caller.disabled || (caller.role !== "ADMIN" && caller.role !== "REP")) return xml(twiml("<Reject/>"));
+  try {
+    await touchAccount({ sub: caller.id, role: caller.role }, account.id);
+  } catch (err) {
+    if (err instanceof OwnershipError) return xml(twiml(`${say("Another rep owns this account, so the call wasn't placed.")}<Hangup/>`));
+    throw err;
+  }
 
   const contactId = params.contactId || "";
   await ensureCallActivity({ callSid: params.CallSid ?? "", accountId: account.id, contactId: contactId || null, to, userId: params.From.slice("client:".length) || null });

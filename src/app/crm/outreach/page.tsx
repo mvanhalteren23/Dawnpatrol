@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requireStaff } from "@/lib/auth";
 import { googleConnection } from "@/lib/google";
 import { getSetting } from "@/lib/settings";
 import { contactName, formatDate } from "@/lib/utils";
@@ -11,21 +12,25 @@ import { syncOutreachNow } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function OutreachPage({ searchParams }: { searchParams: Promise<{ type?: string; days?: string; notice?: string; error?: string }> }) {
+export default async function OutreachPage({ searchParams }: { searchParams: Promise<{ type?: string; days?: string; scope?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
+  const session = await requireStaff();
   const days = Math.min(365, Number(sp.days ?? 30) || 30);
   const since = new Date(Date.now() - days * 86400000);
-  const where: Prisma.ActivityWhereInput = { occurredAt: { gte: since }, direction: { not: null }, ...(sp.type ? { type: sp.type } : {}) };
+  // Mine = touches on accounts I own; Team = everyone's.
+  const scope = sp.scope === "me" || sp.scope === "team" ? sp.scope : session.role === "ADMIN" ? "team" : "me";
+  const scoped: Prisma.ActivityWhereInput = scope === "me" ? { account: { ownerId: session.sub } } : {};
+  const where: Prisma.ActivityWhereInput = { occurredAt: { gte: since }, direction: { not: null }, ...scoped, ...(sp.type ? { type: sp.type } : {}) };
   const [activities, google, lastSync, outbound, replied, opened, inbound] = await Promise.all([
     db.activity.findMany({ where, orderBy: { occurredAt: "desc" }, take: 200, include: { account: true, contact: true } }),
     googleConnection(),
     getSetting("gmail.lastSyncAt"),
-    db.activity.count({ where: { occurredAt: { gte: since }, direction: "OUTBOUND" } }),
-    db.activity.count({ where: { occurredAt: { gte: since }, direction: "OUTBOUND", repliedAt: { not: null } } }),
-    db.activity.count({ where: { occurredAt: { gte: since }, type: "EMAIL", direction: "OUTBOUND", openCount: { gt: 0 } } }),
-    db.activity.count({ where: { occurredAt: { gte: since }, direction: "INBOUND" } }),
+    db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, direction: "OUTBOUND" } }),
+    db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, direction: "OUTBOUND", repliedAt: { not: null } } }),
+    db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, type: "EMAIL", direction: "OUTBOUND", openCount: { gt: 0 } } }),
+    db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, direction: "INBOUND" } }),
   ]);
-  const emailsSent = await db.activity.count({ where: { occurredAt: { gte: since }, type: "EMAIL", direction: "OUTBOUND", source: "crm-send" } });
+  const emailsSent = await db.activity.count({ where: { ...scoped, occurredAt: { gte: since }, type: "EMAIL", direction: "OUTBOUND", source: "crm-send" } });
 
   return (
     <div>
@@ -50,6 +55,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
       </div>
       <form className="mb-3 flex gap-2">
         <select name="type" defaultValue={sp.type ?? ""} className="input w-auto"><option value="">All channels</option>{["EMAIL", "CALL", "SMS", "LINKEDIN", "MEETING"].map((t) => <option key={t}>{t}</option>)}</select>
+        <select name="scope" defaultValue={scope} className="input w-auto" aria-label="Whose outreach"><option value="me">My accounts</option><option value="team">Whole team</option></select>
         <select name="days" defaultValue={String(days)} className="input w-auto">{[7, 30, 90, 365].map((d) => <option key={d} value={d}>Last {d} days</option>)}</select>
         <button className="btn-secondary">Filter</button>
       </form>

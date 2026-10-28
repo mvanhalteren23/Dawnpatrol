@@ -7,7 +7,7 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 export type SessionPayload = {
   sub: string;
   email: string;
-  role: "ADMIN" | "CLIENT";
+  role: "ADMIN" | "REP" | "CLIENT";
   accountId: string | null;
 };
 
@@ -32,7 +32,7 @@ export async function verifySession(token: string | undefined): Promise<SessionP
   try {
     const { payload } = await jwtVerify(token, secretKey());
     if (typeof payload.sub !== "string" || typeof payload.email !== "string") return null;
-    const role = payload.role === "ADMIN" ? "ADMIN" : "CLIENT";
+    const role = payload.role === "ADMIN" || payload.role === "REP" ? payload.role : "CLIENT";
     const accountId = typeof payload.accountId === "string" ? payload.accountId : null;
     return { sub: payload.sub, email: payload.email, role, accountId };
   } catch {

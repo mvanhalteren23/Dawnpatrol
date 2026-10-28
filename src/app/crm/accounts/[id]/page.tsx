@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireStaff } from "@/lib/auth";
+import { canTouch, memberLabel, teamMembers } from "@/lib/team";
 import { ACTIVITY_TYPES, STAGES, STAGE_LABELS, isClientStage } from "@/lib/constants";
 import { contactName, formatDate, formatMoney, safeJson } from "@/lib/utils";
 import { googleConnection } from "@/lib/google";
@@ -11,6 +13,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { Dialer, type DialTarget } from "@/components/Dialer";
 import { dialerStatus } from "@/lib/dialer";
 import {
+  setAccountOwner,
   addContact,
   checkoutLink,
   createDriveFolders,
@@ -55,6 +58,7 @@ function Detail({ label, children, wide }: { label: string; children: React.Reac
 export default async function AccountPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Search> }) {
   const { id } = await params;
   const sp = await searchParams;
+  const session = await requireStaff();
   const account = await db.account.findUnique({
     where: { id },
     include: {
@@ -66,9 +70,14 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       receptionists: { include: { _count: { select: { knowledge: true, calls: true } } } },
       driveFolders: true,
       users: true,
+      owner: { select: { id: true, name: true, email: true } },
     },
   });
   if (!account) notFound();
+  const mine = canTouch(session, account.ownerId); // may this person work the account?
+  const team = await teamMembers();
+  // Owner choices: admins pick anyone; reps can take an unassigned account or hand back their own.
+  const ownerChoices = session.role === "ADMIN" ? team : team.filter((u) => u.id === session.sub);
 
   const editing = sp.edit === "1";
   const [prompts, plans, google, draftRun, typeCounts, emailStats, openTasks, callStats, dialer] = await Promise.all([
@@ -113,13 +122,14 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
         title={account.name}
         subtitle={<span className="flex flex-wrap items-center gap-2"><StageBadge stage={account.stage} />{account.website ? <a href={account.website} target="_blank" rel="noreferrer">{account.domain ?? account.website}</a> : null}{account.phone ? <span>· {account.phone}</span> : null}{account.fitScore != null ? <Badge className="bg-dawn-100 text-dawn-700">Fit {account.fitScore}</Badge> : null}<span className="text-xs text-slate-400">source: {account.source}</span></span>}
         actions={<>
-          {editing ? <Link href={`/crm/accounts/${account.id}`} className="btn-secondary">Cancel editing</Link> : <Link href={`/crm/accounts/${account.id}?edit=1`} className="btn">✏️ Edit details</Link>}
+          {!mine ? null : editing ? <Link href={`/crm/accounts/${account.id}`} className="btn-secondary">Cancel editing</Link> : <Link href={`/crm/accounts/${account.id}?edit=1`} className="btn">✏️ Edit details</Link>}
           {account.driveFolderUrl ? <a href={account.driveFolderUrl} target="_blank" rel="noreferrer" className="btn-secondary">📁 Drive folder</a> : null}
           <form action={createDriveFolders.bind(null, account.id)}><SubmitButton className="btn-secondary" pendingText="Creating…">{account.driveFolderUrl ? "Sync Drive folders" : "Create Drive folders"}</SubmitButton></form>
           {isClient ? <Link href={`/portal?account=${account.id}`} className="btn-secondary">View portal</Link> : null}
         </>}
       />
       <Flash params={sp} />
+      {!mine ? <Notice><b>{memberLabel(account.owner)} owns this account.</b> You can see it, but only they can call, email or change it. Ask an administrator to reassign it if you need to work it.</Notice> : null}
       {account.needsReview ? (
         <Notice>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -153,7 +163,22 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       <div className="grid gap-6 lg:grid-cols-5">
         {/* LEFT: details, contacts, billing, receptionist */}
         <div className="space-y-6 lg:col-span-2">
-          {editing ? (
+          <div className="card flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Account owner</div>
+              <div className="font-medium">{account.ownerId === session.sub ? `You (${memberLabel(account.owner)})` : memberLabel(account.owner)}</div>
+            </div>
+            {session.role === "ADMIN" || !account.ownerId || account.ownerId === session.sub ? (
+              <form action={setAccountOwner.bind(null, account.id)} className="flex items-center gap-2">
+                <select name="ownerId" defaultValue={account.ownerId ?? ""} className="input w-auto py-1 text-sm" aria-label="Account owner">
+                  <option value="">Unassigned</option>
+                  {ownerChoices.map((u) => <option key={u.id} value={u.id}>{memberLabel(u)}{u.id === session.sub ? " (you)" : ""}</option>)}
+                </select>
+                <SubmitButton className="btn-secondary py-1 text-sm" pendingText="Saving…">Save</SubmitButton>
+              </form>
+            ) : null}
+          </div>
+          {editing && mine ? (
           <form action={updateAccount.bind(null, account.id)} className="card grid grid-cols-2 gap-3">
               <h2 className="col-span-2">Edit details</h2>
               <Field label="Name" className="col-span-2"><input name="name" defaultValue={account.name} className="input" required /></Field>
@@ -183,7 +208,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             <div className="card grid grid-cols-2 gap-3">
               <div className="col-span-2 flex items-center justify-between">
                 <h2>Details</h2>
-                <Link href={`/crm/accounts/${account.id}?edit=1`} className="text-xs">Edit</Link>
+                {mine ? <Link href={`/crm/accounts/${account.id}?edit=1`} className="text-xs">Edit</Link> : null}
               </div>
               <Detail label="Stage">{STAGE_LABELS[account.stage as keyof typeof STAGE_LABELS] ?? account.stage}</Detail>
               <Detail label="Fit score">{account.fitScore ?? ""}</Detail>

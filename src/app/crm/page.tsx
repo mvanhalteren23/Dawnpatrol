@@ -7,22 +7,32 @@ import { formatDate, formatMoney, safeJson } from "@/lib/utils";
 import { PageHeader, Progress, Stat, StageBadge, StatusBadge, Empty } from "@/components/ui";
 import { completeTask } from "./actions";
 import { syncAllCallsThrottled } from "@/lib/call-sync";
+import { requireStaff } from "@/lib/auth";
+import { memberLabel } from "@/lib/team";
+import { Flash } from "@/components/Flash";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ scope?: string; notice?: string; error?: string }> }) {
+  const sp = await searchParams;
+  const session = await requireStaff();
   await syncAllCallsThrottled();
   const now = new Date();
+  // "Mine" = accounts I own and work I did; "Team" = everyone. Reps start on Mine, admins on Team.
+  const scope = sp.scope === "me" || sp.scope === "team" ? sp.scope : session.role === "ADMIN" ? "team" : "me";
+  const mine = scope === "me";
+  const owned = mine ? { ownerId: session.sub } : {};
+  const myWork = mine ? { OR: [{ createdById: session.sub }, { account: { ownerId: session.sub } }] } : {};
   const [subs, stageCounts, followUps, tasks, recent, missedCalls, goalRaw, wonCount, workedCount] = await Promise.all([
     db.subscription.findMany({ include: { account: true } }),
-    db.account.groupBy({ by: ["stage"], _count: true }),
-    db.account.findMany({ where: { stage: { in: PROSPECT_STAGES }, nextFollowUpAt: { lte: now } }, orderBy: { nextFollowUpAt: "asc" }, take: 10 }),
-    db.activity.findMany({ where: { type: "TASK", completedAt: null }, orderBy: { dueAt: "asc" }, take: 10, include: { account: true } }),
-    db.activity.findMany({ where: { type: { notIn: ["STAGE_CHANGE"] } }, orderBy: { occurredAt: "desc" }, take: 12, include: { account: true, contact: true } }),
+    db.account.groupBy({ by: ["stage"], where: owned, _count: true }),
+    db.account.findMany({ where: { stage: { in: PROSPECT_STAGES }, nextFollowUpAt: { lte: now }, ...owned }, orderBy: { nextFollowUpAt: "asc" }, take: 10 }),
+    db.activity.findMany({ where: { type: "TASK", completedAt: null, ...(mine ? { account: { ownerId: session.sub } } : {}) }, orderBy: { dueAt: "asc" }, take: 10, include: { account: { include: { owner: { select: { name: true, email: true } } } } } }),
+    db.activity.findMany({ where: { type: { notIn: ["STAGE_CHANGE"] }, ...myWork }, orderBy: { occurredAt: "desc" }, take: 12, include: { account: true, contact: true, createdBy: { select: { name: true, email: true } } } }),
     db.callLog.findMany({ where: { followUpNeeded: true, followedUpAt: null }, orderBy: { startedAt: "desc" }, take: 8, include: { receptionist: { include: { account: true } } } }),
     getSetting("goal.clients"),
-    db.account.count({ where: { convertedAt: { not: null } } }),
-    db.account.count({ where: { stage: { notIn: ["PROSPECT"] } } }),
+    db.account.count({ where: { convertedAt: { not: null }, ...owned } }),
+    db.account.count({ where: { stage: { notIn: ["PROSPECT"] }, ...owned } }),
   ]);
   const goal = safeJson<{ min: number; max: number; targetDate?: string }>(goalRaw, DEFAULT_CLIENT_GOAL);
   const paying = payingSubscriptions(subs);
@@ -34,7 +44,20 @@ export default async function Dashboard() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle={`Goal: ${goal.min}–${goal.max} paying clients`} actions={<Link href="/crm/accounts/new" className="btn">+ New account</Link>} />
+      <PageHeader
+        title="Dashboard"
+        subtitle={`Goal: ${goal.min}–${goal.max} paying clients · showing ${mine ? "your accounts and work" : "the whole team"}`}
+        actions={<>
+          <div className="flex rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
+            {(["me", "team"] as const).map((k) => (
+              <Link key={k} href={`/crm?scope=${k}`} className={`rounded-md px-3 py-1 hover:no-underline ${scope === k ? "bg-dawn-600 text-white" : "text-slate-600"}`}>{k === "me" ? "Mine" : "Team"}</Link>
+            ))}
+          </div>
+          <Link href="/crm/team" className="btn-secondary">Team activity</Link>
+          <Link href="/crm/accounts/new" className="btn">+ New account</Link>
+        </>}
+      />
+      <Flash params={sp} />
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -94,6 +117,7 @@ export default async function Dashboard() {
                   <div>
                     <div>{t.subject ?? "Task"}</div>
                     <Link href={`/crm/accounts/${t.accountId}`} className="text-xs">{t.account.name}</Link>
+                    {!mine ? <span className="text-xs text-slate-400"> · {memberLabel(t.account.owner)}</span> : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs ${t.dueAt && t.dueAt < now ? "text-red-600" : "text-slate-500"}`}>{formatDate(t.dueAt)}</span>
@@ -130,7 +154,7 @@ export default async function Dashboard() {
               {recent.map((a) => (
                 <li key={a.id} className="py-2 text-sm">
                   <div className="flex justify-between gap-2">
-                    <span><span className="font-medium">{a.type.toLowerCase()}</span>{a.direction ? ` · ${a.direction.toLowerCase()}` : ""} — <Link href={`/crm/accounts/${a.accountId}`}>{a.account.name}</Link></span>
+                    <span>{!mine ? <b>{a.createdBy ? a.createdBy.name || a.createdBy.email : "Automated"} · </b> : null}<span className="font-medium">{a.type.toLowerCase()}</span>{a.direction ? ` · ${a.direction.toLowerCase()}` : ""} — <Link href={`/crm/accounts/${a.accountId}`}>{a.account.name}</Link></span>
                     <span className="whitespace-nowrap text-xs text-slate-400">{formatDate(a.occurredAt, true)}</span>
                   </div>
                   {a.subject ? <div className="truncate text-xs text-slate-500">{a.subject}</div> : null}

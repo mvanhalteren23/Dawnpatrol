@@ -22,7 +22,8 @@ model User {
   email        String    @unique
   name         String?
   passwordHash String
-  role         String    @default("CLIENT") // ADMIN | CLIENT
+  role         String    @default("CLIENT") // ADMIN | REP | CLIENT
+  disabled     Boolean   @default(false) // can't sign in (kept for history: their calls, emails, notes)
   accountId    String? // set for CLIENT users (portal access)
   account      Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   lastLoginAt  DateTime?

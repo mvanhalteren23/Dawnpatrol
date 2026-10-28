@@ -5,8 +5,8 @@ import { fetchRecording } from "@/lib/dialer";
 
 // Play a dialer call recording in the CRM (admins only; Twilio recordings need account auth).
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await apiSession();
-  if (session?.role !== "ADMIN") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await apiSession("STAFF");
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const a = await db.activity.findUnique({ where: { id }, select: { recordingSid: true } });
   if (!a?.recordingSid) return NextResponse.json({ error: "No recording" }, { status: 404 });

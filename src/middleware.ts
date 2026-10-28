@@ -10,7 +10,7 @@ export async function middleware(req: NextRequest) {
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
-  if (pathname.startsWith("/crm") && session.role !== "ADMIN") {
+  if (pathname.startsWith("/crm") && session.role !== "ADMIN" && session.role !== "REP") {
     return NextResponse.redirect(new URL("/portal", req.url));
   }
   return NextResponse.next();

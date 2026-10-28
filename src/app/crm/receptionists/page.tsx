@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
@@ -6,6 +7,7 @@ import { Empty, PageHeader, StatusBadge } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function Receptionists() {
+  await requireAdmin();
   const list = await db.receptionist.findMany({
     orderBy: { updatedAt: "desc" },
     include: { account: true, _count: { select: { knowledge: true, calls: true } } },

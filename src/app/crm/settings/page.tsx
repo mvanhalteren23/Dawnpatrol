@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
+import { requireStaff } from "@/lib/auth";
 import { aiConfigured } from "@/lib/ai";
 import { AiModels } from "./AiModels";
 import { dialerStatus } from "@/lib/dialer";
@@ -22,6 +24,28 @@ function Status({ ok, label }: { ok: boolean; label?: string }) {
 }
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
+  const session = await requireStaff();
+  const passwordCard = (
+        <div className="card">
+          <h2 className="mb-3">Your password</h2>
+          <form action={changePassword} className="grid grid-cols-3 gap-3">
+            <Field label="Current password"><input name="current" type="password" autoComplete="current-password" className="input" required /></Field>
+            <Field label="New password (10+ characters)"><input name="next" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
+            <Field label="Confirm new password"><input name="confirm" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
+            <div className="col-span-3"><button className="btn-secondary">Change password</button></div>
+          </form>
+        </div>
+  );
+  if (session.role !== "ADMIN") {
+    // Reps: their own password. Everything else here is for administrators.
+    return (
+      <div className="max-w-3xl space-y-6">
+        <PageHeader title="Settings" subtitle={`Signed in as ${session.email}`} />
+        <Flash params={await searchParams} />
+        {passwordCard}
+      </div>
+    );
+  }
   const company = await companyName();
   const dialer = await dialerStatus();
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
@@ -38,6 +62,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Settings" />
       <Flash params={await searchParams} />
+
+      <div className="card flex items-center justify-between gap-3">
+        <div>
+          <h2>Team &amp; users</h2>
+          <p className="text-xs text-slate-500">Add sales reps and administrators, reset passwords, turn off access.</p>
+        </div>
+        <Link href="/crm/settings/users" className="btn-secondary">Manage users</Link>
+      </div>
 
       <div className="card">
         <h2 className="mb-3">Company</h2>
@@ -61,15 +93,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <p className="text-xs text-slate-500">Setup creates a &ldquo;CRM dialer&rdquo; TwiML App and API key on your Twilio account. The Twilio account must be upgraded (trial accounts can only call verified numbers).</p>
       </div>
 
-      <div className="card">
-        <h2 className="mb-3">Your password</h2>
-        <form action={changePassword} className="grid grid-cols-3 gap-3">
-          <Field label="Current password"><input name="current" type="password" autoComplete="current-password" className="input" required /></Field>
-          <Field label="New password (10+ characters)"><input name="next" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
-          <Field label="Confirm new password"><input name="confirm" type="password" autoComplete="new-password" minLength={10} className="input" required /></Field>
-          <div className="col-span-3"><button className="btn-secondary">Change password</button></div>
-        </form>
-      </div>
+      {passwordCard}
 
       <div className="card">
         <h2 className="mb-3">Growth goal</h2>

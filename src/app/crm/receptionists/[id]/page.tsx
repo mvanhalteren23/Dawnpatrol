@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -18,6 +19,7 @@ import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLin
 export const dynamic = "force-dynamic";
 
 export default async function ReceptionistPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ notice?: string; error?: string; kbRun?: string }> }) {
+  await requireAdmin();
   const { id } = await params;
   const sp = await searchParams;
   await syncCallsThrottled(id);

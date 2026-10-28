@@ -2,18 +2,24 @@ import "server-only";
 import { db } from "./db";
 import { dedupeKey, parseAccountsCsv, type ImportRow } from "./csv";
 import { joinTags, splitTags } from "./utils";
+import { findDuplicateAccount } from "./team";
 
-export type ImportOptions = { defaultTags?: string[]; ownerId?: string | null; source?: string; updateExisting?: boolean };
+export type ImportOptions = {
+  defaultTags?: string[];
+  ownerId?: string | null;
+  source?: string;
+  updateExisting?: boolean;
+  /** May the importer fill in an existing account with this owner? (Reps: only their own or unassigned.) */
+  canUpdate?: (ownerId: string | null) => boolean;
+};
 
+/** The same business already in the CRM (domain, phone, or name in the same city): never added twice. */
 async function findExisting(row: ImportRow["account"]) {
-  if (row.domain) {
-    const byDomain = await db.account.findUnique({ where: { domain: row.domain } });
-    if (byDomain) return byDomain;
-  }
-  return db.account.findFirst({ where: { name: row.name, ...(row.city ? { city: row.city } : {}) } });
+  const dup = await findDuplicateAccount(row);
+  return dup ? db.account.findUnique({ where: { id: dup.id } }) : null;
 }
 
-/** Upsert accounts + contacts. Existing accounts (same domain, or same name+city) only get blanks filled and tags merged. */
+/** Upsert accounts + contacts. Existing accounts (same domain, phone, or name+city) only get blanks filled and tags merged. */
 export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
   let created = 0;
   const createdIds: string[] = [];
@@ -21,6 +27,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
   let skipped = 0;
   const errors: { row: number; message: string }[] = [];
   const seen = new Map<string, string>(); // dedupeKey -> accountId (within this file)
+  const locked = new Set<string>(); // another rep's accounts: leave them (and their contacts) alone
 
   for (const row of rows) {
     try {
@@ -30,7 +37,9 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
         const existing = await findExisting(row.account);
         const tags = joinTags([...row.account.tags, ...(opts.defaultTags ?? [])]);
         if (existing) {
-          if (opts.updateExisting === false) {
+          const othersAccount = Boolean(opts.canUpdate && !opts.canUpdate(existing.ownerId));
+          if (othersAccount) locked.add(existing.id);
+          if (opts.updateExisting === false || othersAccount) {
             skipped++;
             seen.set(key, existing.id);
             accountId = existing.id;
@@ -80,7 +89,7 @@ export async function importRows(rows: ImportRow[], opts: ImportOptions = {}) {
         // Same company again in this file: likely another contact.
       }
 
-      if (row.contact) {
+      if (row.contact && !locked.has(accountId)) {
         const c = row.contact;
         const dup = c.email
           ? await db.contact.findFirst({ where: { accountId, email: c.email } })

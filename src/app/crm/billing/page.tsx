@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { stripeConfigured } from "@/lib/billing";
@@ -10,6 +11,7 @@ import { savePlan } from "../actions";
 export const dynamic = "force-dynamic";
 
 export default async function BillingPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
+  await requireAdmin();
   const [plans, subs, openInvoices, paidThisMonth] = await Promise.all([
     db.plan.findMany({ orderBy: { priceCents: "asc" }, include: { _count: { select: { subscriptions: true } } } }),
     db.subscription.findMany({ include: { account: true, plan: true }, orderBy: { mrrCents: "desc" } }),

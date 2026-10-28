@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -9,15 +10,32 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
 }
 
-export async function getSession(): Promise<SessionPayload | null> {
+/**
+ * The signed-in user. The cookie says who they are; their role and whether they're still allowed
+ * in come from the database, so an admin's changes (role, disabling) apply on the next page load.
+ */
+export const getSession = cache(async (): Promise<SessionPayload | null> => {
   const store = await cookies();
-  return verifySession(store.get(SESSION_COOKIE)?.value);
-}
+  const token = await verifySession(store.get(SESSION_COOKIE)?.value);
+  if (!token) return null;
+  const user = await db.user.findUnique({ where: { id: token.sub }, select: { email: true, role: true, accountId: true, disabled: true } });
+  if (!user || user.disabled) return null;
+  const role = user.role === "ADMIN" || user.role === "REP" ? user.role : "CLIENT";
+  return { sub: token.sub, email: user.email, role, accountId: user.accountId };
+});
 
-export async function requireAdmin(): Promise<SessionPayload> {
+/** CRM users: administrators and sales reps. */
+export async function requireStaff(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "ADMIN") redirect("/portal");
+  if (session.role !== "ADMIN" && session.role !== "REP") redirect("/portal");
+  return session;
+}
+
+/** Administrators only: users, settings, billing, receptionists, deleting data. */
+export async function requireAdmin(): Promise<SessionPayload> {
+  const session = await requireStaff();
+  if (session.role !== "ADMIN") redirect("/crm?error=" + encodeURIComponent("Only an administrator can do that"));
   return session;
 }
 
@@ -25,7 +43,7 @@ export async function requireAdmin(): Promise<SessionPayload> {
 export async function requirePortalAccount(adminAccountId?: string): Promise<{ session: SessionPayload; accountId: string }> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role === "ADMIN") {
+  if (session.role === "ADMIN" || session.role === "REP") {
     if (!adminAccountId) redirect("/crm");
     return { session, accountId: adminAccountId };
   }
@@ -35,14 +53,14 @@ export async function requirePortalAccount(adminAccountId?: string): Promise<{ s
 
 export async function login(email: string, password: string): Promise<SessionPayload | null> {
   const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
-  if (!user) return null;
+  if (!user || user.disabled) return null;
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return null;
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   const payload: SessionPayload = {
     sub: user.id,
     email: user.email,
-    role: user.role === "ADMIN" ? "ADMIN" : "CLIENT",
+    role: user.role === "ADMIN" || user.role === "REP" ? user.role : "CLIENT",
     accountId: user.accountId,
   };
   const store = await cookies();
@@ -56,9 +74,10 @@ export async function logout(): Promise<void> {
 }
 
 /** For API routes: returns the session or null (caller responds 401/403). */
-export async function apiSession(role?: "ADMIN"): Promise<SessionPayload | null> {
+export async function apiSession(role?: "ADMIN" | "STAFF"): Promise<SessionPayload | null> {
   const session = await getSession();
   if (!session) return null;
   if (role === "ADMIN" && session.role !== "ADMIN") return null;
+  if (role === "STAFF" && session.role !== "ADMIN" && session.role !== "REP") return null;
   return session;
 }

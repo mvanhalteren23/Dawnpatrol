@@ -10,7 +10,7 @@ export async function loadPortal(searchParams: Promise<{ account?: string }>) {
     session,
     account,
     receptionist: account.receptionists[0] ?? null,
-    adminAccountId: session.role === "ADMIN" ? accountId : undefined,
-    q: session.role === "ADMIN" ? `?account=${accountId}` : "",
+    adminAccountId: session.role !== "CLIENT" ? accountId : undefined,
+    q: session.role !== "CLIENT" ? `?account=${accountId}` : "",
   };
 }

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requireStaff } from "@/lib/auth";
+import { memberLabel, teamMembers } from "@/lib/team";
 import { PROSPECT_STAGES, STAGE_LABELS, type Stage } from "@/lib/constants";
 import { dialerStatus } from "@/lib/dialer";
 import { Notice, PageHeader } from "@/components/ui";
@@ -26,25 +28,33 @@ const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithR
 };
 
 
-export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string; vm?: string; notice?: string; error?: string }> }) {
+export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string; vm?: string; owner?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
+  const session = await requireStaff();
+  const isAdmin = session.role === "ADMIN";
+  // Reps call their own accounts and unassigned ones (which become theirs on the first call).
+  // Admins default to the same view and can switch to everyone's or one rep's list.
+  const ownerFilter = isAdmin ? sp.owner ?? "mine" : "mine";
+  const ownerWhere: Prisma.AccountWhereInput =
+    ownerFilter === "all" ? {} : ownerFilter === "mine" ? { OR: [{ ownerId: session.sub }, { ownerId: null }] } : ownerFilter === "unassigned" ? { ownerId: null } : { ownerId: ownerFilter };
   const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "best";
   const stages = sp.stage && (PROSPECT_STAGES as string[]).includes(sp.stage) ? [sp.stage as Stage] : PROSPECT_STAGES;
   const where: Prisma.AccountWhereInput = {
     stage: { in: stages },
-    OR: [{ phone: { not: null } }, { contacts: { some: { phone: { not: null } } } }],
+    AND: [ownerWhere, { OR: [{ phone: { not: null } }, { contacts: { some: { phone: { not: null } } } }] }],
     ...(sp.due === "1" ? { nextFollowUpAt: { lte: new Date() } } : {}),
     ...(sp.q ? { name: { contains: sp.q, mode: "insensitive" as const } } : {}),
   };
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const [status, accounts, today, vmSettings, voicemails, voices] = await Promise.all([
+  const [status, accounts, today, vmSettings, voicemails, voices, team] = await Promise.all([
     dialerStatus(),
     db.account.findMany({ where, orderBy: SORTS[sort]!.orderBy, take: 200, include: dialAccountInclude }),
-    db.activity.groupBy({ by: ["outcome"], where: { source: "dialer", type: "CALL", occurredAt: { gte: startOfDay } }, _count: true }),
+    db.activity.groupBy({ by: ["outcome"], where: { source: "dialer", type: "CALL", occurredAt: { gte: startOfDay }, createdById: session.sub }, _count: true }),
     voicemailSettings(),
     db.voicemailAudio.findMany({ where: { kind: { in: ["recorded", "upload"] } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, durationSec: true, createdAt: true } }),
     db.receptionist.findMany({ where: { voiceId: { not: null } }, select: { name: true, voiceId: true } }),
+    isAdmin ? teamMembers() : Promise.resolve([]),
   ]);
   const controls: DialerControls = {
     voicemails: voicemails.map((v) => ({ id: v.id, name: v.name })),
@@ -62,7 +72,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader title="Power dialer" subtitle={`${targets.length} active prospects with a phone number · today: ${calls} calls, ${connects} conversations, ${booked} booked`} />
+      <PageHeader title="Power dialer" subtitle={`${targets.length} active prospects with a phone number · you today: ${calls} calls, ${connects} conversations, ${booked} booked`} />
       {!status.ready ? (
         <Notice kind="error">The dialer isn&apos;t set up yet. Go to <Link href="/crm/settings">Settings → Dialer</Link> and click <b>Set up dialer</b>.</Notice>
       ) : null}
@@ -73,6 +83,16 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
         <label className="space-y-1"><span className="label">Stage</span>
           <select name="stage" defaultValue={sp.stage ?? ""} className="input"><option value="">All active</option>{PROSPECT_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}</select>
         </label>
+        {isAdmin ? (
+          <label className="space-y-1"><span className="label">Accounts</span>
+            <select name="owner" defaultValue={ownerFilter} className="input">
+              <option value="mine">Mine + unassigned</option>
+              <option value="unassigned">Unassigned only</option>
+              <option value="all">Everyone&apos;s</option>
+              {team.filter((u) => u.id !== session.sub).map((u) => <option key={u.id} value={u.id}>{memberLabel(u)}&apos;s</option>)}
+            </select>
+          </label>
+        ) : null}
         <label className="space-y-1"><span className="label">Search</span><input name="q" defaultValue={sp.q ?? ""} placeholder="Business name" className="input" /></label>
         <label className="flex items-center gap-1 pb-2"><input type="checkbox" name="due" value="1" defaultChecked={sp.due === "1"} /> Follow-up due only</label>
         <button className="btn-secondary">Apply</button>
@@ -80,7 +100,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
       <Flash params={sp} />
       <Dialer targets={targets} title="Call list" emptyText="No active prospects with a phone number match these filters." controls={controls} />
 
-      <details id="voicemail" className="card mt-6" open={sp.vm === "1"}>
+      {isAdmin ? <details id="voicemail" className="card mt-6" open={sp.vm === "1"}>
         <summary className="cursor-pointer font-semibold">Voicemail settings</summary>
         <div className="mt-4 grid gap-6 lg:grid-cols-2">
           <div className="space-y-3">
@@ -129,7 +149,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
             <SubmitButton className="btn-secondary" pendingText="Saving…">Save voicemail settings</SubmitButton>
           </form>
         </div>
-      </details>
+      </details> : null}
     </div>
   );
 }

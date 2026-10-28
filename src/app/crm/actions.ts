@@ -4,7 +4,9 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { db } from "@/lib/db";
-import { hashPassword, requireAdmin } from "@/lib/auth";
+import { hashPassword, requireAdmin, requireStaff } from "@/lib/auth";
+import type { SessionPayload } from "@/lib/session";
+import { canTouch, findDuplicateAccount, OwnershipError, touchAccount } from "@/lib/team";
 import { STAGES, type Stage } from "@/lib/constants";
 import { addDays, joinTags, normalizeDomain, optInt, optStr, parseMoneyToCents, safeJson, str, websiteUrl } from "@/lib/utils";
 import { changeStage, recordActivity, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
@@ -43,16 +45,39 @@ function errMsg(err: unknown) {
   return (err as Error)?.message ?? String(err);
 }
 
+/**
+ * Before working an account: a rep may only work accounts they own or unassigned ones (which
+ * become theirs). Otherwise sends them back to the account with who owns it.
+ */
+async function guard(session: SessionPayload, accountId: string, path = `/crm/accounts/${accountId}`): Promise<void> {
+  try {
+    await touchAccount(session, accountId);
+  } catch (err) {
+    if (err instanceof OwnershipError) back(path, { error: err.message });
+    throw err;
+  }
+}
+
+/** Same check for actions that return a result instead of redirecting. */
+async function guardResult(session: SessionPayload, accountId: string): Promise<string | null> {
+  try {
+    await touchAccount(session, accountId);
+    return null;
+  } catch (err) {
+    if (err instanceof OwnershipError) return err.message;
+    throw err;
+  }
+}
+
 // --- Accounts -----------------------------------------------------------------
 
 export async function createAccount(form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const website = optStr(form, "website");
   const domain = normalizeDomain(website);
-  if (domain) {
-    const existing = await db.account.findUnique({ where: { domain } });
-    if (existing) back(`/crm/accounts/${existing.id}`, { notice: "An account with that domain already exists" });
-  }
+  const dup = await findDuplicateAccount({ domain, phone: optStr(form, "phone"), name: str(form, "name"), city: optStr(form, "city") });
+  if (dup) back(`/crm/accounts/${dup.id}`, { error: `Not added: ${dup.name} is already in the CRM (${dup.reason}), owned by ${dup.owner}.` });
+  const ownerId = await ownerFromForm(session, form);
   const account = await db.account.create({
     data: {
       name: str(form, "name") || domain || "Untitled",
@@ -65,7 +90,7 @@ export async function createAccount(form: FormData) {
       stage: (STAGES as readonly string[]).includes(str(form, "stage")) ? str(form, "stage") : "PROSPECT",
       tags: joinTags(str(form, "tags").split(",")),
       notes: str(form, "notes"),
-      ownerId: session.sub,
+      ownerId,
       source: "manual",
     },
   });
@@ -82,10 +107,13 @@ export async function createAccount(form: FormData) {
 }
 
 export async function updateAccount(accountId: string, form: FormData) {
-  await requireAdmin();
+  const session = await requireStaff();
+  await guard(session, accountId);
   const website = optStr(form, "website");
   const domain = normalizeDomain(website);
   const avg = parseMoneyToCents(optStr(form, "avgJobValue"));
+  const dup = await findDuplicateAccount({ domain, phone: optStr(form, "phone"), name: str(form, "name"), city: optStr(form, "city") }, accountId);
+  if (dup) back(`/crm/accounts/${accountId}`, { error: `Not saved: ${dup.name} already has that ${dup.reason.replace("same ", "")} (owned by ${dup.owner}).`, edit: "1" });
   try {
     await db.account.update({
       where: { id: accountId },
@@ -111,13 +139,47 @@ export async function updateAccount(accountId: string, form: FormData) {
     back(`/crm/accounts/${accountId}`, { error: `Could not save: ${errMsg(err)}`, edit: "1" });
   }
   const stage = str(form, "stage");
-  if ((STAGES as readonly string[]).includes(stage)) await changeStage(accountId, stage as Stage, (await requireAdmin()).sub);
+  if ((STAGES as readonly string[]).includes(stage)) await changeStage(accountId, stage as Stage, session.sub);
   back(`/crm/accounts/${accountId}`, { notice: "Saved" });
 }
 
+/**
+ * Owner for a new account: admins pick anyone on the team (or nobody); reps always own what they add.
+ */
+async function ownerFromForm(session: SessionPayload, form: FormData): Promise<string | null> {
+  if (session.role !== "ADMIN" || !form.has("ownerId")) return session.sub;
+  const id = str(form, "ownerId");
+  if (!id) return null;
+  const user = await db.user.findFirst({ where: { id, role: { in: ["ADMIN", "REP"] }, disabled: false }, select: { id: true } });
+  return user?.id ?? session.sub;
+}
+
+/**
+ * Account owner dropdown. Admins assign any rep (or unassign). Reps can take an unassigned
+ * account or hand their own back; they can't take another rep's.
+ */
+export async function setAccountOwner(accountId: string, form: FormData) {
+  const session = await requireStaff();
+  const ownerId = str(form, "ownerId") || null;
+  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { ownerId: true } });
+  if (account.ownerId === ownerId) back(`/crm/accounts/${accountId}`);
+  if (session.role !== "ADMIN") {
+    const allowed = (ownerId === session.sub && !account.ownerId) || (ownerId === null && account.ownerId === session.sub);
+    if (!allowed) back(`/crm/accounts/${accountId}`, { error: "Only an administrator can move an account between reps" });
+  }
+  const owner = ownerId ? await db.user.findFirst({ where: { id: ownerId, role: { in: ["ADMIN", "REP"] }, disabled: false }, select: { id: true, name: true, email: true } }) : null;
+  if (ownerId && !owner) back(`/crm/accounts/${accountId}`, { error: "Pick an active team member" });
+  await db.account.update({ where: { id: accountId }, data: { ownerId } });
+  // Open tasks follow the account to its new owner's queue (tasks are shown by account owner).
+  await recordActivity({ accountId, type: "NOTE", source: "system", subject: "Owner changed", body: owner ? `Assigned to ${owner.name || owner.email}.` : "Unassigned.", createdById: session.sub });
+  revalidatePath("/crm/accounts");
+  back(`/crm/accounts/${accountId}`, { notice: owner ? `Assigned to ${owner.name || owner.email}` : "Account unassigned" });
+}
+
 export async function setStage(accountId: string, stage: string) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   if (!(STAGES as readonly string[]).includes(stage)) return;
+  if (await guardResult(session, accountId)) return;
   await changeStage(accountId, stage as Stage, session.sub);
   revalidatePath("/crm/pipeline");
   revalidatePath(`/crm/accounts/${accountId}`);
@@ -130,11 +192,19 @@ export async function deleteAccount(accountId: string) {
 }
 
 export async function bulkAccounts(form: FormData) {
-  const session = await requireAdmin();
-  const ids = form.getAll("ids").map(String).filter(Boolean);
+  const session = await requireStaff();
+  const picked = form.getAll("ids").map(String).filter(Boolean);
   const op = str(form, "op");
-  if (!ids.length) back("/crm/accounts", { error: "Select at least one account" });
-  if (op === "delete") {
+  if (!picked.length) back("/crm/accounts", { error: "Select at least one account" });
+  if ((op === "delete" || op.startsWith("owner:")) && session.role !== "ADMIN") back("/crm/accounts", { error: "Only an administrator can do that" });
+  // Reps only act on their own and unassigned accounts.
+  const ids = session.role === "ADMIN" ? picked : (await db.account.findMany({ where: { id: { in: picked }, OR: [{ ownerId: session.sub }, { ownerId: null }] }, select: { id: true } })).map((a) => a.id);
+  if (!ids.length) back("/crm/accounts", { error: "Those accounts belong to other reps" });
+  if (op.startsWith("owner:")) {
+    const ownerId = op.slice(6) || null;
+    if (ownerId && !(await db.user.findFirst({ where: { id: ownerId, role: { in: ["ADMIN", "REP"] }, disabled: false } }))) back("/crm/accounts", { error: "Pick an active team member" });
+    await db.account.updateMany({ where: { id: { in: ids } }, data: { ownerId } });
+  } else if (op === "delete") {
     await db.account.deleteMany({ where: { id: { in: ids } } });
   } else if (op.startsWith("stage:")) {
     for (const id of ids) await changeStage(id, op.slice(6) as Stage, session.sub);
@@ -157,13 +227,14 @@ export async function bulkAccounts(form: FormData) {
 }
 
 export async function importCsv(form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) back("/crm/accounts/import", { error: "Choose a CSV file" });
   if (file.size > 10 * 1024 * 1024) back("/crm/accounts/import", { error: "CSV must be under 10MB" });
   const { job, createdIds } = await importCsvText(file.name, await file.text(), {
     createdById: session.sub,
     ownerId: session.sub,
+    canUpdate: (ownerId) => canTouch(session, ownerId),
     defaultTags: str(form, "tags").split(","),
     updateExisting: form.get("updateExisting") === "on",
   });
@@ -174,7 +245,7 @@ export async function importCsv(form: FormData) {
 // --- Contacts & activities ----------------------------------------------------------
 
 export async function addContact(accountId: string, form: FormData) {
-  await requireAdmin();
+  await guard(await requireStaff(), accountId);
   const count = await db.contact.count({ where: { accountId } });
   await db.contact.create({
     data: {
@@ -192,13 +263,14 @@ export async function addContact(accountId: string, form: FormData) {
 }
 
 export async function deleteContact(accountId: string, contactId: string) {
-  await requireAdmin();
-  await db.contact.delete({ where: { id: contactId } });
+  await guard(await requireStaff(), accountId);
+  await db.contact.delete({ where: { id: contactId, accountId } });
   back(`/crm/accounts/${accountId}`);
 }
 
 export async function logActivity(accountId: string, form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
+  await guard(session, accountId);
   const type = str(form, "type") || "NOTE";
   const direction = str(form, "direction");
   const due = optStr(form, "dueAt");
@@ -250,11 +322,13 @@ const NEXT_STEPS: Record<string, string> = {
  * Returns a plain result so the dialer can move on to the next prospect without a page reload.
  */
 export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const accountId = str(form, "accountId");
   const callSid = str(form, "callSid");
   const outcome = str(form, "outcome");
   if (!accountId || !CALL_OUTCOMES[outcome]) return { ok: false, error: "Pick an outcome" };
+  const notYours = await guardResult(session, accountId);
+  if (notYours) return { ok: false, error: notYours };
   const { ensureCallActivity } = await import("@/lib/dialer");
   const contactId = optStr(form, "contactId");
   const note = str(form, "note").trim();
@@ -312,7 +386,7 @@ export async function saveVoicemailSettings(form: FormData) {
 }
 
 export async function uploadVoicemail(form: FormData) {
-  await requireAdmin();
+  await requireStaff();
   const file = form.get("file");
   if (!(file instanceof File) || !file.size) back("/crm/dialer", { error: "Choose an MP3 or WAV file", vm: "1" });
   if (file.size > 5 * 1024 * 1024) back("/crm/dialer", { error: "Voicemail files must be under 5 MB", vm: "1" });
@@ -341,7 +415,9 @@ export async function deleteVoicemail(id: string) {
 
 /** Pre-generate an account's AI voicemail (at auto-dial session start, or while it rings), so it's ready at the beep. */
 export async function prepareVoicemail(accountId: string): Promise<{ ok: boolean; script?: string; voiced?: boolean; voiceError?: string; error?: string }> {
-  await requireAdmin();
+  const session = await requireStaff();
+  const owner = await db.account.findUnique({ where: { id: accountId }, select: { ownerId: true } });
+  if (!owner || !canTouch(session, owner.ownerId)) return { ok: false, error: "Another rep owns this account" };
   try {
     const { aiVoicemail } = await import("@/lib/voicemail");
     const vm = await aiVoicemail(accountId);
@@ -353,7 +429,8 @@ export async function prepareVoicemail(accountId: string): Promise<{ ok: boolean
 
 /** Quick note on an account, any time (shows in Notes and the timeline). */
 export async function addNote(accountId: string, form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
+  await guard(session, accountId);
   const body = str(form, "body").trim();
   if (!body) back(`/crm/accounts/${accountId}`, { error: "Write a note first" });
   await recordActivity({ accountId, type: "NOTE", body, source: "manual", createdById: session.sub, contactId: optStr(form, "contactId") });
@@ -361,13 +438,15 @@ export async function addNote(accountId: string, form: FormData) {
 }
 
 export async function completeTask(activityId: string, redirectTo: string) {
-  await requireAdmin();
+  const session = await requireStaff();
+  const task = await db.activity.findUniqueOrThrow({ where: { id: activityId }, select: { accountId: true } });
+  await guard(session, task.accountId, redirectTo.split("?")[0]);
   await db.activity.update({ where: { id: activityId }, data: { completedAt: new Date() } });
   back(redirectTo);
 }
 
 export async function rateDraft(accountId: string, draftId: string, form: FormData) {
-  await requireAdmin();
+  await requireStaff();
   const rating = form.get("rating") ? Number(form.get("rating")) : null;
   await db.emailDraft.updateMany({ where: { id: draftId, accountId }, data: { rating: rating === 1 || rating === -1 ? rating : null, feedback: optStr(form, "feedback") } });
   back(`/crm/accounts/${accountId}`, { draft: draftId, notice: "Thanks: the email writer will use this on future drafts" });
@@ -404,7 +483,8 @@ export async function discardStyleProposal() {
 }
 
 export async function sendEmail(accountId: string, form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
+  await guard(session, accountId);
   try {
     const activity = await sendTrackedEmail({ accountId, contactId: str(form, "contactId"), subject: str(form, "subject"), body: str(form, "body"), userId: session.sub });
     // Remember what was actually sent for a draft: the writer learns from your edits and from replies.
@@ -418,7 +498,7 @@ export async function sendEmail(accountId: string, form: FormData) {
 }
 
 export async function draftEmail(accountId: string, form: FormData) {
-  await requireAdmin();
+  await guard(await requireStaff(), accountId);
   const prompt = await db.savedPrompt.findUnique({ where: { id: str(form, "promptId") } });
   const account = await db.account.findUniqueOrThrow({
     where: { id: accountId },
@@ -460,7 +540,7 @@ export async function draftEmail(accountId: string, form: FormData) {
 }
 
 export async function syncOutreachNow() {
-  await requireAdmin();
+  await requireStaff();
   try {
     const r = await syncGmail();
     for (const id of r.accountsTouched) await writeOutreachLog(id).catch(() => undefined);
@@ -472,7 +552,7 @@ export async function syncOutreachNow() {
 }
 
 export async function exportOutreachLog(accountId: string) {
-  await requireAdmin();
+  await requireStaff();
   try {
     await writeOutreachLog(accountId);
   } catch (err) {
@@ -484,7 +564,7 @@ export async function exportOutreachLog(accountId: string) {
 // --- Drive -------------------------------------------------------------------------
 
 export async function createDriveFolders(accountId: string) {
-  await requireAdmin();
+  await guard(await requireStaff(), accountId);
   try {
     await ensureAccountFolders(accountId);
   } catch (err) {
@@ -496,7 +576,7 @@ export async function createDriveFolders(accountId: string) {
 // --- Claude research & prospecting ------------------------------------------------
 
 export async function runResearch(accountId: string, form: FormData) {
-  await requireAdmin();
+  await guard(await requireStaff(), accountId);
   let runId: string;
   try {
     runId = await startAccountResearch(accountId, optStr(form, "promptId"), optStr(form, "customPrompt") ?? undefined);
@@ -508,15 +588,16 @@ export async function runResearch(accountId: string, form: FormData) {
 }
 
 export async function applyResearch(runId: string) {
-  await requireAdmin();
+  const session = await requireStaff();
   const run = await db.researchRun.findUniqueOrThrow({ where: { id: runId } });
+  if (run.accountId) await guard(session, run.accountId, `/crm/research/${runId}`);
   const summary = safeJson<ResearchSummary | null>(run.resultJson, null);
   if (run.accountId && summary) await applyResearchSummary(run.accountId, summary, true);
   back(`/crm/research/${runId}`, { notice: "Account updated from research" });
 }
 
 export async function saveRunToDrive(runId: string) {
-  await requireAdmin();
+  await requireStaff();
   try {
     const f = await archiveRunToDrive(runId);
     if (!f) back(`/crm/research/${runId}`, { error: "Connect Google in Settings first" });
@@ -528,7 +609,7 @@ export async function saveRunToDrive(runId: string) {
 }
 
 export async function runProspecting(form: FormData) {
-  await requireAdmin();
+  await requireStaff();
   const count = Math.min(50, Math.max(1, optInt(form, "count") ?? 10));
   const runId = await startProspecting(optStr(form, "promptId"), str(form, "criteria"), count, optStr(form, "customPrompt") ?? undefined);
   after(() => executeProspecting(runId));
@@ -536,7 +617,7 @@ export async function runProspecting(form: FormData) {
 }
 
 export async function addProspects(runId: string, form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const run = await db.researchRun.findUniqueOrThrow({ where: { id: runId } });
   const { prospects = [] } = safeJson<{ prospects?: Prospect[] }>(run.resultJson, {});
   const picked = form.getAll("pick").map((v) => prospects[Number(v)]).filter((p): p is Prospect => Boolean(p));
@@ -590,7 +671,7 @@ export async function addProspects(runId: string, form: FormData) {
 // --- Saved prompts -----------------------------------------------------------------
 
 export async function savePrompt(form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const id = optStr(form, "id");
   const kind = str(form, "kind");
   const data = {
@@ -608,7 +689,7 @@ export async function savePrompt(form: FormData) {
 }
 
 export async function deletePrompt(id: string) {
-  await requireAdmin();
+  await requireStaff();
   await db.savedPrompt.delete({ where: { id } });
   back("/crm/prompts");
 }
@@ -662,7 +743,7 @@ export async function updateReceptionist(id: string, form: FormData) {
 }
 
 export async function markReviewed(accountId: string) {
-  await requireAdmin();
+  await guard(await requireStaff(), accountId);
   await db.account.update({ where: { id: accountId }, data: { needsReview: false } });
   revalidatePath("/crm", "layout");
   back(`/crm/accounts/${accountId}`, { notice: "Marked as reviewed" });
@@ -900,7 +981,7 @@ export async function saveCompanyName(form: FormData) {
 }
 
 export async function changePassword(form: FormData) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const user = await db.user.findUniqueOrThrow({ where: { id: session.sub } });
   const bcrypt = (await import("bcryptjs")).default;
   if (!(await bcrypt.compare(str(form, "current"), user.passwordHash))) back("/crm/settings", { error: "Current password is incorrect" });

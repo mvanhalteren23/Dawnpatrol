@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { demoLineConfig, formatPhone } from "@/lib/demo-line";
@@ -10,6 +11,7 @@ import { assignDemoExtension, clearDemoExtension, saveDemoLineSettings } from ".
 export const dynamic = "force-dynamic";
 
 export default async function DemoLinePage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
+  await requireAdmin();
   const config = await demoLineConfig();
   const [demos, others, demoCalls] = await Promise.all([
     db.receptionist.findMany({
