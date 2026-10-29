@@ -15,7 +15,7 @@ import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { googleConnection } from "@/lib/google";
-import { AvailabilityFields, FollowUpFields, RingFields } from "@/components/ReceptionistOptions";
+import { AvailabilityFields, FollowUpFields, LeadAlertFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
 import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLine, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 
@@ -112,6 +112,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               </select>
             </Field>
             <FollowUpFields r={r} />
+            <LeadAlertFields r={r} />
             <Field label="Questions to ask before booking (one per line)" className="col-span-2"><textarea name="bookingQuestions" rows={3} defaultValue={r.bookingQuestions} placeholder="What do your customers usually call about?" className="input" /></Field>
             {isAdmin ? <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" name="bookingAddsToCrm" defaultChecked={r.bookingAddsToCrm} /> Add each booking to this CRM: match or create the account, research new ones with Claude, and flag them for review (for your own line)</label> : null}
             <div className="col-span-2 flex gap-2">

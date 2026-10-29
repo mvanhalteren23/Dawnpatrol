@@ -23,3 +23,22 @@ describe("numbers we dial at our expense", () => {
     expect(ringFromForm(form("")).ringFirstNumber).toBeNull();
   });
 });
+
+import { textToHtml } from "@/lib/tracking";
+import { safeAddress } from "@/lib/outreach-address";
+
+describe("outbound email safety", () => {
+  it("keeps quotes in a link from breaking out of the href", () => {
+    const html = textToHtml('See https://x.com/"onmouseover="alert(1) now');
+    expect(html).not.toContain('"onmouseover="');
+    expect(html).toContain("&quot;onmouseover=&quot;");
+  });
+  it("keeps query strings in links", () => {
+    expect(textToHtml("https://x.com/a?b=1&c=2")).toContain('href="https://x.com/a?b=1&amp;c=2"');
+  });
+  it("refuses addresses that would add headers or recipients", () => {
+    expect(safeAddress(" owner@shine99.ca ")).toBe("owner@shine99.ca");
+    expect(() => safeAddress("a@b.com\r\nBcc: victim@x.com")).toThrow();
+    expect(() => safeAddress("a@b.com, c@d.com")).toThrow();
+  });
+});

@@ -36,6 +36,7 @@ import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
 import { cleanDigits, dialableNumber, nextFreeExtension, ringFromForm } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 import { forwardingLoop, LOOP_MESSAGE, type KeepMethod } from "@/lib/keep-number";
+import { leadAlertFromForm } from "@/lib/follow-up-rules";
 
 function back(path: string, params?: Record<string, string>): never {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -784,6 +785,12 @@ export async function updateBooking(id: string, form: FormData) {
   } catch (err) {
     back(path, { error: `Bookable hours: ${errMsg(err)}` });
   }
+  let leadAlertFields: ReturnType<typeof leadAlertFromForm>;
+  try {
+    leadAlertFields = leadAlertFromForm(form);
+  } catch (err) {
+    back(path, { error: errMsg(err) });
+  }
   const int = (key: string, min: number, max: number, fallback: number) => Math.min(max, Math.max(min, optInt(form, key) ?? fallback));
   await db.receptionist.update({
     where: { id },
@@ -799,6 +806,7 @@ export async function updateBooking(id: string, form: FormData) {
       bookingQuestions: str(form, "bookingQuestions"),
       ...availability,
       ...followUpFromForm(form),
+      ...leadAlertFields,
       ...(isAdmin ? { bookingAddsToCrm: form.get("bookingAddsToCrm") === "on" } : {}),
       ...(await bookingGoogleFromForm(session, form)),
     },

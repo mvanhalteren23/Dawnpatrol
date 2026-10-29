@@ -56,6 +56,26 @@ export function FollowUpFields({ r }: { r: Pick<Receptionist, "followUpOn" | "fo
   );
 }
 
+/** Texts to the owner about new leads. Parsed by leadAlertFromForm. */
+export function LeadAlertFields({ r }: { r: Pick<Receptionist, "leadAlertOn" | "leadAlertTo" | "ringFirstNumber" | "businessNumber"> }) {
+  return (
+    <>
+      <Field label="Text me about new leads">
+        <select name="leadAlertOn" defaultValue={r.leadAlertOn} className="input">
+          <option value="">Off</option>
+          <option value="messages">Calls that need a call back</option>
+          <option value="leads">Every lead (also bookings and transfers)</option>
+        </select>
+      </Field>
+      <Field label="Text these numbers (comma separated)"><input name="leadAlertTo" defaultValue={r.leadAlertTo} placeholder={r.ringFirstNumber ?? "604-555-1234"} className="input" inputMode="tel" /></Field>
+      <p className="col-span-2 text-xs text-slate-500">
+        A short text with who called, what they need and their number, straight after the call.
+        {r.businessNumber ? " Reply 1 to mark the lead handled." : ""} Blank sends to the cell that rings first.
+      </p>
+    </>
+  );
+}
+
 /** Emailed call reports (totals only). Parsed by reportFromForm. */
 export function ReportFields({ r }: { r: Pick<Receptionist, "reportFrequency" | "reportEmails"> }) {
   return (

@@ -8,6 +8,7 @@ import { canAccessReceptionist } from "@/lib/access";
 import { availabilityFromForm, followUpFromForm, reportFromForm } from "@/lib/booking";
 import { ringFromForm } from "@/lib/twilio";
 import { markDirty } from "@/lib/elevenlabs";
+import { leadAlertFromForm } from "@/lib/follow-up-rules";
 import { CARRIERS, forwardingLoop, KEEP_METHODS, LOOP_MESSAGE, PORT_STATUSES, type KeepMethod } from "@/lib/keep-number";
 import { dialableNumber } from "@/lib/twilio";
 
@@ -27,6 +28,7 @@ export async function saveReceptionistOptions(receptionistId: string, returnTo: 
       ...followUpFromForm(form),
       ...(form.has("ringMode") ? ringFromForm(form) : {}),
       ...(form.has("reportFrequency") ? reportFromForm(form) : {}),
+      ...(form.has("leadAlertOn") ? leadAlertFromForm(form) : {}),
     };
   } catch (err) {
     done(returnTo, "error", (err as Error).message);
@@ -47,6 +49,12 @@ export async function sendReportNow(receptionistId: string, returnTo: string, fo
   const session = await getSession();
   if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
   const kind = form.get("kind") === "month" ? "month" : "week";
+  // A few a day is plenty for checking it works, and keeps the company mailbox from being used to spam.
+  const { getSetting, setSetting } = await import("@/lib/settings");
+  const key = `report.manual.${receptionistId}.${new Date().toISOString().slice(0, 10)}`;
+  const sentToday = Number((await getSetting(key)) ?? 0);
+  if (sentToday >= 5) done(returnTo, "error", "That's 5 reports sent today. The next scheduled one will arrive on its own, or try again tomorrow.");
+  await setSetting(key, String(sentToday + 1));
   const { sendReport } = await import("@/lib/client-reports");
   const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId } });
   const res = await sendReport(r, kind, { force: true });

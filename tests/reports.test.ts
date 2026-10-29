@@ -56,3 +56,17 @@ describe("summarize", () => {
     expect(delta(2, 5)).toBe("−3");
   });
 });
+
+describe("report periods across the clock change", () => {
+  it("has exactly 7 days in the week clocks fall back (Nov 1, 2026) and 30 in November", () => {
+    const week = periodFor("week", 0, tz, new Date("2026-10-28T18:00:00Z")); // Oct 26 – Nov 1
+    expect(summarize([], week, { tz }).perDay.map((d) => d.date)).toEqual(["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01"]);
+    const nov = periodFor("month", 1, tz, new Date("2026-10-28T18:00:00Z"));
+    const days = summarize([], nov, { tz }).perDay;
+    expect(days).toHaveLength(30);
+    expect(days.at(-1)!.date).toBe("2026-11-30");
+  });
+  it("reads naturally when nothing changed", () => {
+    expect(delta(4, 4)).toBe("no change");
+  });
+});

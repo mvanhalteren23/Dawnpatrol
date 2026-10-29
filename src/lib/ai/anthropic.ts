@@ -2,7 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { z } from "zod";
-import type { ChatTurn, Usage, WebResult } from "./types";
+import { fenceSource, UNTRUSTED_SOURCE_NOTE, type ChatTurn, type Usage, type WebResult } from "./types";
 
 // Claude adapter. Research uses the server-side web_search / web_fetch tools; structured output
 // uses a low-effort parse pass. Requests opt in to server-side refusal fallback.
@@ -87,7 +87,9 @@ export async function structured<T extends z.ZodType>(model: string, schema: T, 
     betas: [FALLBACK_BETA],
     fallbacks: "default",
     output_config: { effort: "low", format: betaZodOutputFormat(schema) },
-    messages: [{ role: "user", content: `${instructions}\n\n<source>\n${source}\n</source>` }],
+    // Website text and research are untrusted: they go in the user turn as data, the task in the system prompt.
+    system: `${instructions}\n\n${UNTRUSTED_SOURCE_NOTE}`,
+    messages: [{ role: "user", content: `<source>\n${fenceSource(source)}\n</source>` }],
   });
   assertNotRefused(response);
   if (response.parsed_output == null) throw new Error("Claude returned output that did not match the expected format");

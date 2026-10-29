@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { callerNumber, classifyCall, transcriptText, type PostCallData } from "./calls";
-import { sendCallFollowUp } from "./follow-up";
+import { checkMinuteUsage, sendCallFollowUp, sendLeadAlert } from "./follow-up";
 
 type ReceptionistRef = { id: string; demoExtension: string | null };
 
@@ -41,6 +41,10 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     update: { summary: fields.summary || undefined, transcript: fields.transcript || undefined, durationSec: fields.durationSec || undefined },
   });
   const full = await db.receptionist.findUnique({ where: { id: receptionist.id } });
-  if (full) await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));
+  if (full) {
+    await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));
+    await sendLeadAlert(full, call).catch((e) => console.error("lead alert failed", e));
+    if (!full.demoExtension) await checkMinuteUsage(full).catch((e) => console.error("minute usage check failed", e));
+  }
   return call;
 }

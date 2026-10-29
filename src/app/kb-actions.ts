@@ -69,5 +69,7 @@ export async function refreshCalls(receptionistId: string, returnTo: string) {
   await guard(receptionistId);
   const { syncCalls } = await import("@/lib/call-sync");
   const r = await syncCalls({ receptionistId });
-  done(returnTo, r.errors.length ? `Couldn't reach ElevenLabs: ${r.errors[0]}` : r.added ? `${r.added} new call${r.added === 1 ? "" : "s"} added` : "Calls are up to date");
+  if (r.errors.length) console.error("refresh calls", receptionistId, r.errors);
+  // Clients see a plain message; the provider's raw error goes to the logs.
+  done(returnTo, r.errors.length ? "Couldn't fetch new calls right now. Please try again in a few minutes." : r.added ? `${r.added} new call${r.added === 1 ? "" : "s"} added` : "Calls are up to date");
 }

@@ -30,7 +30,8 @@ export function instrumentHtml(html: string, activityId: string, appUrl: string)
 
 /** Plain-text body -> minimal HTML with auto-linked URLs. */
 export function textToHtml(text: string): string {
-  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Quotes too: a URL containing " must not break out of the href attribute.
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const linked = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${linked.split(/\n/).join("<br>")}</div>`;
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { GoogleGenAI, type GenerateContentResponse } from "@google/genai";
 import { z } from "zod";
-import type { ChatTurn, Usage, WebResult } from "./types";
+import { fenceSource, UNTRUSTED_SOURCE_NOTE, type ChatTurn, type Usage, type WebResult } from "./types";
 
 // Gemini adapter (Gemini Developer API, key from aistudio.google.com). Research is grounded with
 // the Google Search and URL context tools; sources come back as grounding metadata.
@@ -48,8 +48,9 @@ export async function structured<T extends z.ZodType>(model: string, schema: T, 
   const { $schema: _ignored, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
   const res = await gemini().models.generateContent({
     model,
-    contents: `${instructions}\n\n<source>\n${source}\n</source>`,
-    config: { responseMimeType: "application/json", responseJsonSchema: jsonSchema },
+    // Website text and research are untrusted: data in the contents, the task in the system instruction.
+    contents: `<source>\n${fenceSource(source)}\n</source>`,
+    config: { systemInstruction: `${instructions}\n\n${UNTRUSTED_SOURCE_NOTE}`, responseMimeType: "application/json", responseJsonSchema: jsonSchema },
   });
   const parsed = schema.safeParse(JSON.parse(textOrThrow(res)));
   if (!parsed.success) throw new Error(`Gemini returned output that did not match the expected format: ${parsed.error.message.slice(0, 300)}`);

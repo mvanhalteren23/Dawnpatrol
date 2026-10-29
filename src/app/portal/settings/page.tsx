@@ -4,7 +4,7 @@ import { formatDate } from "@/lib/utils";
 import { Badge, Empty, Notice } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
 import { SubmitButton } from "@/components/SubmitButton";
-import { AvailabilityFields, FollowUpFields, ReportFields, RingFields } from "@/components/ReceptionistOptions";
+import { AvailabilityFields, FollowUpFields, LeadAlertFields, ReportFields, RingFields } from "@/components/ReceptionistOptions";
 import { saveReceptionistOptions, sendReportNow } from "@/app/receptionist-actions";
 import { KeepNumberCard } from "@/components/KeepNumberCard";
 
@@ -32,6 +32,8 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 <RingFields r={receptionist} />
               </>
             ) : null}
+            <h2 className="col-span-2 mt-2">Lead texts to you</h2>
+            <LeadAlertFields r={receptionist} />
             <h2 className="col-span-2 mt-2">Caller summaries</h2>
             <FollowUpFields r={receptionist} />
             <h2 className="col-span-2 mt-2" id="reports">Reports</h2>
@@ -56,9 +58,9 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                   <li key={m.id} className="border-b border-slate-100 pb-2 last:border-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                       <span>{formatDate(m.createdAt, true)}</span>
-                      <Badge>{m.kind === "booking" ? "booking" : "call"}</Badge>
+                      <Badge>{m.kind === "booking" ? "booking" : m.kind === "owner_alert" ? "lead alert to you" : "call"}</Badge>
                       <span>{m.channel === "sms" ? "text" : "email"} to {m.to}</span>
-                      {m.status === "FAILED" ? <Badge className="bg-red-100 text-red-800">not sent</Badge> : null}
+                      {m.status === "FAILED" ? <Badge className="bg-red-100 text-red-800">not sent</Badge> : m.status === "SKIPPED" ? <Badge>not sent: caller opted out</Badge> : null}
                     </div>
                     <p className="mt-1 whitespace-pre-line text-slate-700">{m.body}</p>
                   </li>

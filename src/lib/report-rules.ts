@@ -91,12 +91,17 @@ export function summarize(calls: ReportCall[], period: ReportPeriod, opts: { tz:
     byHour[Math.floor(clock.minutes / 60)]!++;
     if (hasHours && !inHours(opts.hours!, clock.weekday, clock.minutes)) afterHours++;
   }
-  // Every day of the period, so quiet days show as zero.
+  // Every calendar day of the period, so quiet days show as zero. Step through dates, not 24-hour
+  // blocks: the week the clocks change has a 23- or 25-hour day.
   const perDay: { date: string; calls: number }[] = [];
-  for (let t = period.start.getTime(); t < period.end.getTime(); t += 86_400_000) {
-    const l = localDate(new Date(t + 12 * 3_600_000), opts.tz); // midday avoids DST edges
-    const k = isoDate(l.y, l.m, l.d);
-    if (!perDay.some((p) => p.date === k)) perDay.push({ date: k, calls: days.get(k) ?? 0 });
+  const first = localDate(period.start, opts.tz);
+  const last = localDate(new Date(period.end.getTime() - 1), opts.tz);
+  const lastKey = isoDate(last.y, last.m, last.d);
+  for (let i = 0; i < 32; i++) {
+    const d = addDaysLocal(first.y, first.m, first.d, i);
+    const k = isoDate(d.y, d.m, d.d);
+    perDay.push({ date: k, calls: days.get(k) ?? 0 });
+    if (k === lastKey) break;
   }
   const top = (arr: number[]) => {
     const max = Math.max(...arr);
@@ -123,10 +128,10 @@ export function summarize(calls: ReportCall[], period: ReportPeriod, opts: { tz:
   };
 }
 
-/** "+8" / "−3" / "no change" against the previous period. */
+/** "+8" / "−3" / "no change" against the previous period (read with "vs last week"). */
 export function delta(current: number, previous: number): string {
   const d = current - previous;
-  return d === 0 ? "same as before" : d > 0 ? `+${d}` : `−${Math.abs(d)}`;
+  return d === 0 ? "no change" : d > 0 ? `+${d}` : `−${Math.abs(d)}`;
 }
 
 function money(cents: number): string {

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { connectedEmail, googleFetch, type GoogleAs } from "./google";
+import { encodeHeader, safeAddress } from "./outreach-address";
 import { getSetting, setSetting } from "./settings";
 import { writeAccountDoc } from "./drive";
 import { buildMatchIndex, matchAddresses, nextFollowUp, nextStageAfterActivity } from "./outreach-rules";
@@ -37,22 +38,29 @@ export async function recordActivity(input: NewActivity) {
   const occurredAt = input.occurredAt ?? new Date();
   const direction = input.direction ?? null;
 
-  const activity = await db.activity.create({
-    data: {
-      accountId: input.accountId,
-      contactId: input.contactId ?? null,
-      type: input.type,
-      direction,
-      subject: input.subject ?? null,
-      body: input.body ?? null,
-      source: input.source ?? "manual",
-      externalId: input.externalId ?? null,
-      threadId: input.threadId ?? null,
-      occurredAt,
-      dueAt: input.dueAt ?? null,
-      createdById: input.createdById ?? null,
-    },
-  });
+  let activity;
+  try {
+    activity = await db.activity.create({
+      data: {
+        accountId: input.accountId,
+        contactId: input.contactId ?? null,
+        type: input.type,
+        direction,
+        subject: input.subject ?? null,
+        body: input.body ?? null,
+        source: input.source ?? "manual",
+        externalId: input.externalId ?? null,
+        threadId: input.threadId ?? null,
+        occurredAt,
+        dueAt: input.dueAt ?? null,
+        createdById: input.createdById ?? null,
+      },
+    });
+  } catch (err) {
+    // The same email or call arriving twice at once (sync + webhook): the unique externalId wins.
+    if (input.externalId && (err as { code?: string }).code === "P2002") return null;
+    throw err;
+  }
 
   const isProspect = (PROSPECT_STAGES as string[]).includes(account.stage);
   const newStage = nextStageAfterActivity(account.stage, input.type, direction);
@@ -217,19 +225,14 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
   return { scanned: ids.length, recorded, accountsTouched: Array.from(touched), startedAt };
 }
 
-function encodeHeader(value: string): string {
-  // RFC 2047 for non-ASCII subjects
-  return /^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
-}
-
 /** Plain-text email from the connected Gmail account (no tracking, no activity). */
 export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null; as?: GoogleAs }) {
   const me = await connectedEmail(params.as);
   if (!me) throw new Error("Google is not connected");
   const mime = [
     `From: ${params.fromName ? `${encodeHeader(params.fromName)} <${me}>` : me}`,
-    `To: ${params.to}`,
-    ...(params.replyTo ? [`Reply-To: ${params.replyTo}`] : []),
+    `To: ${safeAddress(params.to)}`,
+    ...(params.replyTo ? [`Reply-To: ${safeAddress(params.replyTo)}`] : []),
     `Subject: ${encodeHeader(params.subject)}`,
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
@@ -268,7 +271,7 @@ export async function sendTrackedEmail(params: { accountId: string; contactId: s
   const html = instrumentHtml(textToHtml(params.body), activity.id, process.env.APP_URL ?? "");
   const mime = [
     `From: ${me}`,
-    `To: ${contactName(contact)} <${contact.email}>`,
+    `To: ${encodeHeader(contactName(contact).replace(/[<>"]/g, ""))} <${safeAddress(contact.email)}>`,
     `Subject: ${encodeHeader(params.subject)}`,
     "MIME-Version: 1.0",
     'Content-Type: text/html; charset="UTF-8"',

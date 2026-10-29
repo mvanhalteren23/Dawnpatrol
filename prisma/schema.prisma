@@ -269,11 +269,16 @@ model Receptionist {
   bookingUrl            String?
   extraInstructions     String         @default("")
   // ElevenLabs
-  elevenLabsAgentId     String?
+  elevenLabsAgentId     String?        @unique // how a post-call webhook finds its receptionist
   elevenLabsKbDocs      String         @default("[]") // JSON [{category, docId}]
   ragToken              String         @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
   demoExtension         String?        @unique
+  // Text the owner about new leads: "" (off) | messages (calls needing a call back) | leads (also
+  // bookings and transfers), to these comma-separated numbers (blank = the ring-first cell).
+  leadAlertOn           String         @default("")
+  leadAlertTo           String         @default("")
+  optOuts               SmsOptOut[]
   // Call reports for the client (totals only): "" (off) | weekly | monthly | both; sent to these
   // comma-separated emails (blank = the account's portal logins).
   reportFrequency       String         @default("")
@@ -335,12 +340,12 @@ model FollowUpMessage {
   receptionistId String
   receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
   conversationId String? // ElevenLabs conversation, when known
-  kind           String // booking | call
+  kind           String // booking | call | owner_alert
   channel        String // sms | email
   to             String
   subject        String?
   body           String
-  status         String // SENT | FAILED
+  status         String // SENT | FAILED | SKIPPED (caller opted out)
   error          String?
   createdAt      DateTime     @default(now())
 
@@ -497,4 +502,17 @@ model ClientReport {
   createdAt      DateTime     @default(now())
 
   @@unique([receptionistId, periodKey])
+}
+
+/**
+ * Callers who texted STOP to a client's line: never text them from it again (until START).
+ */
+model SmsOptOut {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  phone          String // E.164
+  createdAt      DateTime     @default(now())
+
+  @@unique([receptionistId, phone])
 }
