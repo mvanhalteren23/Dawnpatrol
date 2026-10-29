@@ -3,6 +3,7 @@ import { verifySharedSecret } from "@/lib/webhook-verify";
 import { syncCalls } from "@/lib/call-sync";
 import { runScheduledReports } from "@/lib/client-reports";
 import { processDueLeads } from "@/lib/followup";
+import { processAudits } from "@/lib/call-audit";
 
 export const maxDuration = 300;
 
@@ -15,5 +16,7 @@ export async function GET(req: Request) {
   const reports = await runScheduledReports().catch((err: Error) => [{ error: err.message }]);
   // Website leads that came in overnight: call them now that calling hours have started.
   const followUpCalls = await processDueLeads(25).catch((err: Error) => err.message);
-  return NextResponse.json({ ...sync, reports, followUpCalls });
+  // Call audits: backstop for the 20-minute GitHub Actions trigger.
+  const audits = await processAudits().catch((err: Error) => err.message);
+  return NextResponse.json({ ...sync, reports, followUpCalls, audits });
 }

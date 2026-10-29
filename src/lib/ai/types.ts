@@ -12,6 +12,7 @@ export const TASKS = {
   caller_summary: { label: "Caller summaries", web: false, help: "Texts and emails sent to callers after a call." },
   test_chat: { label: "Receptionist test chat", web: false, help: "The chat on receptionist pages (the live phone agents use the model set in ElevenLabs)." },
   voicemail: { label: "AI voicemail scripts", web: false, help: "Writes the personalised voicemail the auto-dialer leaves (then voiced by ElevenLabs)." },
+  call_audit: { label: "Call audits", web: false, help: "Reads each mystery-shopper call transcript from a call audit, then writes the audit report." },
   call_notes: { label: "Dialer call notes", web: false, help: "Listens to dialer call recordings and writes a summary and next step. Needs Gemini (Claude can't take audio)." },
 } as const;
 export type Task = keyof typeof TASKS;

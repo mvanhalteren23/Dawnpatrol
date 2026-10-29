@@ -215,3 +215,60 @@ export async function writeVoicemailScript(renderedPrompt: string, research: str
   const ex = await structured("voicemail", VoicemailSchema, `${renderedPrompt}\n\nUse only facts from the research below; if it's thin, keep the message general rather than guessing.`, research || "No research available.");
   return ex.data.script.trim();
 }
+
+// --- Call audits (mystery-shopper calls) -----------------------------------------
+
+const KB_CATEGORIES = ["FAQ", "SERVICE", "PRICING", "HOURS", "LOCATION", "POLICY", "STAFF", "SCRIPT", "OTHER"] as const;
+
+export const AuditCallSchema = z.object({
+  summary: z.string().describe("2-3 sentences: who answered, how the call went, how it ended"),
+  handledScore: z.number().int().min(1).max(5).describe("1-5: how well a real new customer would have been served (5 = clear answers, friendly, offered to book, took their details)"),
+  questions: z.array(z.object({
+    question: z.string().describe("What the caller asked"),
+    answer: z.string().describe("What the business said, close to their words; empty if not answered"),
+    answered: z.enum(["yes", "partly", "no"]),
+  })),
+  offeredAppointment: z.boolean().describe("Did the business offer to book a time or bring the vehicle in?"),
+  askedForContact: z.boolean().describe("Did they ask for the caller's name or number?"),
+  putOnHold: z.boolean(),
+  missedOpportunity: z.string().nullable().describe("The main thing that could lose this customer (no booking offer, no price guidance, rushed, long hold…), or null"),
+  notableQuote: z.string().nullable().describe("One short line the business said that shows how they handle calls, word for word"),
+  facts: z.array(z.object({
+    category: z.enum(KB_CATEGORIES),
+    title: z.string().describe("Short title; for FAQs, the customer's question"),
+    content: z.string().describe("The fact as the business stated it, written so a receptionist can say it"),
+  })).describe("Facts about the business stated on the call: prices, hours, services, policies, booking process. Only what the business said."),
+});
+export type AuditCallAnalysis = z.infer<typeof AuditCallSchema>;
+
+/** Read one audit call transcript: how it was handled, and what the business told the caller. */
+export async function analyzeAuditCall(o: { businessName: string; scenario: string; transcript: string }): Promise<AuditCallAnalysis & { model: string; tokensIn: number; tokensOut: number }> {
+  const ex = await structured(
+    "call_audit",
+    AuditCallSchema,
+    `This is a recorded "mystery shopper" call to ${o.businessName}, placed with the owner's agreement as part of a call audit. "Caller" is our test caller playing a new customer (scenario: ${o.scenario}); "Business" is whoever answered at ${o.businessName}. Judge how a real new customer would have been served, and extract the facts the business stated. Never invent answers, prices or facts that aren't in the transcript; staff names are not facts to keep.`,
+    o.transcript,
+  );
+  return { ...ex.data, model: ex.model, tokensIn: ex.tokensIn, tokensOut: ex.tokensOut };
+}
+
+export const AuditReportSchema = z.object({
+  headline: z.string().describe("One sentence for the owner, leading with the missed-call finding, e.g. '6 of 18 calls weren't answered, mostly during the morning rush.'"),
+  summary: z.string().describe("A short paragraph for the business owner: what we found, in plain words"),
+  findings: z.array(z.string()).describe("3-6 specific findings, each citing the numbers or calls behind it"),
+  recommendations: z.array(z.string()).describe("3-5 practical recommendations, including where an AI receptionist would help and where staff habits matter"),
+  aiWouldHaveHandled: z.array(z.string()).describe("2-4 concrete examples from these calls of what an AI receptionist would have done differently"),
+  facts: z.array(z.object({ category: z.enum(KB_CATEGORIES), title: z.string(), content: z.string() })).describe("The business facts from all calls, merged and de-duplicated; where calls disagree, keep both and say so"),
+});
+export type AuditReport = z.infer<typeof AuditReportSchema>;
+
+/** The audit report: owner-facing findings from the stats and per-call analyses. */
+export async function writeAuditReport(o: { businessName: string; material: string }): Promise<AuditReport & { model: string; tokensIn: number; tokensOut: number }> {
+  const ex = await structured(
+    "call_audit",
+    AuditReportSchema,
+    `You write the one-week call audit report for ${o.businessName}, for the owner. ${await companyName()} placed mystery-shopper calls to their public number at different times of day, with the owner's agreement, to measure missed calls and how callers are treated. Be factual, specific and fair: credit what staff do well, and never exaggerate. Use only the stats and call analyses provided; don't invent numbers.`,
+    o.material,
+  );
+  return { ...ex.data, model: ex.model, tokensIn: ex.tokensIn, tokensOut: ex.tokensOut };
+}

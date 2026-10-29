@@ -69,6 +69,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       subscription: { include: { plan: true } },
       invoices: { orderBy: { createdAt: "desc" }, take: 12 },
       receptionists: { include: { _count: { select: { knowledge: true, calls: true } } } },
+      callAudits: { orderBy: { createdAt: "desc" }, take: 5, select: { id: true, status: true, startsAt: true } },
       driveFolders: true,
       users: true,
       owner: { select: { id: true, name: true, email: true } },
@@ -349,6 +350,13 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <button className="btn-secondary whitespace-nowrap" title="Calls website form leads within minutes and books the next step">+ Follow-up agent</button>
               </form>
             ) : null}
+          </div>
+
+          <div className="card space-y-2 text-sm">
+            <h2>Call audit</h2>
+            <p className="text-xs text-slate-500">A week of test calls to their own number: how calls are handled, what callers are told, and how many are missed. Nothing to set up on their side.</p>
+            {account.callAudits.length ? <ul>{account.callAudits.map((a) => <li key={a.id}><Link href={`/crm/audits/${a.id}`}>Week of {formatDate(a.startsAt)}</Link> <span className="text-xs text-slate-400">{a.status.toLowerCase()}</span></li>)}</ul> : null}
+            <Link href={`/crm/audits/new?account=${account.id}`} className="btn-secondary w-fit">Set up a 1-week call audit</Link>
           </div>
 
           <div className="card">

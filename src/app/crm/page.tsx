@@ -8,6 +8,7 @@ import { PageHeader, Progress, Stat, StageBadge, StatusBadge, Empty } from "@/co
 import { completeTask } from "./actions";
 import { syncAllCallsThrottled } from "@/lib/call-sync";
 import { processDueLeadsThrottled } from "@/lib/followup";
+import { processAuditsThrottled } from "@/lib/call-audit";
 import { requireStaff } from "@/lib/auth";
 import { memberLabel } from "@/lib/team";
 import { Flash } from "@/components/Flash";
@@ -19,6 +20,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const session = await requireStaff();
   await syncAllCallsThrottled();
   await processDueLeadsThrottled();
+  await processAuditsThrottled();
   const now = new Date();
   // "Mine" = accounts I own and work I did; "Team" = everyone. Reps start on Mine, admins on Team.
   const scope = sp.scope === "me" || sp.scope === "team" ? sp.scope : session.role === "ADMIN" ? "team" : "me";

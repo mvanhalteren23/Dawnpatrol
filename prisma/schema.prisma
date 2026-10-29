@@ -88,6 +88,7 @@ model Account {
   driveFolders  DriveFolder[]
   emailDrafts   EmailDraft[]
   users         User[]
+  callAudits    CallAudit[]
 
   @@index([stage])
 }
@@ -556,4 +557,73 @@ model Lead {
 
   @@index([status, nextAttemptAt])
   @@index([receptionistId, createdAt])
+}
+
+// One-week call audit: we call the business's public number as customers would ("mystery
+// shopper"), at different times of day, to learn how calls are handled (knowledge for the
+// receptionist) and measure missed calls (the baseline report). Nothing changes on their side.
+model CallAudit {
+  id               String      @id @default(cuid())
+  accountId        String
+  account          Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // PLANNED | RUNNING | ANALYZING | DONE | CANCELLED | FAILED
+  status           String      @default("PLANNED")
+  targetNumber     String // E.164, the number their customers call
+  businessName     String
+  industry         String      @default("auto_repair")
+  timezone         String      @default("America/Vancouver")
+  shopHours        String      @default("Mon-Fri 08:00-17:30")
+  callsPerDay      Int         @default(3)
+  afterHoursCalls  Int         @default(3)
+  customScenarios  String      @default("")
+  callerIds        String      @default("") // numbers to call from, one per line; empty = the dialer number
+  ownerConsent     String      @default("") // who agreed to the audit, and when
+  // Baseline assumptions (edited per audit)
+  callsPerWeek     Int         @default(90)
+  avgJobValueCents Int         @default(45000)
+  afterHoursShare  Float       @default(0.2)
+  newCustomerShare Float       @default(0.35)
+  bookingRate      Float       @default(0.5)
+  startsAt         DateTime
+  endsAt           DateTime
+  report           String      @default("") // JSON: findings, recommendations, facts
+  error            String?
+  shareToken       String      @unique
+  createdById      String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  calls            AuditCall[]
+
+  @@index([status])
+}
+
+model AuditCall {
+  id             String    @id @default(cuid())
+  auditId        String
+  audit          CallAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  scheduledAt    DateTime
+  window         String // "Opening rush", "Lunch", "Evening (closed)"…
+  afterHours     Boolean   @default(false)
+  scenarioKey    String
+  callerName     String
+  toNumber       String? // a test call to one of the team; null = the business's number
+  // PLANNED | CALLING | ANSWERED | VOICEMAIL | NO_ANSWER | BUSY | FAILED | SKIPPED
+  status         String    @default("PLANNED")
+  note           String    @default("")
+  fromNumber     String?
+  callSid        String?   @unique
+  answeredBy     String?
+  calledAt       DateTime?
+  answeredAt     DateTime?
+  ringSeconds    Int?
+  durationSec    Int?
+  conversationId String?   @unique
+  transcript     String    @default("")
+  summary        String    @default("")
+  analysis       String    @default("") // JSON (see audit-rules CallAnalysis + questions and facts)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([auditId, scheduledAt])
+  @@index([status, scheduledAt])
 }

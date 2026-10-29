@@ -29,3 +29,11 @@ export async function canManageReceptionist(session: SessionPayload | null, rece
   if (!session || (session.role !== "ADMIN" && session.role !== "REP")) return false;
   return canAccessReceptionist(session, receptionistId);
 }
+
+/** Call audits: admins, and reps on accounts they own (or unassigned ones). Never clients. */
+export async function canAccessAudit(session: SessionPayload | null, auditId: string): Promise<boolean> {
+  if (!session || (session.role !== "ADMIN" && session.role !== "REP")) return false;
+  if (session.role === "ADMIN") return true;
+  const a = await db.callAudit.findUnique({ where: { id: auditId }, select: { account: { select: { ownerId: true } } } });
+  return Boolean(a && canTouch(session, a.account.ownerId));
+}

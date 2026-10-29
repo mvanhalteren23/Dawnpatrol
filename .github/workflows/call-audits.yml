@@ -1,0 +1,24 @@
+# Call audits place calls at planned times through the week. Vercel's Hobby plan only runs
+# crons once a day, so this pings the audit endpoint every 20 minutes during calling hours
+# (14:00–04:59 UTC ≈ 7am–9pm Pacific). It does nothing when no audit is running.
+# Needs two repository secrets: APP_URL (e.g. https://your-app.vercel.app) and CRON_SECRET
+# (the same value as the Vercel env var). Disable this workflow in GitHub between audits to save
+# Actions minutes on a private repo.
+name: Call audits
+on:
+  schedule:
+    - cron: "*/20 14-23 * * *"
+    - cron: "*/20 0-4 * * *"
+  workflow_dispatch:
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run due audit calls
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then echo "::warning::Set the APP_URL and CRON_SECRET repository secrets"; exit 0; fi
+          curl -fsS -m 120 -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron/audits"

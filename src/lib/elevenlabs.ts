@@ -266,6 +266,15 @@ export async function registerTwilioCall(
   return xml;
 }
 
+/** Create an agent (agentId null) or update it; returns its id. Used for the shared call-audit caller. */
+export async function upsertAgent(agentId: string | null, config: Record<string, unknown>): Promise<string> {
+  if (agentId) {
+    await el(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(config) });
+    return agentId;
+  }
+  return (await el<{ agent_id: string }>("/agents/create", { method: "POST", body: JSON.stringify(config) })).agent_id;
+}
+
 // ---------------------------------------------------------------------------
 // Conversations (call history, transcripts, recordings)
 // ---------------------------------------------------------------------------
