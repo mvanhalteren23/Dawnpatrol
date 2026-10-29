@@ -168,3 +168,29 @@ export async function writeCompanyDoc(name: string, content: string): Promise<{ 
   });
   return { id: created.id, url: created.webViewLink ?? `https://docs.google.com/document/d/${created.id}` };
 }
+
+/**
+ * Rebuild the folder system in the Google account connected now (after switching the company
+ * account, e.g. from a personal Gmail to the Workspace account). Everything the app put in Drive
+ * is generated from the CRM, so it's recreated rather than copied: folders, outreach logs and
+ * research docs. Files people added by hand stay in the old Drive and are moved by hand.
+ */
+export async function rebuildDrive(): Promise<{ accounts: number; docs: number }> {
+  const accounts = await db.account.findMany({ where: { driveFolderId: { not: null } }, select: { id: true } });
+  const keys = await db.setting.findMany({ where: { OR: [{ key: { startsWith: "drive." } }] }, select: { key: true } });
+  await db.setting.deleteMany({ where: { key: { in: keys.map((k) => k.key) } } });
+  await db.driveFolder.deleteMany({});
+  await db.account.updateMany({ data: { driveFolderId: null, driveFolderUrl: null } });
+  await db.researchRun.updateMany({ where: { driveFileId: { not: null } }, data: { driveFileId: null, driveFileUrl: null } });
+  await ensureRootFolders();
+  const { writeOutreachLog } = await import("./outreach");
+  const { archiveRunToDrive } = await import("./jobs");
+  let docs = 0;
+  for (const a of accounts) {
+    await ensureAccountFolders(a.id);
+    await writeOutreachLog(a.id).then(() => docs++).catch((e) => console.warn("outreach log rebuild", a.id, e));
+    const runs = await db.researchRun.findMany({ where: { accountId: a.id, kind: "RESEARCH", status: "DONE" }, select: { id: true } });
+    for (const r of runs) await archiveRunToDrive(r.id).then(() => docs++).catch((e) => console.warn("research doc rebuild", r.id, e));
+  }
+  return { accounts: accounts.length, docs };
+}

@@ -46,7 +46,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                   <form action={updateUser.bind(null, u.id)} className="flex flex-wrap items-center gap-2">
                     <div className="min-w-[12rem]">
                       <input name="name" defaultValue={u.name ?? ""} placeholder="Name" className="input py-1" aria-label="Name" />
-                      <div className="mt-0.5 text-xs text-slate-500">{u.email}{u.id === session.sub ? " (you)" : ""}</div>
+                      <input name="email" type="email" defaultValue={u.email} className="input mt-1 py-1 text-xs" aria-label="Sign-in email" />
+                      {u.id === session.sub ? <div className="mt-0.5 text-xs text-slate-500">(you)</div> : null}
                     </div>
                     <select name="role" defaultValue={u.role} className="input w-auto py-1" aria-label="Role" disabled={u.disabled}>
                       <option value="REP">{ROLE_LABELS.REP}</option>

@@ -51,6 +51,8 @@ export function authUrl(state: string, kind: "company" | "personal" = "company",
     scope: kind === "company" ? GOOGLE_SCOPES : PERSONAL_SCOPES,
     state,
     ...(loginHint ? { login_hint: loginHint } : {}),
+    // Point Google's account picker at the business Workspace (e.g. headabovedigital.com).
+    ...(process.env.GOOGLE_WORKSPACE_DOMAIN ? { hd: process.env.GOOGLE_WORKSPACE_DOMAIN } : {}),
   });
 }
 
@@ -64,6 +66,13 @@ export async function completeOAuth(code: string, target: { kind: "company" } | 
     email = ticket.getPayload()?.email?.toLowerCase() ?? null;
   }
   if (target.kind === "company") {
+    // Switching the company account (e.g. a personal Gmail → the Workspace account): track the
+    // new mailbox from two weeks back, and remember the old one so Settings can offer a Drive rebuild.
+    const previous = await getSetting(EMAIL_KEY);
+    if (email && previous && previous !== email) {
+      await setSetting("google.previousEmail", previous);
+      await setSetting("gmail.cursor", String(Math.floor(Date.now() / 1000) - 14 * 86400));
+    }
     if (tokens.refresh_token) await setSetting(REFRESH_KEY, seal(tokens.refresh_token));
     if (tokens.scope) await setSetting(SCOPES_KEY, tokens.scope);
     if (email) await setSetting(EMAIL_KEY, email);
@@ -141,4 +150,14 @@ export async function googleFetch<T = unknown>(url: string, init: RequestInit = 
 
 export async function connectedEmail(as?: GoogleAs): Promise<string | null> {
   return (await creds(as))?.email ?? null;
+}
+
+/** Consumer Gmail addresses (not a business Workspace account). */
+export function isConsumerGoogle(email: string | null | undefined): boolean {
+  return /@(gmail|googlemail)\.com$/i.test(email ?? "");
+}
+
+/** The address the app's own emails (reports, alerts, caller follow-ups) are sent from, if not the company account itself. */
+export async function companySendAs(): Promise<string | null> {
+  return getSetting("google.sendAs");
 }

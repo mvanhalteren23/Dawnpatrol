@@ -1107,6 +1107,42 @@ export async function disconnectGoogle() {
   back("/crm/settings", { notice: "Google disconnected" });
 }
 
+/** Recreate the Drive folders and documents in the company Google account connected now. */
+export async function rebuildDriveFolders() {
+  await requireAdmin();
+  const { googleConnection } = await import("@/lib/google");
+  if (!(await googleConnection()).connected) back("/crm/settings", { error: "Connect the company Google account first" });
+  const { rebuildDrive } = await import("@/lib/drive");
+  const { deleteSetting } = await import("@/lib/settings");
+  after(async () => {
+    try {
+      const r = await rebuildDrive();
+      await deleteSetting("google.previousEmail");
+      console.log("drive rebuilt", r);
+    } catch (err) {
+      console.error("drive rebuild failed", err);
+    }
+  });
+  back("/crm/settings", { notice: "Rebuilding the Drive folders and documents in the connected account. This takes a minute or two." });
+}
+
+/** The address the app's own emails go out from: an alias of the company account, or blank for the account itself. */
+export async function saveSendAs(form: FormData) {
+  await requireAdmin();
+  const { connectedEmail } = await import("@/lib/google");
+  const { deleteSetting, setSetting } = await import("@/lib/settings");
+  const value = str(form, "sendAs").toLowerCase();
+  if (!value) {
+    await deleteSetting("google.sendAs");
+    back("/crm/settings", { notice: "App emails go out from the company Google account" });
+  }
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/.test(value)) back("/crm/settings", { error: "Enter an email address" });
+  const company = await connectedEmail();
+  if (company && value.split("@")[1] !== company.split("@")[1]) back("/crm/settings", { error: `Use an address on ${company.split("@")[1]} (an alias of ${company})` });
+  await setSetting("google.sendAs", value);
+  back("/crm/settings", { notice: `App emails will go out from ${value}. It must be an alias of the company account (Google Admin → Users → ${company ?? "the account"} → Alternate emails).` });
+}
+
 // --- Demo line ---------------------------------------------------------------------
 
 /**

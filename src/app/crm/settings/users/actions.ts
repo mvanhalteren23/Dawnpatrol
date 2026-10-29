@@ -42,7 +42,14 @@ export async function updateUser(userId: string, form: FormData) {
   if (!role) back({ error: "Pick a role" });
   const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
   if (user.role === "ADMIN" && role !== "ADMIN" && !(await otherActiveAdmins(userId))) back({ error: "Keep at least one administrator" });
-  await db.user.update({ where: { id: userId }, data: { role, name: optStr(form, "name") } });
+  // Sign-in email (e.g. moving from a personal Gmail to the business address).
+  const email = str(form, "email").toLowerCase();
+  if (email && email !== user.email) {
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(email)) back({ error: "Enter a valid email" });
+    if (await db.user.findUnique({ where: { email } })) back({ error: `${email} is already a user` });
+  }
+  await db.user.update({ where: { id: userId }, data: { role, name: optStr(form, "name"), ...(email && email !== user.email ? { email } : {}) } });
+  if (email && email !== user.email && userId === session.sub) back({ notice: `Saved. Sign in with ${email} from now on.` });
   back({ notice: userId === session.sub && role !== "ADMIN" ? "Saved. You're now a sales rep." : "Saved" });
 }
 

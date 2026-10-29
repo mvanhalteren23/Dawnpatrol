@@ -7,7 +7,7 @@ import { dialerStatus } from "@/lib/dialer";
 import { setupDialerAction } from "../actions";
 import { formatPhone } from "@/lib/demo-line";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
-import { googleConfigured, googleConnection } from "@/lib/google";
+import { googleConfigured, googleConnection, isConsumerGoogle } from "@/lib/google";
 import { stripeConfigured } from "@/lib/billing";
 import { getSetting } from "@/lib/settings";
 import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
@@ -15,7 +15,7 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
-import { changePassword, disconnectGoogle, disconnectMyGoogle, saveCompanyName, saveGoal, seedDefaultPrompts } from "../actions";
+import { changePassword, disconnectGoogle, disconnectMyGoogle, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +72,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
   const company = await companyName();
   const dialer = await dialerStatus();
+  const [previousGoogle, sendAs] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs")]);
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
     googleConnection(),
     getSetting("gmail.lastSyncAt"),
@@ -139,6 +140,20 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="text-xs text-slate-500">The company Google account: the Drive folder system for every account, research docs and outreach logs, and Calendar availability + booking (and email confirmations) for client receptionists. Each person connects their own Gmail above.</div>
             {google.connected ? <div className="mt-1 text-xs">Connected as <b>{google.email}</b>{lastSync ? ` · last Gmail sync ${formatDate(lastSync, true)}` : ""}{driveRoot ? <> · <a href={`https://drive.google.com/drive/folders/${driveRoot}`} target="_blank" rel="noreferrer">open Drive root</a></> : null}</div> : null}
             {google.connected && !google.calendar ? <div className="mt-1 text-xs text-amber-700">Connected before Calendar access was added — click Connect Google again to grant it.</div> : null}
+            {google.connected && isConsumerGoogle(google.email) ? <div className="mt-1 text-xs text-amber-700">This is a personal Gmail account. Disconnect it and connect the business Workspace account{process.env.GOOGLE_WORKSPACE_DOMAIN ? ` (@${process.env.GOOGLE_WORKSPACE_DOMAIN})` : ""}, then rebuild the Drive folders below.</div> : null}
+            {google.connected && previousGoogle ? (
+              <form action={rebuildDriveFolders} className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                Switched from {previousGoogle}. The Drive folders and documents are still in that account: rebuild them in {google.email} (they&apos;re recreated from the CRM). Files you added by hand stay in the old Drive; share that folder with {google.email} and move them across.
+                <div className="mt-1"><button className="btn-secondary py-1 text-xs">Rebuild Drive folders here</button></div>
+              </form>
+            ) : null}
+            {google.connected ? (
+              <form action={saveSendAs} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-500">Send app emails (reports, alerts, caller follow-ups) from</span>
+                <input name="sendAs" type="email" defaultValue={sendAs ?? ""} placeholder={google.email ?? ""} className="input w-56 py-1 text-xs" />
+                <button className="btn-secondary py-1 text-xs">Save</button>
+              </form>
+            ) : null}
           </div>
           <div className="shrink-0">
             {!googleConfigured() ? <Status ok={false} /> : google.connected ? (

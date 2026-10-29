@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { connectedEmail, googleFetch, type GoogleAs } from "./google";
+import { companySendAs, connectedEmail, googleFetch, type GoogleAs } from "./google";
 import { encodeHeader, safeAddress } from "./outreach-address";
 import { getSetting, setSetting } from "./settings";
 import { writeAccountDoc } from "./drive";
@@ -227,8 +227,10 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
 
 /** Plain-text email from the connected Gmail account (no tracking, no activity). */
 export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null; as?: GoogleAs }) {
-  const me = await connectedEmail(params.as);
-  if (!me) throw new Error("Google is not connected");
+  const connected = await connectedEmail(params.as);
+  if (!connected) throw new Error("Google is not connected");
+  // Company emails can go out from an alias of the company account (e.g. hello@), set in Settings.
+  const me = (!params.as && (await companySendAs())) || connected;
   const mime = [
     `From: ${params.fromName ? `${encodeHeader(params.fromName)} <${me}>` : me}`,
     `To: ${safeAddress(params.to)}`,
