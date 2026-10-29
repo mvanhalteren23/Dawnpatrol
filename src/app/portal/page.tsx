@@ -68,8 +68,11 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
             <div className="card">
               <h2 className="mb-2">Your receptionist</h2>
               <div className="flex items-center gap-2 text-sm"><b>{receptionist.name}</b> <StatusBadge status={receptionist.elevenLabsAgentId ? "ACTIVE" : "SETTING_UP"} /></div>
-              <p className="mt-2 text-sm text-slate-600">{kbCount} active knowledge items. Keep services, hours and pricing up to date — your receptionist only answers from this knowledge base.</p>
-              <Link href={`/portal/knowledge${q}`} className="btn mt-4">Update knowledge base</Link>
+              <p className="mt-2 text-sm text-slate-600">Answers callers from {kbCount} pieces of information about your business. New service, price or hours? Tell us and we&apos;ll update and test it for you.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href={`/portal/knowledge${q}`} className="btn">See what it knows</Link>
+                <Link href={`/portal/settings${q}`} className="btn-secondary">Request a change</Link>
+              </div>
             </div>
           </div>
         </>

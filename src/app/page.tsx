@@ -47,7 +47,7 @@ const INCLUDED = [
   "Keep your existing number",
   "Client dashboard: calls, recordings and transcripts",
   "Weekly and monthly reports, sent where you choose",
-  "Knowledge base you can update any time",
+  "Fully managed: we set it up, tune it and make your changes",
 ];
 
 const CONSULTING = [
@@ -202,7 +202,7 @@ export default async function Home() {
                 <li className="flex gap-3"><Check />Every call with its summary, recording and transcript</li>
                 <li className="flex gap-3"><Check />Weekly and monthly reports: calls answered, after-hours calls, bookings and what they&apos;re worth</li>
                 <li className="flex gap-3"><Check />Choose how often reports are emailed, and to whom</li>
-                <li className="flex gap-3"><Check />Update your services, prices, hours and holidays yourself</li>
+                <li className="flex gap-3"><Check />New service, price or holiday hours? Send a request and we update and test it for you</li>
                 <li className="flex gap-3"><Check />Callers waiting on a call back, flagged so none slip through</li>
               </ul>
               <Link href="/login?next=/portal" className="mt-8 inline-block rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-[#0b1530] hover:bg-slate-50 hover:no-underline">Client login →</Link>

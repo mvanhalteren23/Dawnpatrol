@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { canAccessReceptionist } from "@/lib/access";
+import { canAccessReceptionist, canManageReceptionist } from "@/lib/access";
 import { availabilityFromForm, followUpFromForm, reportFromForm } from "@/lib/booking";
 import { ringFromForm } from "@/lib/twilio";
 import { markDirty } from "@/lib/elevenlabs";
@@ -20,7 +20,7 @@ function done(returnTo: string, key: "notice" | "error", message: string): never
 
 export async function saveReceptionistOptions(receptionistId: string, returnTo: string, form: FormData) {
   const session = await getSession();
-  if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
+  if (!(await canManageReceptionist(session, receptionistId))) throw new Error("Not allowed");
   let data;
   try {
     data = {
@@ -68,7 +68,7 @@ export async function sendReportNow(receptionistId: string, returnTo: string, fo
  */
 export async function saveKeepNumber(receptionistId: string, returnTo: string, form: FormData) {
   const session = await getSession();
-  if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
+  if (!(await canManageReceptionist(session, receptionistId))) throw new Error("Not allowed");
   const method = String(form.get("keepNumberMethod") ?? "") as KeepMethod;
   const raw = String(form.get("existingNumber") ?? "").trim();
   const existingNumber = raw ? dialableNumber(raw) : null;
@@ -124,4 +124,56 @@ export async function saveReportSettings(receptionistId: string, returnTo: strin
       ? `Reports will be emailed ${data.reportFrequency === "both" ? "weekly and monthly" : data.reportFrequency} to ${data.reportEmails || "your portal login"}.`
       : "Email reports are off. You can still see them here any time.",
   );
+}
+
+/** Who gets lead texts: the client's own notification choice (it doesn't change the agent). */
+export async function saveLeadAlerts(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await getSession();
+  if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
+  let data;
+  try {
+    data = leadAlertFromForm(form);
+  } catch (err) {
+    done(returnTo, "error", (err as Error).message);
+  }
+  await db.receptionist.update({ where: { id: receptionistId }, data });
+  done(returnTo, "notice", data.leadAlertOn ? "Lead texts saved." : "Lead texts are off.");
+}
+
+/**
+ * A client asks the team to change their receptionist (new service, prices, hours, routing…).
+ * Lands as a task on their account for its owner, plus an email, so nothing is missed.
+ */
+export async function requestChange(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await getSession();
+  if (!session || !(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
+  const text = String(form.get("request") ?? "").trim().slice(0, 4000);
+  const topic = String(form.get("topic") ?? "").trim().slice(0, 80) || "General";
+  if (text.length < 5) done(returnTo, "error", "Tell us what you'd like changed.");
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { name: true, accountId: true, account: { select: { name: true, ownerId: true } } } });
+  const since = new Date(Date.now() - 86_400_000);
+  if ((await db.activity.count({ where: { accountId: r.accountId, source: "portal-request", occurredAt: { gte: since } } })) >= 10) {
+    done(returnTo, "error", "You've sent 10 requests today. We'll work through those first; for anything urgent, call us.");
+  }
+  const { recordActivity } = await import("@/lib/outreach");
+  await recordActivity({
+    accountId: r.accountId,
+    type: "TASK",
+    subject: `Change request (${topic}): ${r.name}`,
+    body: `From ${session.email}:\n\n${text}`,
+    dueAt: new Date(Date.now() + 86_400_000),
+    source: "portal-request",
+    createdById: session.sub,
+  });
+  const { after } = await import("next/server");
+  after(async () => {
+    const owner = r.account.ownerId ? await db.user.findUnique({ where: { id: r.account.ownerId }, select: { email: true } }) : null;
+    const { connectedEmail } = await import("@/lib/google");
+    const to = owner?.email ?? (await connectedEmail());
+    if (!to) return;
+    const { sendPlainEmail } = await import("@/lib/outreach");
+    const { appBase } = await import("@/lib/twilio-request");
+    await sendPlainEmail({ to, subject: `${r.account.name} requested a change (${topic})`, body: `${session.email} asked for a change to ${r.name}:\n\n${text}\n\n${appBase()}/crm/accounts/${r.accountId}` }).catch((e) => console.warn("change request email", e));
+  });
+  done(returnTo, "notice", "Thanks, your request is with the team. We'll make the change and let you know, usually within one business day.");
 }

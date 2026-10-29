@@ -158,7 +158,7 @@ export function reportEmail(o: { businessName: string; receptionistName: string;
     "",
     `See each call and the full report: ${o.portalUrl}`,
     "",
-    `You get this ${word}ly report because it's turned on in your portal (Settings → Reports). Change or stop it there any time.`,
+    `You get this ${word}ly report because it's turned on in your portal (Your setup → Email reports). Change or stop it there any time.`,
     `— ${o.company}`,
   ];
   return { subject: `${o.businessName}: ${cur.calls} calls answered, ${cur.booked} booked (${o.period.label})`, body: lines.join("\n") };

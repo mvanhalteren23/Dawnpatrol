@@ -19,3 +19,13 @@ export async function canAccessReceptionist(session: SessionPayload | null, rece
   if (session.role === "REP") return canTouch(session, r.account.ownerId) && !isClientStage(r.account.stage);
   return Boolean(session.accountId && r.accountId === session.accountId);
 }
+
+/**
+ * Who can change how a receptionist behaves (its knowledge, hours, routing, line settings):
+ * the Head Above team only. It's a managed service, so clients see their setup and request
+ * changes rather than editing the agent themselves.
+ */
+export async function canManageReceptionist(session: SessionPayload | null, receptionistId: string): Promise<boolean> {
+  if (!session || (session.role !== "ADMIN" && session.role !== "REP")) return false;
+  return canAccessReceptionist(session, receptionistId);
+}

@@ -8,7 +8,7 @@ import { periodFor, reportEmail, summarize, type ReportKind } from "./report-rul
 import { appBase } from "./twilio-request";
 
 // Weekly and monthly call reports for clients: totals only, emailed when the client turns them on
-// (portal → Settings → Reports), and always viewable in the portal.
+// (portal → Your setup → Email reports), and always viewable in the portal.
 
 function hoursOf(r: Pick<Receptionist, "bookingHours">) {
   try {
@@ -54,7 +54,7 @@ export async function sendReport(r: Receptionist, kind: ReportKind, opts: { forc
     return { sent: false, to: [], reason: "already sent" };
   }
   const to = await reportRecipients(r);
-  if (!to.length) return { sent: false, to, reason: "No one to send it to: add an email under Settings → Reports" };
+  if (!to.length) return { sent: false, to, reason: "No one to send it to: add an email under Your setup → Email reports" };
   const company = await companyName();
   const email = reportEmail({
     businessName: r.businessName,

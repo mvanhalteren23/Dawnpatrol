@@ -11,7 +11,7 @@ type R = Pick<Receptionist, "id" | "businessNumber" | "existingNumber" | "existi
  * Keep the business's existing number: forward it to the receptionist line, or move it to us.
  * Used in the client portal and on the CRM receptionist page (admins also update port progress).
  */
-export function KeepNumberCard({ r, returnTo, admin }: { r: R; returnTo: string; admin: boolean }) {
+export function KeepNumberCard({ r, returnTo, admin, editable = true }: { r: R; returnTo: string; admin: boolean; editable?: boolean }) {
   const method = r.keepNumberMethod as KeepMethod;
   const target = r.businessNumber;
   const steps = target && r.existingNumber ? forwardingSteps(r.existingCarrier, method, target, r.ringSeconds) : [];
@@ -27,6 +27,13 @@ export function KeepNumberCard({ r, returnTo, admin }: { r: R; returnTo: string;
         </p>
       </div>
 
+      {!editable ? (
+        <p className="text-sm">
+          {method
+            ? <>{r.existingNumber ? <b>{formatNumber(r.existingNumber)}</b> : "Your number"}: {KEEP_METHODS.find((m) => m.value === method)?.label.replace(" (recommended)", "").toLowerCase()}.</>
+            : "Not set up yet. Request a change if you'd like customers to keep calling your current number."}
+        </p>
+      ) : (
       <form action={saveKeepNumber.bind(null, r.id, returnTo)} className="grid grid-cols-2 gap-3">
         <Field label="Number your customers call"><input name="existingNumber" defaultValue={r.existingNumber ?? ""} placeholder="604-555-1234" className="input" inputMode="tel" /></Field>
         <Field label="Its phone company">
@@ -58,6 +65,7 @@ export function KeepNumberCard({ r, returnTo, admin }: { r: R; returnTo: string;
         ) : null}
         <div className="col-span-2"><SubmitButton className="btn-secondary" pendingText="Saving…">Save</SubmitButton></div>
       </form>
+      )}
 
       {(method === "forward_no_answer" || method === "forward_all") && r.existingNumber ? (
         <div className="space-y-2 rounded-lg bg-dawn-50 p-3">

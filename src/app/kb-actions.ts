@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { canAccessReceptionist } from "@/lib/access";
+import { canAccessReceptionist, canManageReceptionist } from "@/lib/access";
 import { KB_CATEGORIES } from "@/lib/constants";
 import { markDirty } from "@/lib/elevenlabs";
 import { str } from "@/lib/utils";
@@ -15,6 +15,13 @@ async function guard(receptionistId: string) {
   return session!;
 }
 
+/** Changing what the agent knows is done by the team (managed service); clients request changes. */
+async function manageGuard(receptionistId: string) {
+  const session = await getSession();
+  if (!(await canManageReceptionist(session, receptionistId))) throw new Error("Only the team can change the receptionist's knowledge. Use Request a change.");
+  return session!;
+}
+
 function done(returnTo: string, notice: string): never {
   const safe = returnTo.startsWith("/crm/") || returnTo.startsWith("/portal") ? returnTo : "/";
   revalidatePath(safe.split("?")[0]!);
@@ -22,7 +29,7 @@ function done(returnTo: string, notice: string): never {
 }
 
 export async function saveKbItem(receptionistId: string, returnTo: string, form: FormData) {
-  const session = await guard(receptionistId);
+  const session = await manageGuard(receptionistId);
   const id = str(form, "id");
   const category = (KB_CATEGORIES as readonly string[]).includes(str(form, "category")) ? str(form, "category") : "OTHER";
   const data = {
@@ -46,14 +53,14 @@ export async function saveKbItem(receptionistId: string, returnTo: string, form:
 }
 
 export async function deleteKbItem(receptionistId: string, itemId: string, returnTo: string) {
-  await guard(receptionistId);
+  await manageGuard(receptionistId);
   await db.knowledgeItem.deleteMany({ where: { id: itemId, receptionistId } });
   await markDirty(receptionistId);
   done(returnTo, "Item deleted");
 }
 
 export async function activateAllDrafts(receptionistId: string, returnTo: string) {
-  await guard(receptionistId);
+  await manageGuard(receptionistId);
   await db.knowledgeItem.updateMany({ where: { receptionistId, tags: { contains: "claude-draft" } }, data: { isActive: true, tags: "" } });
   await markDirty(receptionistId);
   done(returnTo, "Drafts activated");
