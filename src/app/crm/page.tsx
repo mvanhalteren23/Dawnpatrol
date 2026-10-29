@@ -7,6 +7,7 @@ import { formatDate, formatMoney, safeJson } from "@/lib/utils";
 import { PageHeader, Progress, Stat, StageBadge, StatusBadge, Empty } from "@/components/ui";
 import { completeTask } from "./actions";
 import { syncAllCallsThrottled } from "@/lib/call-sync";
+import { processDueLeadsThrottled } from "@/lib/followup";
 import { requireStaff } from "@/lib/auth";
 import { memberLabel } from "@/lib/team";
 import { Flash } from "@/components/Flash";
@@ -17,6 +18,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const session = await requireStaff();
   await syncAllCallsThrottled();
+  await processDueLeadsThrottled();
   const now = new Date();
   // "Mine" = accounts I own and work I did; "Team" = everyone. Reps start on Mine, admins on Team.
   const scope = sp.scope === "me" || sp.scope === "team" ? sp.scope : session.role === "ADMIN" ? "team" : "me";

@@ -9,7 +9,9 @@ export async function loadPortal(searchParams: Promise<{ account?: string }>) {
   return {
     session,
     account,
-    receptionist: account.receptionists[0] ?? null,
+    // The inbound receptionist drives calls, reports and setup; a follow-up agent has its own Leads page.
+    receptionist: account.receptionists.find((r) => r.agentType !== "followup") ?? account.receptionists[0] ?? null,
+    followupAgent: account.receptionists.find((r) => r.agentType === "followup") ?? null,
     adminAccountId: session.role !== "CLIENT" ? accountId : undefined,
     q: session.role !== "CLIENT" ? `?account=${accountId}` : "",
   };

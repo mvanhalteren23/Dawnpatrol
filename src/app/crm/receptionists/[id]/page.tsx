@@ -17,6 +17,9 @@ import { CallList } from "@/components/CallList";
 import { googleConnection } from "@/lib/google";
 import { AvailabilityFields, FollowUpFields, LeadAlertFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
+import { FollowupSettingsCard, WebsiteFormCard } from "@/components/FollowupCards";
+import { LeadList } from "@/components/LeadList";
+import { followupOpening } from "@/lib/followup-rules";
 import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLine, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +36,8 @@ export default async function ReceptionistPage({ params, searchParams }: { param
     include: { account: true, knowledge: { orderBy: [{ category: "asc" }, { title: "asc" }] }, calls: { orderBy: { startedAt: "desc" }, take: 25 } },
   });
   if (!r) notFound();
+  const followup = r.agentType === "followup";
+  const leads = followup ? await db.lead.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 30 }) : [];
   const kbRun = await db.researchRun.findFirst({ where: { kind: "KB_DRAFT", accountId: r.accountId }, orderBy: { createdAt: "desc" } });
   const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
   const returnTo = `/crm/receptionists/${r.id}`;
@@ -68,7 +73,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <h2 className="col-span-2">Agent settings</h2>
             <Field label="Receptionist name"><input name="name" defaultValue={r.name} className="input" /></Field>
             <Field label="Business name"><input name="businessName" defaultValue={r.businessName} className="input" /></Field>
-            <Field label="Greeting (first message)" className="col-span-2"><input name="greeting" defaultValue={r.greeting} placeholder={`Thanks for calling ${r.businessName}, this is ${r.name}. How can I help?`} className="input" /></Field>
+            {followup ? <input type="hidden" name="greeting" value={r.greeting} /> : <Field label="Greeting (first message)" className="col-span-2"><input name="greeting" defaultValue={r.greeting} placeholder={`Thanks for calling ${r.businessName}, this is ${r.name}. How can I help?`} className="input" /></Field>}
             <Field label="Personality" className="col-span-2"><input name="persona" defaultValue={r.persona} className="input" /></Field>
             <Field label="Business hours" className="col-span-2"><textarea name="businessHours" rows={3} defaultValue={r.businessHours} placeholder={"Mon–Fri 8am–6pm\nSat 9am–1pm\nEmergencies 24/7"} className="input" /></Field>
             <Field label="Timezone"><input name="timezone" defaultValue={r.timezone} className="input" /></Field>
@@ -79,12 +84,15 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <Field label="Extra instructions" className="col-span-2"><textarea name="extraInstructions" rows={3} defaultValue={r.extraInstructions} className="input" /></Field>
             <Field label="ElevenLabs voice id"><input name="voiceId" defaultValue={r.voiceId ?? ""} className="input" /></Field>
             {isAdmin ? <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field> : null}
-            <Field label="Demo line extension" className="col-span-2"><input name="demoExtension" defaultValue={r.demoExtension ?? ""} placeholder="e.g. 101 — leave blank if this isn't a demo" className="input" inputMode="numeric" /></Field>
+            {followup ? null : <Field label="Demo line extension" className="col-span-2"><input name="demoExtension" defaultValue={r.demoExtension ?? ""} placeholder="e.g. 101 — leave blank if this isn't a demo" className="input" inputMode="numeric" /></Field>}
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>
           </form>
 
+          {followup ? <FollowupSettingsCard r={r} /> : null}
+          {followup ? <WebsiteFormCard r={r} app={app} isAdmin={isAdmin} /> : null}
+
           <form action={updateBooking.bind(null, r.id)} className="card grid grid-cols-2 gap-3">
-            <h2 className="col-span-2">Calendar booking &amp; caller follow-ups</h2>
+            <h2 className="col-span-2">{followup ? "Calendar booking" : <>Calendar booking &amp; caller follow-ups</>}</h2>
             <p className="col-span-2 text-xs text-slate-500">
               {google.connected
                 ? <>The agent checks <b>{google.email}</b>&apos;s Google Calendar for openings and books calls into it. To book into a client&apos;s calendar, have them share it with that account (“Make changes to events”) and enter its address below.</>
@@ -125,6 +133,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <h2>Business line</h2>
             {r.businessNumber ? (
               <>
+                {followup ? <p className="text-xs text-slate-500">{r.name} calls leads from this number and texts them from it when they miss the call. Calls back to it ring the client first.</p> : null}
                 <p className="text-sm">Calls to <b>{r.businessNumber}</b> ring {r.ringFirstNumber ?? "nobody"} first{r.ringMode === "hours" ? " during bookable hours" : r.ringMode === "never" ? " — ringing is off, the receptionist answers every call" : ""}, then go to {r.name}. Texts are forwarded to the cell.</p>
                 <form action={saveRingSettings.bind(null, r.id)} className="grid grid-cols-2 gap-3">
                   <RingFields r={r} />
@@ -146,10 +155,10 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             )}
           </div> : null}
 
-          {isAdmin && !r.demoExtension ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
-          {!r.demoExtension ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
+          {isAdmin && !r.demoExtension && !followup ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
+          {!r.demoExtension && !followup ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
 
-          <TestChat receptionistId={r.id} greeting={r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
+          <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 
           {isAdmin ? <div className="card space-y-3 text-sm">
             <h2>RAG endpoints</h2>
@@ -163,6 +172,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
         </div>
 
         <div className="space-y-6 lg:col-span-3">
+          {followup ? <div className="card"><h2 className="mb-3">Website leads</h2><LeadList leads={leads} showNotes /></div> : null}
           <KnowledgeBaseEditor receptionistId={r.id} items={r.knowledge} returnTo={returnTo} />
           <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} />
         </div>

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { apiSession } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { buildReceptionistPrompt, compileKnowledgeBase } from "@/lib/rag";
+import { buildFollowupPrompt } from "@/lib/followup-rules";
 import { receptionistReply } from "@/lib/ai";
 
 export const maxDuration = 60;
@@ -19,7 +20,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const r = await db.receptionist.findUniqueOrThrow({ where: { id }, include: { knowledge: true } });
   try {
     // The test chat has no calendar tools, so it uses the collect-preferred-times flow.
-    const reply = await receptionistReply(buildReceptionistPrompt({ ...r, bookingEnabled: false }), compileKnowledgeBase(r.knowledge, r.businessName), messages);
+    // Follow-up agents are tested against a sample website lead.
+    const prompt = r.agentType === "followup"
+      ? buildFollowupPrompt({ ...r, bookingEnabled: false })
+          .replaceAll("{{lead_name}}", "Dana Lee (sample lead)")
+          .replaceAll("{{lead_request}}", "Sample request: I'd like a quote. Please call me.")
+      : buildReceptionistPrompt({ ...r, bookingEnabled: false });
+    const reply = await receptionistReply(prompt, compileKnowledgeBase(r.knowledge, r.businessName), messages);
     return NextResponse.json({ reply });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

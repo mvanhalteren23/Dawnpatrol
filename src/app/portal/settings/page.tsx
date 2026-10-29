@@ -32,7 +32,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const days = r ? hoursByDay(r.bookingHours) : {};
 
   return (
-    <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+    <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-2">Your setup</h1>
       <p className="mb-6 text-sm text-slate-500">How your receptionist is set up, and where we send your notifications. The {company} team manages the setup: request a change and we&apos;ll update and test it for you.</p>
       {sp.notice ? <Notice kind="success">{sp.notice}</Notice> : null}

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { companyName } from "@/lib/brand";
+import { db } from "@/lib/db";
 
-export async function PortalShell({ accountName, adminAccountId, email, children }: { accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
+export async function PortalShell({ accountId, accountName, adminAccountId, email, children }: { accountId: string; accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
   const q = adminAccountId ? `?account=${adminAccountId}` : "";
-  const company = await companyName();
+  const [company, followups] = await Promise.all([companyName(), db.receptionist.count({ where: { accountId, agentType: "followup" } })]);
   return (
     <div className="min-h-screen">
       {adminAccountId ? (
@@ -20,6 +21,7 @@ export async function PortalShell({ accountName, adminAccountId, email, children
             <Link href={`/portal${q}`}>Overview</Link>
             <Link href={`/portal/knowledge${q}`}>What it knows</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
+            {followups ? <Link href={`/portal/leads${q}`}>Leads</Link> : null}
             <Link href={`/portal/reports${q}`}>Reports</Link>
             <Link href={`/portal/billing${q}`}>Billing</Link>
             <Link href={`/portal/settings${q}`}>Your setup</Link>

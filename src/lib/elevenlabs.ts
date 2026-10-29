@@ -1,6 +1,12 @@
 import "server-only";
 import { db } from "./db";
 import { buildReceptionistPrompt, compileByCategory } from "./rag";
+import { buildFollowupPrompt, followupOpening, type FollowupProfile } from "./followup-rules";
+
+/** Fill in follow-up fields that older records or test objects may not have. */
+export function fullFollowupProfile(r: Partial<FollowupProfile> & { name: string; businessName: string; persona: string; timezone: string; businessHours: string; extraInstructions: string }): FollowupProfile {
+  return { followupGoal: "", followupQuestions: "", followupGuardrails: "", ...r };
+}
 import { safeJson } from "./utils";
 
 // ElevenLabs Conversational AI.
@@ -112,11 +118,21 @@ export const DATA_COLLECTION = {
   summary_delivery: { type: "string", enum: ["text", "email", "none"], description: "How the caller asked to receive a summary or confirmation: text, email, or none if they declined or weren't asked." },
 };
 
+/** Follow-up agents also report how the lead went. */
+export const FOLLOWUP_DATA_COLLECTION = {
+  lead_outcome: {
+    type: "string",
+    enum: ["booked", "interested", "call_back", "not_interested", "do_not_call", "wrong_number"],
+    description: "How the follow-up call ended: booked (an appointment or visit was booked), interested (wants it but nothing booked yet), call_back (asked to be called at another time), not_interested, do_not_call (asked not to be called again), wrong_number.",
+  },
+};
+
 /** Add our data-collection fields without dropping any configured by hand in ElevenLabs. */
-async function mergedDataCollection(agentId: string | null) {
-  if (!agentId) return DATA_COLLECTION;
+async function mergedDataCollection(agentId: string | null, followup = false) {
+  const ours = followup ? { ...DATA_COLLECTION, ...FOLLOWUP_DATA_COLLECTION } : DATA_COLLECTION;
+  if (!agentId) return ours;
   const current = await el<{ platform_settings?: { data_collection?: Record<string, unknown> } }>(`/agents/${agentId}`).catch(() => null);
-  return { ...(current?.platform_settings?.data_collection ?? {}), ...DATA_COLLECTION };
+  return { ...(current?.platform_settings?.data_collection ?? {}), ...ours };
 }
 
 async function syncBookingTools(r: Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
@@ -140,19 +156,23 @@ async function syncBookingTools(r: Parameters<typeof bookingTools>[0] & { bookin
 }
 
 export function agentConfig(
-  r: Parameters<typeof buildReceptionistPrompt>[0] & { voiceId?: string | null; language: string; greeting: string },
+  r: Parameters<typeof buildReceptionistPrompt>[0] &
+    Partial<FollowupProfile> & { voiceId?: string | null; language: string; greeting: string; agentType?: string },
   docs: KbDocRef[],
   toolIds: string[] = [],
 ) {
-  const greeting = r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
+  const followup = r.agentType === "followup";
+  const greeting = followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
   return {
-    name: `${r.businessName} — ${r.name}`,
+    name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : ""}`,
     conversation_config: {
       agent: {
         first_message: greeting,
         language: r.language,
+        // Follow-up calls start with these filled from the lead; defaults keep test calls working.
+        ...(followup ? { dynamic_variables: { dynamic_variable_placeholders: { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } } } : {}),
         prompt: {
-          prompt: buildReceptionistPrompt(r),
+          prompt: followup ? buildFollowupPrompt(fullFollowupProfile(r)) : buildReceptionistPrompt(r),
           ...(process.env.ELEVENLABS_LLM ? { llm: process.env.ELEVENLABS_LLM } : {}),
           knowledge_base: docs.map((d) => ({ type: "text", id: d.docId, name: d.name, usage_mode: "auto" })),
           tool_ids: toolIds,
@@ -182,7 +202,7 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
     const toolIds = await syncBookingTools(r);
     const config = {
       ...agentConfig(r, docs, r.bookingEnabled ? Object.values(toolIds) : []),
-      platform_settings: { data_collection: await mergedDataCollection(r.elevenLabsAgentId) },
+      platform_settings: { data_collection: await mergedDataCollection(r.elevenLabsAgentId, r.agentType === "followup") },
     };
     let agentId = r.elevenLabsAgentId;
     if (agentId) {
@@ -216,13 +236,25 @@ export async function markDirty(receptionistId: string) {
  * Hand an in-progress Twilio call to an ElevenLabs agent. ElevenLabs answers with TwiML that
  * streams the call to the agent; we return it to Twilio as-is.
  */
-export async function registerTwilioCall(agentId: string, from: string, to: string): Promise<string> {
+export async function registerTwilioCall(
+  agentId: string,
+  from: string,
+  to: string,
+  opts: { direction?: "inbound" | "outbound"; dynamicVariables?: Record<string, string> } = {},
+): Promise<string> {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
   const res = await fetch(`${BASE}/twilio/register-call`, {
     method: "POST",
     headers: { "xi-api-key": key, "Content-Type": "application/json" },
-    body: JSON.stringify({ agent_id: agentId, from_number: from, to_number: to, direction: "inbound" }),
+    body: JSON.stringify({
+      agent_id: agentId,
+      from_number: from,
+      to_number: to,
+      direction: opts.direction ?? "inbound",
+      // Follow-up calls: who we're calling and what they asked for ({{lead_name}} etc. in the prompt).
+      ...(opts.dynamicVariables ? { conversation_initiation_client_data: { dynamic_variables: opts.dynamicVariables } } : {}),
+    }),
   });
   const body = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status} on register-call: ${body.slice(0, 300)}`);

@@ -342,6 +342,13 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="demo" defaultChecked={!isClient} /> Demo for this prospect — give it an extension on the demo line</label>
               </form>
             ) : null}
+            {session.role === "ADMIN" ? (
+              <form action={createReceptionist.bind(null, account.id)} className="mt-2 flex gap-2">
+                <input type="hidden" name="agentType" value="followup" />
+                <input name="name" placeholder="Follow-up agent name (e.g. Ava)" className="input" />
+                <button className="btn-secondary whitespace-nowrap" title="Calls website form leads within minutes and books the next step">+ Follow-up agent</button>
+              </form>
+            ) : null}
           </div>
 
           <div className="card">

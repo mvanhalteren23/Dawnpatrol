@@ -15,7 +15,7 @@ export default async function PortalBilling({ searchParams }: { searchParams: Pr
     db.invoice.findMany({ where: { accountId: account.id }, orderBy: { createdAt: "desc" }, take: 24 }),
   ]);
   return (
-    <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+    <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-6">Billing</h1>
       {sp.billing === "success" ? <Notice kind="success">Thanks! Your subscription is set up.</Notice> : null}
       <div className="card mb-6">

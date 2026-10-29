@@ -13,7 +13,7 @@ export default async function PortalCalls({ searchParams }: { searchParams: Prom
   if (receptionist) await syncCallsThrottled(receptionist.id);
   const calls = receptionist ? await db.callLog.findMany({ where: { receptionistId: receptionist.id }, orderBy: { startedAt: "desc" }, take: 200 }) : [];
   return (
-    <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+    <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-6">Calls</h1>
       {sp.notice ? <Notice kind="success">{sp.notice}</Notice> : null}
       {receptionist ? <CallList receptionistId={receptionist.id} calls={calls} returnTo={`/portal/calls${q}`} /> : <Empty>No receptionist yet.</Empty>}

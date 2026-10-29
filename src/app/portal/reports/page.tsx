@@ -31,7 +31,7 @@ export default async function PortalReports({ searchParams }: { searchParams: Pr
 
   if (!receptionist) {
     return (
-      <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+      <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
         <h1 className="mb-6">Reports</h1>
         <Empty>Reports start once your receptionist is answering calls.</Empty>
       </PortalShell>
@@ -44,7 +44,7 @@ export default async function PortalReports({ searchParams }: { searchParams: Pr
   const captured = cur.booked + cur.messages + cur.transfers;
 
   return (
-    <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+    <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1>Reports</h1>

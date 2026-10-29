@@ -10,6 +10,7 @@ export type PostCallData = {
     call_duration_secs?: number;
     phone_call?: { external_number?: string; from_number?: string } | null;
   };
+  conversation_initiation_client_data?: { dynamic_variables?: Record<string, unknown> } | null;
   analysis?: {
     transcript_summary?: string;
     call_successful?: string;

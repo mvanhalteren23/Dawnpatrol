@@ -36,6 +36,9 @@ import { availabilityFromForm, followUpFromForm } from "@/lib/booking";
 import { cleanDigits, dialableNumber, nextFreeExtension, ringFromForm } from "@/lib/twilio";
 import { demoExtensionForAccount, demoLineConfig, formatPhone } from "@/lib/demo-line";
 import { forwardingLoop, LOOP_MESSAGE, type KeepMethod } from "@/lib/keep-number";
+import { DEFAULT_CALL_HOURS } from "@/lib/followup-rules";
+import { newLeadFormKey } from "@/lib/followup";
+import { parseWeeklyHours } from "@/lib/booking";
 import { leadAlertFromForm } from "@/lib/follow-up-rules";
 
 function back(path: string, params?: Record<string, string>): never {
@@ -721,16 +724,69 @@ export async function deletePrompt(id: string) {
 export async function createReceptionist(accountId: string, form: FormData) {
   await requireAdmin();
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId } });
+  const followup = str(form, "agentType") === "followup";
   const r = await db.receptionist.create({
     data: {
       accountId,
-      name: str(form, "name") || "Receptionist",
+      name: str(form, "name") || (followup ? "Ava" : "Receptionist"),
       businessName: str(form, "businessName") || account.name,
       ragToken: randomBytes(24).toString("base64url"),
-      demoExtension: form.get("demo") === "on" ? await freeExtension() : null,
+      demoExtension: !followup && form.get("demo") === "on" ? await freeExtension() : null,
+      ...(followup
+        ? { agentType: "followup", leadFormKey: newLeadFormKey(), leadAlertOn: "leads", persona: "Warm, upbeat and to the point. Sounds like a helpful person from the office, never pushy." }
+        : {}),
     },
   });
-  back(`/crm/receptionists/${r.id}`);
+  back(`/crm/receptionists/${r.id}`, followup ? { notice: "Follow-up agent created. Fill in its goal, questions and rules, draft its knowledge from the website, sync it, then send a test lead." } : undefined);
+}
+
+/** The follow-up agent's goal, questions, rules, calling hours and retries (team only). */
+export async function saveFollowupSettings(id: string, form: FormData) {
+  await requireReceptionist(id);
+  const path = `/crm/receptionists/${id}`;
+  const hours = str(form, "followupCallHours").trim() || DEFAULT_CALL_HOURS;
+  try {
+    parseWeeklyHours(hours);
+  } catch (err) {
+    back(path, { error: `Calling hours: ${errMsg(err)}` });
+  }
+  const int = (key: string, min: number, max: number, fallback: number) => Math.min(max, Math.max(min, optInt(form, key) ?? fallback));
+  await db.receptionist.update({
+    where: { id },
+    data: {
+      followupGoal: str(form, "followupGoal").slice(0, 500),
+      followupQuestions: str(form, "followupQuestions").slice(0, 3000),
+      followupGuardrails: str(form, "followupGuardrails").slice(0, 3000),
+      greeting: str(form, "greeting").slice(0, 400),
+      followupCallHours: hours,
+      followupDelaySeconds: int("followupDelaySeconds", 0, 240, 60),
+      followupMaxAttempts: int("followupMaxAttempts", 1, 3, 2),
+      followupTextIfMissed: form.get("followupTextIfMissed") === "on",
+    },
+  });
+  await markDirty(id);
+  back(path, { notice: "Follow-up settings saved. Sync to ElevenLabs so the agent uses them." });
+}
+
+/** New form key: the old form address stops working (e.g. it was posted somewhere public by mistake). */
+export async function rotateLeadFormKey(id: string) {
+  await requireAdmin();
+  await db.receptionist.update({ where: { id }, data: { leadFormKey: newLeadFormKey() } });
+  back(`/crm/receptionists/${id}`, { notice: "New form address created. Update the client's website form with it." });
+}
+
+/** Send a pretend website lead with your own number: the agent calls you right away. */
+export async function sendTestLead(id: string, form: FormData) {
+  await requireReceptionist(id);
+  const path = `/crm/receptionists/${id}`;
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
+  if (r.agentType !== "followup") back(path, { error: "This isn't a follow-up agent" });
+  if (!r.elevenLabsAgentId) back(path, { error: "Sync to ElevenLabs first" });
+  const { intakeLead, startFollowupCall } = await import("@/lib/followup");
+  const { lead } = await intakeLead(r, { name: str(form, "name") || "Test lead", phone: str(form, "phone"), message: str(form, "message") || "I'd like a quote. Please call me back." }, { source: "test", consent: true, test: true });
+  if (lead.status !== "NEW") back(path, { error: `Not called: ${lead.statusNote || lead.status}` });
+  after(() => startFollowupCall(lead.id));
+  back(path, { notice: `Calling ${lead.phone} now (${r.name}).` });
 }
 
 export async function updateReceptionist(id: string, form: FormData) {

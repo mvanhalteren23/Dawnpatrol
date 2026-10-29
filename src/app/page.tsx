@@ -101,6 +101,7 @@ export default async function Home() {
           <Link href="/" className="hover:no-underline"><Logo company={company} /></Link>
           <nav className="hidden items-center gap-6 text-sm text-slate-600 md:flex" aria-label="Main">
             <a href="#voice-agents" className="text-slate-600 hover:text-[#0b1530] hover:no-underline">Voice agents</a>
+            <a href="#follow-up" className="text-slate-600 hover:text-[#0b1530] hover:no-underline">Follow-up agent</a>
             <a href="#how-it-works" className="text-slate-600 hover:text-[#0b1530] hover:no-underline">How it works</a>
             <a href="#pricing" className="text-slate-600 hover:text-[#0b1530] hover:no-underline">Pricing</a>
             <a href="#consulting" className="text-slate-600 hover:text-[#0b1530] hover:no-underline">Consulting</a>
@@ -176,6 +177,42 @@ export default async function Home() {
           </div>
         </section>
 
+        {/* Follow-up agent */}
+        <section id="follow-up" className="scroll-mt-20 border-t border-slate-200 py-20">
+          <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.14em] text-orange-600">New: Follow-up agent</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[#0b1530] [text-wrap:balance]">Every website lead called back within 5 minutes</h2>
+              <p className="mt-4 text-lg text-slate-600">The first business to call back usually wins the job. When someone fills in the form on your website, your follow-up agent calls them within minutes, finds out what they need and books the next step.</p>
+              <ul className="mt-6 space-y-3 text-slate-600">
+                <li className="flex gap-3"><Check />Books the right next step for your business: a site visit for a quote, a consultation, an appointment</li>
+                <li className="flex gap-3"><Check />Asks your questions and follows your rules: only the services and areas you cover, never a price you haven&apos;t approved</li>
+                <li className="flex gap-3"><Check />Calls only during your calling hours, tries again if there&apos;s no answer, then sends a text</li>
+                <li className="flex gap-3"><Check />Works with the form you already have (Wix, WordPress, Squarespace and more)</li>
+                <li className="flex gap-3"><Check />Every lead, call summary and booking in your dashboard</li>
+              </ul>
+            </div>
+            <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60">
+              <figcaption className="flex items-baseline justify-between">
+                <span className="font-semibold text-[#0b1530]">Example: a painting company</span>
+                <span className="text-xs text-slate-500">2:14 pm</span>
+              </figcaption>
+              <ol className="mt-5 space-y-4 text-sm">
+                {[
+                  ["2:14 pm", "Form filled in", "“Looking to repaint the outside of our house, 2 storeys.”"],
+                  ["2:16 pm", "Agent calls", "Confirms exterior only, asks about size, siding, timing and the address."],
+                  ["2:21 pm", "Site visit booked", "Thursday 10 am for a free quote, added to the calendar. Lead and summary sent to the owner."],
+                ].map(([t, h, b]) => (
+                  <li key={t} className="flex gap-4">
+                    <span className="w-16 shrink-0 text-xs tabular-nums text-slate-400">{t}</span>
+                    <div><div className="font-semibold text-[#0b1530]">{h}</div><div className="text-slate-600">{b}</div></div>
+                  </li>
+                ))}
+              </ol>
+            </figure>
+          </div>
+        </section>
+
         {/* How it works */}
         <section id="how-it-works" className="scroll-mt-20 border-y border-slate-200 bg-slate-50 py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -245,7 +282,7 @@ export default async function Home() {
               <h2 className="text-3xl font-semibold tracking-tight text-white">Simple pricing</h2>
               <p className="mt-3 text-slate-300">One plan with everything included. Prices in Canadian dollars.</p>
             </div>
-            <div className="mt-10 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+            <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_1fr_1fr]">
               <div className="rounded-2xl bg-white p-8 text-slate-800">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <h3 className="text-lg font-semibold text-[#0b1530]">AI Voice Agent</h3>
@@ -263,8 +300,16 @@ export default async function Home() {
               </div>
               <div className="flex flex-col justify-between rounded-2xl border border-white/15 p-8">
                 <div>
+                  <h3 className="text-lg font-semibold text-white">Follow-up Agent</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-300">Calls every website lead within 5 minutes, qualifies them with your questions and books the site visit, quote or appointment. On its own or alongside your receptionist.</p>
+                  <p className="mt-4 text-2xl font-semibold text-white">Ask for pricing</p>
+                </div>
+                <a href="#contact" className="mt-8 inline-block w-fit rounded-lg border border-white/30 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 hover:no-underline">Talk to us</a>
+              </div>
+              <div className="flex flex-col justify-between rounded-2xl border border-white/15 p-8">
+                <div>
                   <h3 className="text-lg font-semibold text-white">Custom</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-300">For higher call volumes, several locations or numbers, other languages, outbound calling, or connecting the receptionist to your own systems.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-300">For higher call volumes, several locations or numbers, other languages, or connecting the receptionist to your own systems.</p>
                   <p className="mt-4 text-2xl font-semibold text-white">Quoted for you</p>
                 </div>
                 <a href="#contact" className="mt-8 inline-block w-fit rounded-lg border border-white/30 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 hover:no-underline">Talk to us</a>
@@ -291,7 +336,7 @@ export default async function Home() {
                 ))}
                 <div className="rounded-xl bg-slate-50 p-6 sm:col-span-2">
                   <h3 className="font-semibold text-[#0b1530]">Custom services</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">Something specific in mind, like an outbound reminder caller, an agent for a second location, or a tool built around how your team works? Tell us what you need and we&apos;ll quote it.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-600">Something specific in mind, like an appointment reminder caller, an agent for a second location, or a tool built around how your team works? Tell us what you need and we&apos;ll quote it.</p>
                 </div>
               </div>
             </div>

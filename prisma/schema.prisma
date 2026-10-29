@@ -274,6 +274,17 @@ model Receptionist {
   ragToken              String         @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
   demoExtension         String?        @unique
+  // "inbound" = answers calls (receptionist); "followup" = calls website leads back within minutes.
+  agentType             String         @default("inbound")
+  followupGoal          String         @default("") // e.g. "Book a site visit for a quote"
+  followupQuestions     String         @default("") // one per line
+  followupGuardrails    String         @default("") // the business's rules, one per line
+  followupCallHours     String         @default("Mon-Fri 09:00-20:00\nSat-Sun 10:00-18:00")
+  followupDelaySeconds  Int            @default(60) // wait before calling (0–240)
+  followupMaxAttempts   Int            @default(2)
+  followupTextIfMissed  Boolean        @default(true)
+  leadFormKey           String?        @unique // public key in the website form's address
+  leads                 Lead[]
   // Text the owner about new leads: "" (off) | messages (calls needing a call back) | leads (also
   // bookings and transfers), to these comma-separated numbers (blank = the ring-first cell).
   leadAlertOn           String         @default("")
@@ -515,4 +526,34 @@ model SmsOptOut {
   createdAt      DateTime     @default(now())
 
   @@unique([receptionistId, phone])
+}
+
+/**
+ * Someone who filled in a client's website form, for the follow-up agent to call.
+ */
+model Lead {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  name           String?
+  phone          String? // E.164
+  email          String?
+  message        String       @default("")
+  details        String       @default("{}") // JSON: every field the form sent
+  source         String       @default("form") // form | webhook | test
+  consent        Boolean      @default(false) // ticked "OK to call me" (our form) or sent by a connected form
+  // NEW | QUEUED | CALLING | RETRY | NO_ANSWER | CONNECTED | BOOKED | CALL_BACK | NOT_INTERESTED | DO_NOT_CALL | WRONG_NUMBER | SKIPPED | FAILED
+  status         String       @default("NEW")
+  statusNote     String       @default("")
+  attempts       Int          @default(0)
+  nextAttemptAt  DateTime?
+  lastCallSid    String?
+  conversationId String?      @unique
+  summary        String       @default("")
+  calledAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([receptionistId, createdAt])
 }

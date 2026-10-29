@@ -25,7 +25,7 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
   const captured = (outcome.BOOKED ?? 0) + (outcome.MESSAGE_TAKEN ?? 0) + (outcome.TRANSFERRED ?? 0);
 
   return (
-    <PortalShell accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
+    <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
       <h1 className="mb-6">Welcome back</h1>
       {!receptionist ? <Empty>Your receptionist is being set up by the {await companyName()} team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
         <>

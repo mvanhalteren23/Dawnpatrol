@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { callerNumber, classifyCall, transcriptText, type PostCallData } from "./calls";
 import { checkMinuteUsage, sendCallFollowUp, sendLeadAlert } from "./follow-up";
+import { linkLeadToCall } from "./followup";
 
 type ReceptionistRef = { id: string; demoExtension: string | null };
 
@@ -42,6 +43,7 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
   });
   const full = await db.receptionist.findUnique({ where: { id: receptionist.id } });
   if (full) {
+    if (full.agentType === "followup") await linkLeadToCall(data, outcome).catch((e) => console.error("lead update failed", e));
     await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));
     await sendLeadAlert(full, call).catch((e) => console.error("lead alert failed", e));
     if (!full.demoExtension) await checkMinuteUsage(full).catch((e) => console.error("minute usage check failed", e));
