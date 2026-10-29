@@ -3,7 +3,9 @@ import { db } from "@/lib/db";
 import { demoLineConfig } from "@/lib/demo-line";
 import { registerTwilioCall } from "@/lib/elevenlabs";
 import { recordActivity } from "@/lib/outreach";
-import { cleanDigits, gatherExtension, samePhone, say, twiml, validateTwilioSignature } from "@/lib/twilio";
+import { cleanDigits, gatherExtension, samePhone, say, twiml } from "@/lib/twilio";
+import { appUrl } from "@/lib/app-url";
+import { twilioSignatureOk } from "@/lib/twilio-request";
 
 // Demo line directory. Twilio's Voice webhook for the demo number points here:
 //   1. Greet and <Gather> an extension.
@@ -17,7 +19,7 @@ function xml(body: string) {
 }
 
 function base() {
-  return (process.env.APP_URL ?? "").replace(/\/$/, "");
+  return appUrl();
 }
 
 async function connect(agentId: string, from: string, to: string) {
@@ -36,9 +38,8 @@ export async function POST(req: Request) {
 
   const token = process.env.TWILIO_AUTH_TOKEN;
   if (!token) return new Response("TWILIO_AUTH_TOKEN not set", { status: 500 });
-  // Twilio signs the public URL it called, so rebuild it from APP_URL rather than the internal request URL.
-  const signedUrl = `${base()}${url.pathname}${url.search}`;
-  if (!validateTwilioSignature(token, signedUrl, params, req.headers.get("x-twilio-signature"))) {
+  // Twilio signs the public URL it called: APP_URL, or the host the call came in on.
+  if (!twilioSignatureOk(req, params, token)) {
     return new Response("Invalid signature", { status: 403 });
   }
 

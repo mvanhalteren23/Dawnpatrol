@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
@@ -17,7 +18,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   ]);
   const ownedBy = new Map(owned.map((o) => [o.ownerId, o._count]));
   const active = users.filter((u) => !u.disabled);
-  const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const app = appUrl();
 
   return (
     <div className="max-w-4xl space-y-6">

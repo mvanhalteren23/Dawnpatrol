@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import { requireStaff } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { KeepNumberCard } from "@/components/KeepNumberCard";
@@ -39,7 +40,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const followup = r.agentType === "followup";
   const leads = followup ? await db.lead.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 30 }) : [];
   const kbRun = await db.researchRun.findFirst({ where: { kind: "KB_DRAFT", accountId: r.accountId }, orderBy: { createdAt: "desc" } });
-  const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const app = appUrl();
   const returnTo = `/crm/receptionists/${r.id}`;
   // The Google account this receptionist books into: a person's own, or the company account.
   const google = await googleConnection(r.googleUserId);

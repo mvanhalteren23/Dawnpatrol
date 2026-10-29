@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -22,7 +23,7 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
     db.receptionist.findMany({ where: { demoExtension: null }, include: { account: true }, orderBy: { updatedAt: "desc" }, take: 50 }),
     db.activity.count({ where: { source: "demo-line", occurredAt: { gte: new Date(Date.now() - 30 * 86400000) } } }),
   ]);
-  const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const app = appUrl();
 
   return (
     <div className="max-w-5xl">

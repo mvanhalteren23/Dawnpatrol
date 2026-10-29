@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "./app-url";
 import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage } from "./outreach";
@@ -51,7 +52,7 @@ export async function createCheckout(accountId: string, planId: string, returnPa
   if (!plan.stripePriceId) throw new Error(`Plan "${plan.name}" has no Stripe price id`);
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
-  const app = process.env.APP_URL?.replace(/\/$/, "");
+  const app = appUrl();
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
     customer,
@@ -69,7 +70,7 @@ export async function createPortalSession(accountId: string, returnPath: string)
   const customer = await ensureCustomer(accountId);
   const session = await stripe().billingPortal.sessions.create({
     customer,
-    return_url: `${process.env.APP_URL?.replace(/\/$/, "")}${returnPath}`,
+    return_url: `${appUrl()}${returnPath}`,
   });
   return session.url;
 }

@@ -8,6 +8,7 @@ export function fullFollowupProfile(r: Partial<FollowupProfile> & { name: string
   return { followupGoal: "", followupQuestions: "", followupGuardrails: "", ...r };
 }
 import { safeJson } from "./utils";
+import { appUrl } from "./app-url";
 
 // ElevenLabs Conversational AI.
 // Sync = compile KnowledgeItems per category -> upload as text KB documents -> create/patch
@@ -41,7 +42,7 @@ const str = (description: string) => ({ type: "string", description });
 /** Webhook tools that let the agent read the calendar and book (see src/lib/agent-booking.ts). */
 export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string; followUpOn: string; followUpChannel: string }) {
   const confirmations = r.followUpOn === "bookings" || r.followUpOn === "both";
-  const base = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/agent-tools/${r.id}`;
+  const base = `${appUrl()}/api/agent-tools/${r.id}`;
   const headers = { Authorization: `Bearer ${r.ragToken}` };
   return {
     get_available_times: {

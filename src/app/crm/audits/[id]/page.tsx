@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -28,7 +29,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const calls = realCalls(audit.calls);
   const tests = audit.calls.filter((c) => c.toNumber).reverse();
   const report = parseReport(audit);
-  const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const app = appUrl();
   const next = calls.find((c) => c.status === "PLANNED");
   const answered = audit.calls.filter((c) => c.status === "ANSWERED");
   const actual = auditCostCents({

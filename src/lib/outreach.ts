@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { companySendAs, connectedEmail, googleFetch, type GoogleAs } from "./google";
 import { encodeHeader, safeAddress } from "./outreach-address";
+import { appUrl } from "./app-url";
 import { getSetting, setSetting } from "./settings";
 import { writeAccountDoc } from "./drive";
 import { buildMatchIndex, matchAddresses, nextFollowUp, nextStageAfterActivity } from "./outreach-rules";
@@ -270,7 +271,7 @@ export async function sendTrackedEmail(params: { accountId: string; contactId: s
   });
   if (!activity) throw new Error("Could not record activity");
 
-  const html = instrumentHtml(textToHtml(params.body), activity.id, process.env.APP_URL ?? "");
+  const html = instrumentHtml(textToHtml(params.body), activity.id, appUrl());
   const mime = [
     `From: ${me}`,
     `To: ${encodeHeader(contactName(contact).replace(/[<>"]/g, ""))} <${safeAddress(contact.email)}>`,

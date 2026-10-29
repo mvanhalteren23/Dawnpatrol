@@ -1,6 +1,7 @@
 import "server-only";
 import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
+import { appUrl } from "./app-url";
 import { getSetting, setSetting } from "./settings";
 import { isSealed, open, openStored, seal } from "./secret-box";
 
@@ -40,7 +41,7 @@ export function oauthClient(): OAuth2Client {
   return new OAuth2Client({
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    redirectUri: `${process.env.APP_URL?.replace(/\/$/, "")}/api/google/callback`,
+    redirectUri: `${appUrl()}/api/google/callback`,
   });
 }
 

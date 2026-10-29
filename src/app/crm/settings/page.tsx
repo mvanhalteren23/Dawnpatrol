@@ -1,3 +1,4 @@
+import { appUrl, appUrlNeedsFixing } from "@/lib/app-url";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/auth";
@@ -81,7 +82,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     getSetting("drive.root"),
   ]);
   const goal = safeJson<{ min: number; max: number; targetDate?: string }>(goalRaw, DEFAULT_CLIENT_GOAL);
-  const app = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const app = appUrl();
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -132,6 +133,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </form>
       </div>
 
+      {appUrlNeedsFixing() ? <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">The <code>APP_URL</code> setting in Vercel has extra characters (a comma, space or second address). The app is using <b>{app}</b>. Set <code>APP_URL</code> to exactly that, with no comma or trailing slash, and redeploy.</div> : null}
       <div className="card space-y-4 text-sm">
         <h2>Integrations</h2>
         <div className="flex items-start justify-between gap-4">
