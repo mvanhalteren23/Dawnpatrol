@@ -21,8 +21,14 @@ export function elevenLabsConfigured(): boolean {
   return Boolean(process.env.ELEVENLABS_API_KEY);
 }
 
-async function el<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const key = process.env.ELEVENLABS_API_KEY;
+/** The previous ElevenLabs account's key, kept after moving accounts so old recordings still play. */
+export function legacyElevenLabsKey(): string | null {
+  return process.env.ELEVENLABS_LEGACY_API_KEY || null;
+}
+
+/** Call the ElevenLabs API with the current account's key, or another account's (`apiKey`). */
+export async function el<T>(path: string, init: RequestInit = {}, apiKey?: string): Promise<T> {
+  const key = apiKey ?? process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -298,20 +304,32 @@ export async function listConversations(agentId: string, afterUnix: number, max 
 
 /** Full conversation: transcript, metadata and analysis (same shape as the post-call webhook's data). */
 export async function getConversation<T = unknown>(conversationId: string): Promise<T> {
-  return el<T>(`/conversations/${encodeURIComponent(conversationId)}`);
+  const path = `/conversations/${encodeURIComponent(conversationId)}`;
+  try {
+    return await el<T>(path);
+  } catch (err) {
+    // A call from before the move to the new ElevenLabs account lives in the old one.
+    const legacy = legacyElevenLabsKey();
+    if (legacy && String(err).includes(" 404 ")) return el<T>(path, {}, legacy);
+    throw err;
+  }
 }
 
 /** The call recording as a streaming Response (audio/mpeg), or null if ElevenLabs has none. */
 export async function fetchConversationAudio(conversationId: string, range?: string | null): Promise<Response | null> {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new Error("ELEVENLABS_API_KEY is not configured");
-  const res = await fetch(`${BASE}/conversations/${encodeURIComponent(conversationId)}/audio`, {
-    headers: { "xi-api-key": key, ...(range ? { Range: range } : {}) },
-    cache: "no-store",
-  });
-  if (res.status === 404 || res.status === 422) return null;
-  if (!res.ok) throw new Error(`ElevenLabs ${res.status} on audio: ${(await res.text()).slice(0, 300)}`);
-  return res;
+  const current = process.env.ELEVENLABS_API_KEY;
+  if (!current) throw new Error("ELEVENLABS_API_KEY is not configured");
+  // Recordings from before the move to the new ElevenLabs account are in the old one.
+  for (const key of [current, legacyElevenLabsKey()].filter((k): k is string => Boolean(k))) {
+    const res = await fetch(`${BASE}/conversations/${encodeURIComponent(conversationId)}/audio`, {
+      headers: { "xi-api-key": key, ...(range ? { Range: range } : {}) },
+      cache: "no-store",
+    });
+    if (res.status === 404 || res.status === 422) continue;
+    if (!res.ok) throw new Error(`ElevenLabs ${res.status} on audio: ${(await res.text()).slice(0, 300)}`);
+    return res;
+  }
+  return null;
 }
 
 /** Text to speech (mp3) in an ElevenLabs voice, for AI voicemails. */

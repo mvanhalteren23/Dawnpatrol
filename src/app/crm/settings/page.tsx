@@ -16,7 +16,7 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
-import { changePassword, disconnectGoogle, disconnectMyGoogle, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
+import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabsAgents, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +73,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
   const company = await companyName();
   const dialer = await dialerStatus();
-  const [previousGoogle, sendAs] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs")]);
+  const [previousGoogle, sendAs, migrationRaw] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs"), getSetting("elevenlabs.migration")]);
+  const migration = safeJson<import("@/lib/elevenlabs-migrate").MigrationReport | null>(migrationRaw, null);
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
     googleConnection(),
     getSetting("gmail.lastSyncAt"),
@@ -168,7 +169,23 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <Status ok={aiConfigured()} />
         </div>
         <div className="flex items-start justify-between gap-4">
-          <div><div className="font-medium">ElevenLabs</div><div className="text-xs text-slate-500">Agent + knowledge-base sync. Post-call webhook: <code>{app}/api/webhooks/elevenlabs</code></div></div>
+          <div>
+            <div className="font-medium">ElevenLabs</div>
+            <div className="text-xs text-slate-500">Agent + knowledge-base sync. Post-call webhook: <code>{app}/api/webhooks/elevenlabs</code></div>
+            {process.env.ELEVENLABS_LEGACY_API_KEY ? (
+              <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs">
+                <p>Moving to a new ElevenLabs account: re-creates every CRM agent in the account of <code>ELEVENLABS_API_KEY</code>, copying its voice and settings from the old account, then syncs it. Old call recordings keep playing through <code>ELEVENLABS_LEGACY_API_KEY</code>.</p>
+                <form action={migrateElevenLabsAgents} className="mt-1"><button className="btn-secondary py-1 text-xs">Move agents to the new account</button></form>
+                {migration ? (
+                  <div className="mt-2 space-y-1">
+                    <div className="text-slate-500">Last run {formatDate(migration.at, true)}:</div>
+                    <ul className="list-disc pl-4">{migration.agents.map((a) => <li key={a.from}><b>{a.name}</b>: {a.note}</li>)}</ul>
+                    {migration.voices.length ? <ul className="list-disc pl-4">{migration.voices.map((v) => <li key={v.voiceId} className={v.ok ? "" : "text-amber-800"}>Voice {v.note}</li>)}</ul> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
           <Status ok={elevenLabsConfigured()} />
         </div>
         <div className="flex items-start justify-between gap-4">

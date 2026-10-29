@@ -1126,6 +1126,15 @@ export async function rebuildDriveFolders() {
   back("/crm/settings", { notice: "Rebuilding the Drive folders and documents in the connected account. This takes a minute or two." });
 }
 
+/** Re-create the CRM's agents in the new ElevenLabs account (see lib/elevenlabs-migrate.ts). */
+export async function migrateElevenLabsAgents() {
+  await requireAdmin();
+  if (!process.env.ELEVENLABS_LEGACY_API_KEY) back("/crm/settings", { error: "Add ELEVENLABS_LEGACY_API_KEY (the old account's key) in Vercel and redeploy first" });
+  const { migrateAgents } = await import("@/lib/elevenlabs-migrate");
+  after(() => migrateAgents().catch((err) => console.error("ElevenLabs migration failed", err)));
+  back("/crm/settings", { notice: "Moving agents to the new ElevenLabs account. Refresh in a minute to see the result." });
+}
+
 /** The address the app's own emails go out from: an alias of the company account, or blank for the account itself. */
 export async function saveSendAs(form: FormData) {
   await requireAdmin();
