@@ -157,7 +157,16 @@ export function isConsumerGoogle(email: string | null | undefined): boolean {
   return /@(gmail|googlemail)\.com$/i.test(email ?? "");
 }
 
-/** The address the app's own emails (reports, alerts, caller follow-ups) are sent from, if not the company account itself. */
+/**
+ * Support, admin and billing address (e.g. team@, an alias of the company account): client
+ * reports, caller follow-ups and admin alerts go out from it. Sales outreach is sent from each
+ * person's own account instead. Null = the company account itself.
+ */
 export async function companySendAs(): Promise<string | null> {
   return getSetting("google.sendAs");
+}
+
+/** Where support and admin notifications go: the support address, else the company account. */
+export async function supportAddress(): Promise<string | null> {
+  return (await companySendAs()) ?? (await connectedEmail());
 }

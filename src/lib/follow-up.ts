@@ -5,7 +5,6 @@ import { callerFollowUp, aiConfigured } from "./ai";
 import { sendPlainEmail } from "./outreach";
 import { dialableNumber, sendSms, toE164 } from "./twilio";
 import { leadAlertWanted, ownerAlertText } from "./follow-up-rules";
-import { connectedEmail } from "./google";
 import { getSetting, setSetting } from "./settings";
 
 // Summaries the receptionist sends a caller after a booking and/or a call, by text or email.
@@ -105,7 +104,8 @@ export async function checkMinuteUsage(r: Receptionist, now = new Date()) {
   const key = `minutes.alert.${r.id}.${month.key}`;
   if (await getSetting(key)) return { minutes, cap, alerted: false };
   await setSetting(key, new Date().toISOString());
-  const to = await connectedEmail();
+  const { supportAddress } = await import("./google");
+  const to = await supportAddress(); // a billing matter: the support/admin inbox
   if (to) {
     const { sendPlainEmail } = await import("./outreach");
     const { appBase } = await import("./twilio-request");

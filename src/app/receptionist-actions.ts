@@ -168,12 +168,15 @@ export async function requestChange(receptionistId: string, returnTo: string, fo
   const { after } = await import("next/server");
   after(async () => {
     const owner = r.account.ownerId ? await db.user.findUnique({ where: { id: r.account.ownerId }, select: { email: true } }) : null;
-    const { connectedEmail } = await import("@/lib/google");
-    const to = owner?.email ?? (await connectedEmail());
-    if (!to) return;
+    const { supportAddress } = await import("@/lib/google");
+    // Support requests go to the support inbox (team@), with the account's rep copied in when it has one.
+    const support = await supportAddress();
+    const recipients = [...new Set([support, owner?.email].filter((x): x is string => Boolean(x)))];
     const { sendPlainEmail } = await import("@/lib/outreach");
     const { appBase } = await import("@/lib/twilio-request");
-    await sendPlainEmail({ to, subject: `${r.account.name} requested a change (${topic})`, body: `${session.email} asked for a change to ${r.name}:\n\n${text}\n\n${appBase()}/crm/accounts/${r.accountId}` }).catch((e) => console.warn("change request email", e));
+    for (const to of recipients) {
+      await sendPlainEmail({ to, replyTo: session.email, subject: `${r.account.name} requested a change (${topic})`, body: `${session.email} asked for a change to ${r.name}:\n\n${text}\n\n${appBase()}/crm/accounts/${r.accountId}` }).catch((e) => console.warn("change request email", e));
+    }
   });
   done(returnTo, "notice", "Thanks, your request is with the team. We'll make the change and let you know, usually within one business day.");
 }

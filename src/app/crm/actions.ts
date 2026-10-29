@@ -1134,13 +1134,13 @@ export async function saveSendAs(form: FormData) {
   const value = str(form, "sendAs").toLowerCase();
   if (!value) {
     await deleteSetting("google.sendAs");
-    back("/crm/settings", { notice: "App emails go out from the company Google account" });
+    back("/crm/settings", { notice: "Support and admin emails go out from the company Google account" });
   }
   if (!/^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/.test(value)) back("/crm/settings", { error: "Enter an email address" });
   const company = await connectedEmail();
   if (company && value.split("@")[1] !== company.split("@")[1]) back("/crm/settings", { error: `Use an address on ${company.split("@")[1]} (an alias of ${company})` });
   await setSetting("google.sendAs", value);
-  back("/crm/settings", { notice: `App emails will go out from ${value}. It must be an alias of the company account (Google Admin → Users → ${company ?? "the account"} → Alternate emails).` });
+  back("/crm/settings", { notice: `Support, admin and billing emails will go out from ${value}. Check it's listed in ${company ?? "the company account"}'s Gmail under Settings → Accounts → Send mail as, or Gmail sends from ${company ?? "the account"} instead.` });
 }
 
 // --- Demo line ---------------------------------------------------------------------

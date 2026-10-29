@@ -149,7 +149,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             ) : null}
             {google.connected ? (
               <form action={saveSendAs} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-slate-500">Send app emails (reports, alerts, caller follow-ups) from</span>
+                <span className="text-slate-500">Support, admin and billing address (client reports, caller follow-ups, change requests, minute alerts; shown in the client portal). Sales emails go from each person&apos;s own Gmail.</span>
                 <input name="sendAs" type="email" defaultValue={sendAs ?? ""} placeholder={google.email ?? ""} className="input w-56 py-1 text-xs" />
                 <button className="btn-secondary py-1 text-xs">Save</button>
               </form>
