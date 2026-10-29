@@ -74,7 +74,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function PlanForm({ plan }: { plan?: { id: string; name: string; priceCents: number; setupFeeCents: number; includedMinutes: number; features: string; stripePriceId: string | null } }) {
+function PlanForm({ plan }: { plan?: { id: string; name: string; priceCents: number; setupFeeCents: number; includedMinutes: number; minimumMonths: number; features: string; stripePriceId: string | null } }) {
   return (
     <form action={savePlan} className="mt-3 grid grid-cols-2 gap-2">
       {plan ? <input type="hidden" name="id" value={plan.id} /> : null}
@@ -82,6 +82,7 @@ function PlanForm({ plan }: { plan?: { id: string; name: string; priceCents: num
       <Field label="Monthly price ($)"><input name="price" defaultValue={plan ? plan.priceCents / 100 : ""} className="input" required /></Field>
       <Field label="Setup fee ($)"><input name="setupFee" defaultValue={plan ? plan.setupFeeCents / 100 : ""} className="input" /></Field>
       <Field label="Included minutes"><input name="includedMinutes" type="number" defaultValue={plan?.includedMinutes} className="input" /></Field>
+      <Field label="Minimum term (months)"><input name="minimumMonths" type="number" min={0} defaultValue={plan?.minimumMonths ?? 0} className="input" /></Field>
       <Field label="Stripe price id" className="col-span-2"><input name="stripePriceId" defaultValue={plan?.stripePriceId ?? ""} placeholder="price_…" className="input" /></Field>
       <Field label="Features (one per line)" className="col-span-2"><textarea name="features" rows={3} defaultValue={plan?.features} className="input" /></Field>
       <div className="col-span-2"><button className="btn-secondary">{plan ? "Save plan" : "Create plan"}</button></div>

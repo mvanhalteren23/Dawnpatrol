@@ -24,12 +24,20 @@ async function main() {
     await db.savedPrompt.create({ data: { ...p, isDefault: p.isDefault ?? false, createdById: admin.id } });
   }
 
+  // One plan: the AI voice agent. Custom work is quoted separately.
   const plans = [
-    { name: "Starter", priceCents: 29700, setupFeeCents: 0, includedMinutes: 300, features: "24/7 call answering\nMessage taking + SMS summaries\nKnowledge base up to 50 items" },
-    { name: "Growth", priceCents: 49700, setupFeeCents: 49700, includedMinutes: 800, features: "Everything in Starter\nAppointment booking\nCall transfer & escalation\nMonthly tuning call" },
-    { name: "Pro", priceCents: 99700, setupFeeCents: 99700, includedMinutes: 2000, features: "Everything in Growth\nMultiple locations / numbers\nCRM integration\nPriority support" },
+    {
+      name: "Voice Agent",
+      priceCents: 13500,
+      setupFeeCents: 0,
+      includedMinutes: 200,
+      minimumMonths: 3,
+      features: "24/7 call answering\nBooks into your Google Calendar\nUrgent calls transferred to you\nText or email summaries to callers\nKeep your existing number\nClient portal with weekly and monthly reports",
+    },
   ];
   for (const p of plans) await db.plan.upsert({ where: { name: p.name }, create: p, update: {} });
+  // Earlier plans stop being offered; any client already on one keeps it.
+  await db.plan.updateMany({ where: { name: { in: ["Starter", "Growth", "Pro"] }, subscriptions: { none: {} } }, data: { isActive: false } });
 
   if (process.env.SEED_DEMO === "1") await demo(admin.id);
 }

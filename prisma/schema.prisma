@@ -207,6 +207,7 @@ model Plan {
   priceCents      Int
   setupFeeCents   Int      @default(0)
   includedMinutes Int      @default(0)
+  minimumMonths   Int      @default(0) // minimum contract term
   features        String   @default("") // newline separated
   stripePriceId   String?
   isActive        Boolean  @default(true)

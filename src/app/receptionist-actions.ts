@@ -97,3 +97,23 @@ export async function saveKeepNumber(receptionistId: string, returnTo: string, f
         : "Saved. Follow the steps shown to turn on forwarding.",
   );
 }
+
+/** Report schedule and recipients only (the dashboard and Reports page). */
+export async function saveReportSettings(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await getSession();
+  if (!(await canAccessReceptionist(session, receptionistId))) throw new Error("Not allowed");
+  let data;
+  try {
+    data = reportFromForm(form);
+  } catch (err) {
+    done(returnTo, "error", (err as Error).message);
+  }
+  await db.receptionist.update({ where: { id: receptionistId }, data });
+  done(
+    returnTo,
+    "notice",
+    data.reportFrequency
+      ? `Reports will be emailed ${data.reportFrequency === "both" ? "weekly and monthly" : data.reportFrequency} to ${data.reportEmails || "your portal login"}.`
+      : "Email reports are off. You can still see them here any time.",
+  );
+}

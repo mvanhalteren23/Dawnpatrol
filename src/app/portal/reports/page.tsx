@@ -6,6 +6,8 @@ import { syncCallsThrottled } from "@/lib/call-sync";
 import { formatMoney } from "@/lib/utils";
 import { Empty } from "@/components/ui";
 import { PortalShell } from "@/components/PortalShell";
+import { ReportSettingsForm } from "@/components/ReportSettingsForm";
+import { Notice } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +19,7 @@ const OUTCOMES: { key: keyof ReportTotals; label: string; tone: string }[] = [
   { key: "missed", label: "Hung up / couldn't help", tone: "bg-amber-500" },
 ];
 
-export default async function PortalReports({ searchParams }: { searchParams: Promise<{ account?: string; kind?: string; offset?: string }> }) {
+export default async function PortalReports({ searchParams }: { searchParams: Promise<{ account?: string; kind?: string; offset?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
   const { session, account, receptionist, adminAccountId, q } = await loadPortal(Promise.resolve(sp));
   const kind = sp.kind === "month" ? "month" : "week";
@@ -59,6 +61,8 @@ export default async function PortalReports({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {sp.notice ? <Notice kind="success">{sp.notice}</Notice> : null}
+      {sp.error ? <Notice kind="error">{sp.error}</Notice> : null}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="Calls answered" value={cur.calls} sub={`${delta(cur.calls, prev.calls)} vs last ${word}`} />
         <Tile label="After hours" value={cur.afterHours ?? "—"} sub={cur.afterHours != null ? "would have gone to voicemail" : "set your hours in Settings"} />
@@ -112,12 +116,16 @@ export default async function PortalReports({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-        <span>{receptionist.reportFrequency ? `This report is emailed to you ${receptionist.reportFrequency === "both" ? "weekly and monthly" : receptionist.reportFrequency}.` : "Want this in your inbox every Monday or month?"}</span>
-        <span className="flex gap-3">
-          <Link href={`/portal/calls${q}`}>See each call →</Link>
-          <Link href={`/portal/settings${q}#reports`}>{receptionist.reportFrequency ? "Change email reports" : "Turn on email reports"}</Link>
-        </span>
+      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+        <div id="email-reports" className="lg:col-span-3">
+          <ReportSettingsForm r={receptionist} returnTo={link({})} fallbackEmail={session.email} />
+        </div>
+        <div className="card text-sm text-slate-600 lg:col-span-2">
+          <h2 className="mb-2">About these numbers</h2>
+          <p>Counts come from every call your receptionist answered. &ldquo;After hours&rdquo; uses your bookable hours in Settings. Estimated value is bookings × your average job value.</p>
+          <p className="mt-2">Emailed reports show totals only. Callers&apos; details stay here.</p>
+          <Link href={`/portal/calls${q}`} className="mt-3 inline-block">See each call →</Link>
+        </div>
       </div>
     </PortalShell>
   );

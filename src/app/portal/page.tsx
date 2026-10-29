@@ -29,12 +29,25 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
       <h1 className="mb-6">Welcome back</h1>
       {!receptionist ? <Empty>Your receptionist is being set up by the {await companyName()} team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
         <>
-          <div className="mb-2 flex justify-end text-sm"><Link href={`/portal/reports${q}`}>Weekly &amp; monthly reports →</Link></div>
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Calls answered (30d)" value={calls} sub="Every call picked up, 24/7" />
             <Stat label="Appointments booked" value={outcome.BOOKED ?? 0} />
             <Stat label="Leads captured" value={captured} sub="booked + messages + transfers" />
             <Stat label="Needs your follow-up" value={followUps.length} />
+          </div>
+          <div className="card mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2>Reports</h2>
+              <p className="text-sm text-slate-600">
+                {receptionist.reportFrequency
+                  ? `Emailed ${receptionist.reportFrequency === "both" ? "weekly and monthly" : receptionist.reportFrequency} to ${receptionist.reportEmails || session.email}.`
+                  : "See this week's and this month's calls, bookings and after-hours calls, and choose where reports are emailed."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/portal/reports${q}`} className="btn">View reports</Link>
+              <Link href={`/portal/reports${q}${q ? "&" : "?"}kind=week#email-reports`} className="btn-secondary">{receptionist.reportFrequency ? "Change where they're sent" : "Email them to me"}</Link>
+            </div>
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="card">

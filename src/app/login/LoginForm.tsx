@@ -16,7 +16,7 @@ export function LoginForm({ next }: { next: string }) {
         <input className="input" name="password" type="password" autoComplete="current-password" required />
       </label>
       {state?.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
-      <button className="btn w-full" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
+      <button className="btn w-full bg-[#0b1530] py-2.5 hover:bg-[#16244a]" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
     </form>
   );
 }

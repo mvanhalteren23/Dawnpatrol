@@ -905,6 +905,7 @@ export async function savePlan(form: FormData) {
     priceCents: parseMoneyToCents(str(form, "price")) ?? 0,
     setupFeeCents: parseMoneyToCents(str(form, "setupFee")) ?? 0,
     includedMinutes: optInt(form, "includedMinutes") ?? 0,
+    minimumMonths: Math.max(0, optInt(form, "minimumMonths") ?? 0),
     features: str(form, "features"),
     stripePriceId: optStr(form, "stripePriceId"),
   };
