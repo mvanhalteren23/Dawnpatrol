@@ -28,7 +28,7 @@ async function main() {
   const plans = [
     {
       name: "Voice Agent",
-      priceCents: 13500,
+      priceCents: 13900,
       setupFeeCents: 0,
       includedMinutes: 200,
       minimumMonths: 3,
