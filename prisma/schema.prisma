@@ -627,3 +627,13 @@ model AuditCall {
   @@index([auditId, scheduledAt])
   @@index([status, scheduledAt])
 }
+
+// Website sample call recordings (ElevenLabs), generated once from the scripts in site-content.ts
+// and kept until a script or voice changes (hash).
+model SampleAudio {
+  key       String   @id // "<trade>:<scenario>"
+  hash      String
+  mime      String   @default("audio/mpeg")
+  data      Bytes
+  createdAt DateTime @default(now())
+}

@@ -26,3 +26,10 @@
   .prose-md table { @apply w-full text-sm; }
   .prose-md td, .prose-md th { @apply border border-slate-200 px-2 py-1; }
 }
+
+/* Public website (Brand Kit: Barlow Condensed for headlines and labels, Barlow for body text). */
+@layer utilities {
+  .font-condensed-800 { font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 800; }
+  .font-condensed-700 { font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; }
+  .font-barlow { font-family: "Barlow", Helvetica, Arial, sans-serif; }
+}
