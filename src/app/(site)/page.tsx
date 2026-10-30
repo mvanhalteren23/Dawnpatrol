@@ -3,6 +3,7 @@ import Link from "next/link";
 import { INDUSTRIES, PRICING } from "@/lib/site-content";
 import { DemoButton } from "@/components/site/Demo";
 import { DispatchSimulator } from "@/components/site/DispatchSimulator";
+import { FollowupAddon } from "@/components/site/FollowupAddon";
 import { OnboardingBanner, PricingSection } from "@/components/site/Pricing";
 import { Eyebrow, liveDemo } from "@/components/site/Sections";
 
@@ -96,6 +97,7 @@ export default async function Home() {
       </section>
 
       <DispatchSimulator />
+      <FollowupAddon />
       <PricingSection tierName="All-Trades Pro Plan" />
       <OnboardingBanner />
     </>

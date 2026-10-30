@@ -11,7 +11,17 @@ export const BRAND = {
   signal: "#A8401F",
 } as const;
 
-export const PRICING = { monthly: 139, includedMinutes: 200, blockMinutes: 100, blockPrice: 45, minimumMonths: 3 } as const;
+export const PRICING = { monthly: 139, includedMinutes: 200, blockMinutes: 100, blockPrice: 25, minimumMonths: 3 } as const;
+
+/** The Follow-Up Agent add-on's monthly price; null shows "ask us" until it's set. */
+export const FOLLOWUP_ADDON_PRICE: number | null = null;
+
+/** What the Follow-Up Agent does for each trade: a website form, then a call within minutes. */
+export const FOLLOWUP_EXAMPLES: Record<TradeKey, { form: string; call: string; booked: string }> = {
+  contractors: { form: "“Need a quote to replace our back deck, about 300 sq ft.”", call: "Confirms the size, decking material, timeline and address.", booked: "Site visit booked Thursday 4:30 PM. Lead and notes texted to you." },
+  mechanics: { form: "“Check engine light on my 2017 Civic. Can I get it looked at?”", call: "Asks about symptoms and mileage, explains the diagnostic.", booked: "Drop-off booked tomorrow 8:00 AM. Customer gets a confirmation text." },
+  retail: { form: "“Do you do bike fittings? Looking at a new road bike.”", call: "Asks about riding style and budget, shares fitting options.", booked: "Fitting booked Saturday 11:00 AM. Store gets the details by text." },
+};
 
 export type TradeKey = "contractors" | "mechanics" | "retail";
 export type Scenario = "customer" | "supplier";

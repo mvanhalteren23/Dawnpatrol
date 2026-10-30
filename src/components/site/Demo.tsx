@@ -6,28 +6,30 @@ import { INDUSTRIES, TRADE_KEYS, type TradeKey } from "@/lib/site-content";
 // "Book a demo" anywhere on the site opens one form, pre-set to the page's trade. It goes into the
 // CRM as an inbound account with a call-back task, and you get an email.
 
-const DemoContext = createContext<(trade?: TradeKey) => void>(() => undefined);
+const DemoContext = createContext<(trade?: TradeKey, followup?: boolean) => void>(() => undefined);
 
 export function DemoProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [trade, setTrade] = useState<TradeKey>("contractors");
-  const openDemo = (t?: TradeKey) => {
+  const [followup, setFollowup] = useState(false);
+  const openDemo = (t?: TradeKey, wantsFollowup = false) => {
     if (t) setTrade(t);
+    setFollowup(wantsFollowup);
     setOpen(true);
   };
   return (
     <DemoContext.Provider value={openDemo}>
       {children}
-      {open ? <DemoModal trade={trade} onClose={() => setOpen(false)} /> : null}
+      {open ? <DemoModal trade={trade} followup={followup} onClose={() => setOpen(false)} /> : null}
     </DemoContext.Provider>
   );
 }
 
-export function DemoButton({ trade, children, variant = "tan", className = "" }: { trade?: TradeKey; children: ReactNode; variant?: "tan" | "green"; className?: string }) {
+export function DemoButton({ trade, followup = false, children, variant = "tan", className = "" }: { trade?: TradeKey; followup?: boolean; children: ReactNode; variant?: "tan" | "green"; className?: string }) {
   const openDemo = useContext(DemoContext);
   const colors = variant === "tan" ? { backgroundColor: "#D8B47A", color: "#1F3B2D" } : { backgroundColor: "#1F3B2D", color: "#EFE6D4" };
   return (
-    <button type="button" onClick={() => openDemo(trade)} style={colors} className={`h-[48px] cursor-pointer rounded-[12px] px-6 text-sm font-semibold transition-opacity hover:opacity-90 ${className}`}>
+    <button type="button" onClick={() => openDemo(trade, followup)} style={colors} className={`h-[48px] cursor-pointer rounded-[12px] px-6 text-sm font-semibold transition-opacity hover:opacity-90 ${className}`}>
       {children}
     </button>
   );
@@ -35,7 +37,7 @@ export function DemoButton({ trade, children, variant = "tan", className = "" }:
 
 const inputClass = "w-full h-11 px-3 rounded-[6px] border-2 border-[#6B5A43] bg-[#EFE6D4] text-sm text-[#1F3B2D] focus:outline-none focus:border-[#1F3B2D]";
 
-function DemoModal({ trade, onClose }: { trade: TradeKey; onClose: () => void }) {
+function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: boolean; onClose: () => void }) {
   const [state, action, pending] = useActionState<DemoRequestState | undefined, FormData>(submitDemoRequest, undefined);
   const [started] = useState(() => Date.now());
   const dialog = useRef<HTMLDivElement>(null);
@@ -88,6 +90,7 @@ function DemoModal({ trade, onClose }: { trade: TradeKey; onClose: () => void })
               <label className="block text-sm font-semibold">Preferred setup date<input name="preferredDate" type="date" className={`${inputClass} mt-1`} /></label>
             </div>
             <label className="block text-sm font-semibold">Email (optional)<input name="email" type="email" maxLength={200} placeholder="you@yourshop.ca" className={`${inputClass} mt-1`} /></label>
+            <label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" name="followup" defaultChecked={followup} className="mt-1 h-4 w-4 accent-[#1F3B2D]" />Also interested in the Follow-Up Agent add-on (website leads called back within minutes)</label>
             {state?.error ? <p role="alert" className="text-sm font-semibold text-[#A8401F]">{state.error}</p> : null}
             <div className="flex items-center justify-end gap-3 pt-2">
               <button type="button" onClick={onClose} className="h-[48px] cursor-pointer rounded-[12px] border-2 border-[#1F3B2D] px-5 text-sm font-semibold text-[#1F3B2D]">Cancel</button>

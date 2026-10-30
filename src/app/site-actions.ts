@@ -28,6 +28,7 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
   const email = field(form, "email", 200).toLowerCase();
   const location = field(form, "location", 120);
   const preferredDate = field(form, "preferredDate", 20);
+  const followup = form.get("followup") === "on";
   const trade: TradeKey = TRADE_KEYS.find((k) => k === form.get("trade")) ?? "contractors";
   const tradeLabel = INDUSTRIES[trade].tabLabel;
   if (!name || !business) return { error: "Add your name and your business name." };
@@ -37,19 +38,19 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
   const recent = await db.activity.count({ where: { source: "website", occurredAt: { gte: new Date(Date.now() - 3600_000) } } });
   if (recent >= 30) return { error: "We're getting a lot of requests right now. Please try again in an hour." };
 
-  const reviewReason = `Demo request from the website (${tradeLabel}). Call them to book it.`;
+  const reviewReason = `Demo request from the website (${tradeLabel}${followup ? " + Follow-Up Agent" : ""}). Call them to book it.`;
   // One business, one account: add to the existing one if we already know them.
   const dup = await findDuplicateAccount({ domain: null, phone, name: business, city: location || null });
   const account = dup
     ? await db.account.update({ where: { id: dup.id }, data: { needsReview: true, reviewReason } })
     : await db.account.create({
-        data: { name: business, phone, city: location || null, industry: tradeLabel, source: "inbound", tags: `website,demo,${trade}`, needsReview: true, reviewReason },
+        data: { name: business, phone, city: location || null, industry: tradeLabel, source: "inbound", tags: `website,demo,${trade}${followup ? ",followup-agent" : ""}`, needsReview: true, reviewReason },
       });
   const [firstName, ...rest] = name.split(/\s+/);
   const contact =
     (await db.contact.findFirst({ where: { accountId: account.id, OR: [{ phone }, ...(email ? [{ email }] : [])] } })) ??
     (await db.contact.create({ data: { accountId: account.id, firstName: firstName || null, lastName: rest.join(" ") || null, email: email || null, phone, isPrimary: !dup } }));
-  const body = [`Trade: ${tradeLabel}`, `Phone: ${phone}`, email ? `Email: ${email}` : null, location ? `Location: ${location}` : null, preferredDate ? `Preferred setup date: ${preferredDate}` : null].filter(Boolean).join("\n");
+  const body = [`Trade: ${tradeLabel}`, `Phone: ${phone}`, email ? `Email: ${email}` : null, location ? `Location: ${location}` : null, preferredDate ? `Preferred setup date: ${preferredDate}` : null, followup ? "Also interested in the Follow-Up Agent add-on" : null].filter(Boolean).join("\n");
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "NOTE", direction: "INBOUND", subject: `Website demo request: ${tradeLabel}`, body, source: "website" });
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "TASK", subject: `Call ${name} to book their demo${preferredDate ? ` (prefers ${preferredDate})` : ""}`, dueAt: addDays(new Date(), 1), source: "website" });
 

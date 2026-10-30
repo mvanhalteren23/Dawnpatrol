@@ -32,7 +32,7 @@ async function main() {
       setupFeeCents: 0,
       includedMinutes: 200,
       minimumMonths: 3,
-      features: "24/7 call answering\nBooks into your Google Calendar\nUrgent calls transferred to you\nText or email summaries to callers\nKeep your existing number\nClient portal with weekly and monthly reports",
+      features: "24/7 call answering\nBooks into your Google Calendar\nUrgent calls transferred to you\nText or email summaries to callers\nKeep your existing number\nClient portal with weekly and monthly reports\nExtra minutes: $25 per 100 minutes",
     },
   ];
   for (const p of plans) await db.plan.upsert({ where: { name: p.name }, create: p, update: {} });

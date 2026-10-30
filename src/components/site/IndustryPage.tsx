@@ -1,6 +1,7 @@
 import { INDUSTRIES, type TradeKey } from "@/lib/site-content";
 import { DemoButton } from "./Demo";
 import { DispatchSimulator } from "./DispatchSimulator";
+import { FollowupAddon } from "./FollowupAddon";
 import { OnboardingBanner, PricingSection } from "./Pricing";
 import { Eyebrow, liveDemo } from "./Sections";
 
@@ -79,6 +80,7 @@ export async function IndustryPage({ trade }: { trade: TradeKey }) {
       </section>
 
       <DispatchSimulator initialTrade={trade} />
+      <FollowupAddon trade={trade} />
       <PricingSection tierName={ind.tierName} trade={trade} />
       <OnboardingBanner trade={trade} />
     </>

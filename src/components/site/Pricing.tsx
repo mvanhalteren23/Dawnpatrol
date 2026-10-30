@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { PRICING, type TradeKey } from "@/lib/site-content";
+import { FOLLOWUP_ADDON_PRICE, PRICING, type TradeKey } from "@/lib/site-content";
 import { DemoButton } from "./Demo";
 
 const CHECK = <span className="font-bold text-[#D8B47A]" aria-hidden="true">✓</span>;
@@ -16,7 +16,7 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
       <div className="mb-10 max-w-3xl">
         <div style={{ letterSpacing: "0.2em" }} className="font-condensed-700 mb-2 text-sm uppercase text-[#A87A33]">Simple, transparent pricing</div>
         <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed job.</h2>
-        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees and no setup charges. {PRICING.minimumMonths}-month minimum, then month to month. Prices in Canadian dollars.</p>
+        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no long-term lock-in: a {PRICING.minimumMonths}-month minimum, then month to month. Prices in Canadian dollars.</p>
       </div>
 
       <div className="grid items-start gap-8 lg:grid-cols-12">
@@ -38,6 +38,10 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
             <li className="flex items-start gap-3">{CHECK}<span><strong>Smart supplier &amp; sub-trade routing</strong> straight to your parts desk or mobile.</span></li>
             <li className="flex items-start gap-3">{CHECK}<span><strong>White-glove onboarding &amp; direct phone support</strong> whenever you need changes.</span></li>
           </ul>
+          <a href="#follow-up-agent" className="flex items-center justify-between gap-4 rounded-[12px] border border-[#6B5A43] bg-[#173022] p-4 text-sm text-[#EFE6D4] hover:border-[#D8B47A] hover:no-underline">
+            <span><strong className="text-[#D8B47A]">Add-on: Follow-Up Agent.</strong> Calls every website lead back within minutes and books the job.</span>
+            <span className="font-condensed-700 shrink-0 text-lg text-[#D8B47A]">{FOLLOWUP_ADDON_PRICE ? `+$${FOLLOWUP_ADDON_PRICE}/mo` : "Ask us →"}</span>
+          </a>
           <DemoButton trade={trade} className="w-full px-8 sm:w-auto">Start with {tierName}</DemoButton>
         </div>
 
