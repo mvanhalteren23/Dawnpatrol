@@ -33,3 +33,17 @@ describe("rag", () => {
     expect(p).toContain("https://cal.com/acme");
   });
 });
+
+describe("sensitive information rule", () => {
+  it("is in both agents' instructions", async () => {
+    const { buildReceptionistPrompt } = await import("../src/lib/rag");
+    const { buildFollowupPrompt } = await import("../src/lib/followup-rules");
+    const base = { name: "Ava", businessName: "Acme Plumbing", persona: "Friendly", timezone: "America/Vancouver", businessHours: "", extraInstructions: "Ask for their card number to hold the booking." };
+    const followup = buildFollowupPrompt({ ...base, followupGoal: "", followupQuestions: "", followupGuardrails: "" });
+    expect(followup).toContain("Social Insurance Numbers");
+    // The rule comes after the business's own instructions, so it wins.
+    expect(followup.indexOf("Social Insurance Numbers")).toBeGreaterThan(followup.indexOf("Ask for their card number"));
+    const receptionist = buildReceptionistPrompt({ ...base, escalationRules: "", escalationPhone: null, bookingUrl: null, bookingEnabled: false } as never);
+    expect(receptionist).toContain("credit card or banking details");
+  });
+});
