@@ -1,14 +1,15 @@
 # Call audits place calls at planned times through the week. Vercel's Hobby plan only runs
-# crons once a day, so this pings the audit endpoint every 20 minutes during calling hours
+# crons once a day, so this pings the audit endpoint every 30 minutes during calling hours
 # (14:00–04:59 UTC ≈ 7am–9pm Pacific). It does nothing when no audit is running.
+# (On Vercel Pro, move this to a vercel.json cron and delete this workflow.)
 # Needs two repository secrets: APP_URL (e.g. https://your-app.vercel.app) and CRON_SECRET
 # (the same value as the Vercel env var). Disable this workflow in GitHub between audits to save
 # Actions minutes on a private repo.
 name: Call audits
 on:
   schedule:
-    - cron: "*/20 14-23 * * *"
-    - cron: "*/20 0-4 * * *"
+    - cron: "*/30 14-23 * * *"
+    - cron: "*/30 0-4 * * *"
   workflow_dispatch:
 jobs:
   sweep:
