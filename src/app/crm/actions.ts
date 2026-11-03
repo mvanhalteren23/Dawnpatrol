@@ -1126,6 +1126,15 @@ export async function rebuildDriveFolders() {
   back("/crm/settings", { notice: "Rebuilding the Drive folders and documents in the connected account. This takes a minute or two." });
 }
 
+/** Record the website's six sample calls with ElevenLabs, once (skips ones already recorded). */
+export async function makeSampleCalls(form: FormData) {
+  await requireAdmin();
+  const { makeAllSamples } = await import("@/lib/sample-calls");
+  const results = await makeAllSamples({ force: form.get("force") === "on" });
+  const failed = results.filter((r) => !r.ok);
+  back("/crm/settings", failed.length ? { error: `${failed.length} of 6 sample calls failed: ${failed[0]!.note}` } : { notice: "All six website sample calls are recorded and stored." });
+}
+
 /** Re-create the CRM's agents in the new ElevenLabs account (see lib/elevenlabs-migrate.ts). */
 export async function migrateElevenLabsAgents() {
   await requireAdmin();

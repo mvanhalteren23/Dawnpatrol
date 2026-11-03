@@ -2,14 +2,13 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { db } from "./db";
 import { textToSpeech } from "./elevenlabs";
-import { getSetting, setSetting } from "./settings";
-import { FALLBACK_VOICES, INDUSTRIES, SAMPLE_VOICES, type Scenario, type TradeKey } from "./site-content";
+import { setSetting } from "./settings";
+import { FALLBACK_VOICES, INDUSTRIES, SAMPLE_VOICES, TRADE_KEYS, type Scenario, type TradeKey } from "./site-content";
 
 // The website's sample calls, voiced by ElevenLabs: the receptionist in the trade's voice, the
-// caller in another. Generated on first play and stored, so each costs credits once.
+// caller in another. Recorded once by an admin (CRM Settings) and stored; the site only plays them.
 
 const DIALOGUE_MODEL = "eleven_v3";
-const RETRY_AFTER_FAILURE_MS = 10 * 60_000;
 
 type Turn = { text: string; voice_id: string };
 
@@ -62,27 +61,39 @@ async function generate(trade: TradeKey, scenario: Scenario): Promise<Buffer> {
   throw last;
 }
 
-/** The stored recording, generating it first if the script or voices changed. Null while unavailable. */
+/** The stored recording for the website. Visitors never trigger a (paid) generation. */
 export async function sampleAudio(trade: TradeKey, scenario: Scenario): Promise<{ data: Buffer; mime: string } | null> {
-  const key = `${trade}:${scenario}`;
-  const hash = sampleHash(trade, scenario);
-  const stored = await db.sampleAudio.findUnique({ where: { key } });
-  if (stored?.hash === hash) return { data: Buffer.from(stored.data), mime: stored.mime };
-  // Don't let a failing key or a burst of visitors trigger repeated (paid) generations.
-  const failKey = `samples.failedAt.${key}`;
-  if (Date.now() - Number((await getSetting(failKey)) ?? 0) < RETRY_AFTER_FAILURE_MS) return stored ? { data: Buffer.from(stored.data), mime: stored.mime } : null;
-  const lockKey = `samples.generating.${key}`;
-  if (Date.now() - Number((await getSetting(lockKey)) ?? 0) < 90_000) return stored ? { data: Buffer.from(stored.data), mime: stored.mime } : null;
-  await setSetting(lockKey, String(Date.now()));
-  try {
-    const data = await generate(trade, scenario);
-    const bytes = new Uint8Array(data);
-    await db.sampleAudio.upsert({ where: { key }, create: { key, hash, data: bytes, mime: "audio/mpeg" }, update: { hash, data: bytes, mime: "audio/mpeg", createdAt: new Date() } });
-    return { data, mime: "audio/mpeg" };
-  } catch {
-    await setSetting(failKey, String(Date.now()));
-    return stored ? { data: Buffer.from(stored.data), mime: stored.mime } : null;
-  } finally {
-    await setSetting(lockKey, "0");
+  const stored = await db.sampleAudio.findUnique({ where: { key: `${trade}:${scenario}` } });
+  return stored ? { data: Buffer.from(stored.data), mime: stored.mime } : null;
+}
+
+export type SampleRunResult = { key: string; ok: boolean; note: string };
+export const SAMPLE_RUN_KEY = "samples.lastRun";
+
+/**
+ * Admin, once: record every sample call with ElevenLabs and store it. Calls already recorded
+ * with the current script and voices are skipped, so running it again only fills the gaps.
+ */
+export async function makeAllSamples(opts: { force?: boolean } = {}): Promise<SampleRunResult[]> {
+  const results: SampleRunResult[] = [];
+  for (const trade of TRADE_KEYS) {
+    for (const scenario of ["customer", "supplier"] as Scenario[]) {
+      const key = `${trade}:${scenario}`;
+      const hash = sampleHash(trade, scenario);
+      const stored = await db.sampleAudio.findUnique({ where: { key }, select: { hash: true } });
+      if (!opts.force && stored?.hash === hash) {
+        results.push({ key, ok: true, note: "Already recorded" });
+        continue;
+      }
+      try {
+        const bytes = new Uint8Array(await generate(trade, scenario));
+        await db.sampleAudio.upsert({ where: { key }, create: { key, hash, data: bytes, mime: "audio/mpeg" }, update: { hash, data: bytes, mime: "audio/mpeg", createdAt: new Date() } });
+        results.push({ key, ok: true, note: `Recorded (${Math.round(bytes.length / 1024)} KB)` });
+      } catch (err) {
+        results.push({ key, ok: false, note: (err as Error).message.slice(0, 300) });
+      }
+    }
   }
+  await setSetting(SAMPLE_RUN_KEY, JSON.stringify({ at: new Date().toISOString(), results }));
+  return results;
 }

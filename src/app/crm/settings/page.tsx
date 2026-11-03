@@ -21,7 +21,7 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
-import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabsAgents, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
+import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabsAgents, makeSampleCalls, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +89,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const company = await companyName();
   const dialer = await dialerStatus();
   const [previousGoogle, sendAs, migrationRaw] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs"), getSetting("elevenlabs.migration")]);
+  const [sampleRows, sampleRunRaw] = await Promise.all([db.sampleAudio.findMany({ select: { key: true, createdAt: true } }), getSetting("samples.lastRun")]);
+  const sampleRun = safeJson<{ at: string; results: { key: string; ok: boolean; note: string }[] } | null>(sampleRunRaw, null);
   const migration = safeJson<import("@/lib/elevenlabs-migrate").MigrationReport | null>(migrationRaw, null);
   const [google, lastSync, goalRaw, promptCount, driveRoot] = await Promise.all([
     googleConnection(),
@@ -179,6 +181,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <form action={disconnectGoogle}><button className="btn-secondary">Disconnect</button></form>
             ) : <a href="/api/google/auth" className="btn">Connect Google</a>}
           </div>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="font-medium">Website sample calls</div>
+            <div className="text-xs text-slate-500">The six recorded calls in the website&apos;s call player ({sampleRows.length} of 6 recorded). Recorded once with ElevenLabs and stored; visitors only play them, so there&apos;s no ongoing cost. Re-record after changing a script or voice.</div>
+            {sampleRun ? (
+              <ul className="mt-1 list-disc pl-4 text-xs">
+                {sampleRun.results.map((r) => <li key={r.key} className={r.ok ? "text-slate-600" : "text-red-700"}>{r.key.replace(":", " · ")}: {r.note}</li>)}
+              </ul>
+            ) : null}
+            <form action={makeSampleCalls} className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+              <button className="btn-secondary py-1 text-xs">{sampleRows.length >= 6 ? "Check sample calls" : "Make website sample calls"}</button>
+              <label className="flex items-center gap-1 text-slate-500"><input type="checkbox" name="force" /> Re-record all</label>
+            </form>
+          </div>
+          <Status ok={sampleRows.length >= 6} label="recorded" />
         </div>
         <div className="flex items-start justify-between gap-4">
           <div><div className="font-medium">Time zone data</div><div className="text-xs text-slate-500">{timezoneDataCurrent() ? "Up to date: knows BC's 2026 move to permanent UTC-7, so bookings, calling hours and reports use the right times." : "Out of date: this server still thinks BC changes its clocks, so times after November 1 can be an hour off. In Vercel, set Settings → Build & Deployment → Node.js Version to the newest and redeploy."}</div></div>

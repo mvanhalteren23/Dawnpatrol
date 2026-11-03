@@ -249,7 +249,7 @@ export const TRADE_KEYS = Object.keys(INDUSTRIES) as TradeKey[];
 export const SAMPLE_VOICES: Record<TradeKey, { dispatcher: string; customer: string; supplier: string }> = {
   contractors: { dispatcher: "cgSgspJ2msm6clMCkdW9" /* Jessica */, customer: "iP95p4xoKVk53GoZ742B" /* Chris */, supplier: "pqHfZKP75CvOlQylNhV4" /* Bill */ },
   mechanics: { dispatcher: "cjVigY5qzO86Huf0OWal" /* Eric */, customer: "bIHbv24MWmeRgasZH58o" /* Will */, supplier: "CwhRBWXzGAHq8TQ4Fs17" /* Roger */ },
-  retail: { dispatcher: "EXAVITQu4vr4xnVDxQaL" /* Sarah */, customer: "FGY2WhTYpPnrIDTdsKH5" /* Laura */, supplier: "nPczCjzI2devNBz1zQrb" /* Brian */ },
+  retail: { dispatcher: "EXAVITQu4vr4xnSDxMaL" /* Sarah */, customer: "FGY2WhTYpPnrIDTdsKH5" /* Laura */, supplier: "nPczCjzI2devNBz1zQrb" /* Brian */ },
 };
 /** Used if one of the voices above isn't available to the account. */
 export const FALLBACK_VOICES = { dispatcher: "cjVigY5qzO86Huf0OWal", caller: "iP95p4xoKVk53GoZ742B" };

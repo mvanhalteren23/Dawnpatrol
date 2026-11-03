@@ -84,7 +84,7 @@ export function DispatchSimulator({ initialTrade = "contractors" }: { initialTra
               </div>
               <span className="font-condensed-700 text-xs uppercase tracking-widest text-[#D8B47A]">{call.badge}</span>
             </div>
-            {status === "error" ? <p className="text-sm text-[#D8B47A]">The recording isn&apos;t ready yet. Try again in a minute; the transcript is below.</p> : null}
+            {status === "error" ? <p className="text-sm text-[#D8B47A]">This recording isn&apos;t available right now. The full call is below.</p> : null}
             <audio
               ref={audio}
               preload="none"
