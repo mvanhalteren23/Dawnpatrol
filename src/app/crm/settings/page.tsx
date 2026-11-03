@@ -11,6 +11,7 @@ import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { googleConfigured, googleConnection, isConsumerGoogle } from "@/lib/google";
 import { stripeConfigured } from "@/lib/billing";
 import { getSetting } from "@/lib/settings";
+import { timezoneDataCurrent } from "@/lib/booking";
 import QRCode from "qrcode";
 import { open } from "@/lib/secret-box";
 import { otpauthUrl } from "@/lib/totp";
@@ -178,6 +179,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <form action={disconnectGoogle}><button className="btn-secondary">Disconnect</button></form>
             ) : <a href="/api/google/auth" className="btn">Connect Google</a>}
           </div>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <div><div className="font-medium">Time zone data</div><div className="text-xs text-slate-500">{timezoneDataCurrent() ? "Up to date: knows BC's 2026 move to permanent UTC-7, so bookings, calling hours and reports use the right times." : "Out of date: this server still thinks BC changes its clocks, so times after November 1 can be an hour off. In Vercel, set Settings → Build & Deployment → Node.js Version to the newest and redeploy."}</div></div>
+          <Status ok={timezoneDataCurrent()} label="current" />
         </div>
         <div className="flex items-start justify-between gap-4">
           <div><div className="font-medium">AI (Claude / Gemini)</div><div className="text-xs text-slate-500">Prospecting, account research, KB drafting, outreach drafting, caller summaries and receptionist test chats. Choose models per job under AI models below.</div></div>

@@ -13,7 +13,9 @@ describe("report periods", () => {
     expect(last.end.toISOString()).toBe("2026-10-26T07:00:00.000Z");
   });
   it("months are calendar months, across the DST change", () => {
-    const nov = periodFor("month", 1, tz, now);
+    // BC moved to permanent UTC-7 in 2026, so the clock change is tested in Los Angeles.
+    const la = "America/Los_Angeles";
+    const nov = periodFor("month", 1, la, now);
     expect(nov.label).toBe("November 2026");
     expect(nov.start.toISOString()).toBe("2026-11-01T07:00:00.000Z"); // still PDT at midnight Nov 1
     expect(nov.end.toISOString()).toBe("2026-12-01T08:00:00.000Z"); // PST

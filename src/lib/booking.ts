@@ -333,3 +333,11 @@ function perDay(list: Date[], tz: string, max: number): Date[] {
   }
   return out.slice(0, max);
 }
+
+/**
+ * Does this server's time-zone data know BC's 2026 move to permanent UTC-7? Older data still
+ * falls back to UTC-8 in winter, which would put bookings, calling hours and reports an hour off.
+ */
+export function timezoneDataCurrent(): boolean {
+  return zonedTime(2027, 1, 15, 12 * 60, "America/Vancouver").getUTCHours() === 19;
+}

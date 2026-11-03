@@ -18,9 +18,13 @@ describe("parseWeeklyHours", () => {
 });
 
 describe("timezones", () => {
+  // BC moved to permanent UTC-7 in 2026, so clock changes are tested in Los Angeles (still on DST).
+  // Results depend on the runtime's time-zone data, so only dates that are the same in every version are used.
   it("converts local wall time to UTC across DST", () => {
-    expect(zonedTime(2026, 7, 15, 9 * 60, TZ).toISOString()).toBe("2026-07-15T16:00:00.000Z"); // PDT, UTC-7
-    expect(zonedTime(2026, 12, 15, 9 * 60, TZ).toISOString()).toBe("2026-12-15T17:00:00.000Z"); // PST, UTC-8
+    const LA = "America/Los_Angeles";
+    expect(zonedTime(2026, 7, 15, 9 * 60, LA).toISOString()).toBe("2026-07-15T16:00:00.000Z"); // PDT, UTC-7
+    expect(zonedTime(2026, 12, 15, 9 * 60, LA).toISOString()).toBe("2026-12-15T17:00:00.000Z"); // PST, UTC-8
+    expect(zonedTime(2026, 7, 15, 9 * 60, TZ).toISOString()).toBe("2026-07-15T16:00:00.000Z"); // Vancouver summer, UTC-7 either way
     expect(formatSlot(new Date("2026-07-15T16:00:00Z"), TZ)).toBe("Wednesday, July 15 at 9:00 AM");
   });
 });
