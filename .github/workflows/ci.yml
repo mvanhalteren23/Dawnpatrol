@@ -3,6 +3,7 @@
 name: CI
 on:
   push:
+    branches-ignore: ["dependabot/**"] # their pull requests are checked below; once is enough
   pull_request:
 concurrency:
   group: ci-${{ github.ref }}
