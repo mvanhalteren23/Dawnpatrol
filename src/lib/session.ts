@@ -48,3 +48,25 @@ export const sessionCookieOptions = {
   path: "/",
   maxAge: MAX_AGE_SECONDS,
 };
+
+// After a correct password, accounts with two-step sign-in get this short-lived pass instead of a
+// session; the code (or a recovery code) on /login/verify turns it into a session.
+export const MFA_COOKIE = "dp_mfa";
+const MFA_SECONDS = 5 * 60;
+
+export async function signMfaPending(userId: string, next: string): Promise<string> {
+  return new SignJWT({ purpose: "mfa", next }).setProtectedHeader({ alg: "HS256" }).setSubject(userId).setIssuedAt().setExpirationTime(`${MFA_SECONDS}s`).sign(secretKey());
+}
+
+export async function verifyMfaPending(token: string | undefined): Promise<{ userId: string; next: string } | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey());
+    if (payload.purpose !== "mfa" || typeof payload.sub !== "string") return null;
+    return { userId: payload.sub, next: typeof payload.next === "string" ? payload.next : "" };
+  } catch {
+    return null;
+  }
+}
+
+export const mfaCookieOptions = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: MFA_SECONDS };

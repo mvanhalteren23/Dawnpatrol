@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { createUser, resetUserPassword, setUserAccess, updateUser } from "./actions";
+import { resetUserTwoStep } from "../../security-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                   </form>
                 </td>
                 <td className="px-3 py-2 align-top"><Link href={`/crm/accounts?owner=${u.id}`}>{ownedBy.get(u.id) ?? 0}</Link></td>
-                <td className="px-3 py-2 align-top text-xs text-slate-500">{u.lastLoginAt ? formatDate(u.lastLoginAt, true) : "never"}</td>
+                <td className="px-3 py-2 align-top text-xs text-slate-500">{u.lastLoginAt ? formatDate(u.lastLoginAt, true) : "never"}<div className={u.totpEnabledAt ? "text-emerald-700" : "text-amber-700"}>{u.totpEnabledAt ? "two-step on" : "two-step off"}</div></td>
                 <td className="px-3 py-2 align-top">
                   <details className="text-xs">
                     <summary className="cursor-pointer text-dawn-700">Manage</summary>
@@ -67,6 +68,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                         <input name="password" type="text" minLength={10} required placeholder="New temporary password (10+)" className="input py-1" autoComplete="off" />
                         <button className="btn-secondary py-1 text-xs">Reset password</button>
                       </form>
+                      {u.totpEnabledAt && u.id !== session.sub ? (
+                        <form action={resetUserTwoStep.bind(null, u.id)}><button className="btn-secondary py-1 text-xs">Reset two-step sign-in (lost phone)</button></form>
+                      ) : null}
                       {u.disabled ? (
                         <form action={setUserAccess.bind(null, u.id)}>
                           <input type="hidden" name="action" value="enable" />

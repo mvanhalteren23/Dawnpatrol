@@ -4,7 +4,10 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./db";
-import { SESSION_COOKIE, sessionCookieOptions, signSession, verifySession, type SessionPayload } from "./session";
+import { MFA_COOKIE, mfaCookieOptions, SESSION_COOKIE, sessionCookieOptions, signMfaPending, signSession, verifyMfaPending, verifySession, type SessionPayload } from "./session";
+import { hashRecoveryCode, verifyTotp } from "./totp";
+import { open } from "./secret-box";
+import { safeJson } from "./utils";
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -63,7 +66,10 @@ const LOCK_MINUTES = 15;
 // Compared against when the email isn't found, so a wrong email takes as long as a wrong password.
 const DUMMY_HASH = "$2b$12$.GIOCwPl4zgnPKoykzlkP.pCeZAWM3HkCEPGg7WRRiJyBmocVMVsG";
 
-export async function login(email: string, password: string): Promise<SessionPayload | null> {
+export type LoginResult = { session: SessionPayload } | { mfa: true } | null;
+
+/** Password check. With two-step sign-in on, it returns { mfa } and sets the short pass for /login/verify. */
+export async function login(email: string, password: string, next = ""): Promise<LoginResult> {
   const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
   if (!user || user.disabled) {
     await bcrypt.compare(password, DUMMY_HASH);
@@ -80,8 +86,45 @@ export async function login(email: string, password: string): Promise<SessionPay
     });
     return null;
   }
+  if (user.totpEnabledAt && user.totpSecret) {
+    const store = await cookies();
+    store.set(MFA_COOKIE, await signMfaPending(user.id, next), mfaCookieOptions);
+    return { mfa: true };
+  }
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null } });
-  return issueSession(user);
+  return { session: await issueSession(user) };
+}
+
+/** Second step: the authenticator code or a one-time recovery code. */
+export async function completeMfaLogin(code: string): Promise<{ session: SessionPayload; next: string } | { error: string }> {
+  const store = await cookies();
+  const pending = await verifyMfaPending(store.get(MFA_COOKIE)?.value);
+  if (!pending) return { error: "That took too long. Sign in again." };
+  const user = await db.user.findUnique({ where: { id: pending.userId } });
+  if (!user || user.disabled || !user.totpEnabledAt || !user.totpSecret) return { error: "Sign in again." };
+  if (user.lockedUntil && user.lockedUntil > new Date()) return { error: "Too many tries. Wait 15 minutes, then sign in again." };
+  const clean = code.trim();
+  let ok = false;
+  const step = verifyTotp(open(user.totpSecret), clean, { lastUsedStep: user.totpLastStep });
+  if (step != null) {
+    ok = true;
+    await db.user.update({ where: { id: user.id }, data: { totpLastStep: step } });
+  } else if (/[a-z]/i.test(clean)) {
+    const codes = safeJson<string[]>(user.recoveryCodes, []);
+    const hash = hashRecoveryCode(clean);
+    if (codes.includes(hash)) {
+      ok = true;
+      await db.user.update({ where: { id: user.id }, data: { recoveryCodes: JSON.stringify(codes.filter((c) => c !== hash)) } });
+    }
+  }
+  if (!ok) {
+    const failed = user.failedLogins + 1;
+    await db.user.update({ where: { id: user.id }, data: failed >= MAX_FAILED_LOGINS ? { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) } : { failedLogins: failed } });
+    return { error: "That code didn't work. Check your authenticator app and try again." };
+  }
+  store.delete(MFA_COOKIE);
+  await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null } });
+  return { session: await issueSession(user), next: pending.next };
 }
 
 /** Set the session cookie for this user (after sign-in, or after changing your own password). */

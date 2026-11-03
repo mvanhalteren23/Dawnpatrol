@@ -1,0 +1,56 @@
+# Nightly off-site database backup with a restore test.
+#   1. pg_dump the Neon database (all tables: accounts, calls, transcripts, leads, audits…)
+#   2. restore that dump into a throwaway Postgres and count rows: proves the backup works
+#   3. encrypt it (AES-256) and keep it as a private artifact for 30 days
+# Needs two repository secrets: BACKUP_DATABASE_URL (the Neon *direct* connection string, not the
+# pooled one) and BACKUP_PASSPHRASE (a long random phrase kept in your password manager; you need it
+# to decrypt a backup). Restore steps: docs/RECOVERY.md.
+name: Database backup
+on:
+  schedule:
+    - cron: "17 10 * * *" # about 2-3am Pacific
+  workflow_dispatch:
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      restoretest:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: restoretest
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check settings
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::Add the BACKUP_DATABASE_URL and BACKUP_PASSPHRASE repository secrets"; exit 1; fi
+          if [ ${#BACKUP_PASSPHRASE} -lt 20 ]; then echo "::error::BACKUP_PASSPHRASE must be at least 20 characters"; exit 1; fi
+      - name: Dump the database
+        run: |
+          docker run --rm -e PGURL="$BACKUP_DATABASE_URL" -v "$PWD:/out" postgres:18 \
+            sh -c 'pg_dump --format=custom --no-owner --no-privileges "$PGURL" -f /out/db.dump'
+          ls -la db.dump
+      - name: Test the restore
+        run: |
+          docker run --rm --network host -v "$PWD:/out" -e PGPASSWORD=restoretest postgres:18 sh -c '
+            pg_restore --clean --if-exists --no-owner --no-privileges -h localhost -U postgres -d postgres /out/db.dump || true
+            psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres -tA -c "
+              select ''accounts='' || (select count(*) from \"Account\")
+                || '' users='' || (select count(*) from \"User\")
+                || '' calls='' || (select count(*) from \"CallLog\")
+                || '' knowledge='' || (select count(*) from \"KnowledgeItem\")"'
+      - name: Encrypt
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in db.dump -out "headabove-db-$(date -u +%Y-%m-%d).dump.enc" -pass env:BACKUP_PASSPHRASE
+          rm db.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_number }}
+          path: headabove-db-*.dump.enc
+          retention-days: 30
+          if-no-files-found: error

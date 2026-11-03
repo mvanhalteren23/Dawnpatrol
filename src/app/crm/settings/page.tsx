@@ -11,6 +11,10 @@ import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { googleConfigured, googleConnection, isConsumerGoogle } from "@/lib/google";
 import { stripeConfigured } from "@/lib/billing";
 import { getSetting } from "@/lib/settings";
+import QRCode from "qrcode";
+import { open } from "@/lib/secret-box";
+import { otpauthUrl } from "@/lib/totp";
+import { TwoStepCard } from "@/components/TwoStepCard";
 import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
 import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
@@ -49,6 +53,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </div>
     </div>
   );
+  const meUser = await db.user.findUniqueOrThrow({ where: { id: session.sub }, select: { email: true, totpSecret: true, totpEnabledAt: true, recoveryCodes: true } });
+  const pendingSecret = !meUser.totpEnabledAt && meUser.totpSecret ? open(meUser.totpSecret) : null;
+  const twoStepCard = (
+    <TwoStepCard
+      enabledAt={meUser.totpEnabledAt?.toISOString() ?? null}
+      setup={pendingSecret ? { secret: pendingSecret, qr: await QRCode.toDataURL(otpauthUrl(pendingSecret, meUser.email, "Head Above Digital"), { margin: 1, width: 180 }) } : null}
+      recoveryLeft={safeJson<string[]>(meUser.recoveryCodes, []).length}
+    />
+  );
   const passwordCard = (
         <div className="card">
           <h2 className="mb-3">Your password</h2>
@@ -68,6 +81,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <Flash params={await searchParams} />
         {myGoogleCard}
         {passwordCard}
+        {twoStepCard}
       </div>
     );
   }
@@ -123,6 +137,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {myGoogleCard}
 
       {passwordCard}
+      {twoStepCard}
 
       <div className="card">
         <h2 className="mb-3">Growth goal</h2>

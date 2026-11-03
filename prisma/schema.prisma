@@ -32,6 +32,11 @@ model User {
   account            Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   lastLoginAt        DateTime?
   createdAt          DateTime  @default(now())
+  // Two-step sign-in (authenticator app). Secret is encrypted; on while totpEnabledAt is set.
+  totpSecret         String?
+  totpEnabledAt      DateTime?
+  totpLastStep       Int? // last code used, so the same code can't be replayed
+  recoveryCodes      String    @default("") // JSON array of SHA-256 hashes, each usable once
 
   google        GoogleAccount?
   ownedAccounts Account[]      @relation("AccountOwner")
@@ -636,4 +641,26 @@ model SampleAudio {
   mime      String   @default("audio/mpeg")
   data      Bytes
   createdAt DateTime @default(now())
+}
+
+// Personal-information breaches and security incidents. BC PIPA and federal PIPEDA expect a record
+// of every breach of security safeguards (kept at least 24 months), whether or not anyone had to
+// be notified.
+model SecurityIncident {
+  id                    String    @id @default(cuid())
+  title                 String
+  discoveredAt          DateTime
+  occurredAt            DateTime?
+  description           String    @default("")
+  dataInvolved          String    @default("") // what personal information, and whose
+  peopleAffected        Int?
+  realRiskOfHarm        String    @default("unknown") // yes | no | unknown (the test for notifying)
+  containment           String    @default("") // what was done to stop it and prevent a repeat
+  individualsNotifiedAt DateTime?
+  regulatorNotifiedAt   DateTime? // OIPC BC / Privacy Commissioner of Canada
+  clientsNotifiedAt     DateTime? // the businesses whose customers' data it was
+  status                String    @default("OPEN") // OPEN | CLOSED
+  createdById           String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
