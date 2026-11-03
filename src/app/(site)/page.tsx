@@ -6,6 +6,8 @@ import { DispatchSimulator } from "@/components/site/DispatchSimulator";
 import { FollowupAddon } from "@/components/site/FollowupAddon";
 import { OnboardingBanner, PricingSection } from "@/components/site/Pricing";
 import { Eyebrow, liveDemo } from "@/components/site/Sections";
+import { CallScene } from "@/components/site/CallScene";
+import { Reveal } from "@/components/site/Reveal";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +68,17 @@ export default async function Home() {
         </div>
       </section>
 
+      <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:px-8">
+        <Reveal className="space-y-4 lg:col-span-6">
+          <Eyebrow>While you work, it works</Eyebrow>
+          <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">You stay under the car. The call still gets booked.</h2>
+          <p className="text-[18px] font-medium leading-[28px] text-[#6B5A43]">The phone rings mid-job. Your AI receptionist answers in your shop&apos;s name, offers real openings from your calendar, books the oil change and texts you both the details. You find out when you check your phone.</p>
+        </Reveal>
+        <div className="pt-6 lg:col-span-6 lg:pt-0">
+          <CallScene trade="mechanics" />
+        </div>
+      </section>
+
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mb-10 max-w-3xl">
           <Eyebrow>The real business problem</Eyebrow>
@@ -73,7 +86,7 @@ export default async function Home() {
           <p className="mt-3 text-[18px] font-medium leading-[28px] text-[#6B5A43]">When a homeowner has a leaking water heater or a driver hears their brakes grinding, they don&apos;t leave a voicemail and wait four hours. They hang up and call the next shop that picks up.</p>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-4 rounded-[20px] border-2 border-[#A8401F] bg-[#EFE6D4] p-6 sm:p-8">
+          <Reveal className="space-y-4 rounded-[20px] border-2 border-[#A8401F] bg-[#EFE6D4] p-6 sm:p-8">
             <div className="inline-flex rounded-[6px] bg-[#A8401F] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#EFE6D4]">Without Head Above Digital</div>
             <h3 className="font-condensed-700 text-[32px] leading-[1.05] text-[#1F3B2D]">The daily job-site chaos</h3>
             <ul className="space-y-3 text-base text-[#1F3B2D]">
@@ -82,8 +95,8 @@ export default async function Home() {
               <li className="flex items-start gap-3">{X}<span>After-hours and weekend emergencies ringing out to a full voicemail box.</span></li>
               <li className="flex items-start gap-3">{X}<span>Parts suppliers and sub-trades stuck on hold while you answer &ldquo;How late are you open?&rdquo;</span></li>
             </ul>
-          </div>
-          <div className="space-y-4 rounded-[20px] border-2 border-[#173022] bg-[#1F3B2D] p-6 text-[#EFE6D4] sm:p-8">
+          </Reveal>
+          <Reveal delay={150} className="space-y-4 rounded-[20px] border-2 border-[#173022] bg-[#1F3B2D] p-6 text-[#EFE6D4] sm:p-8">
             <div className="inline-flex rounded-[6px] bg-[#D8B47A] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#1F3B2D]">With Head Above Digital</div>
             <h3 className="font-condensed-700 text-[32px] leading-[1.05] text-[#EFE6D4]">Like having a veteran dispatcher on the desk</h3>
             <ul className="space-y-3 text-base text-[#EFE6D4]">
@@ -92,7 +105,7 @@ export default async function Home() {
               <li className="flex items-start gap-3">{CHECK}<span>Sends the customer an instant confirmation text and texts you the full job summary.</span></li>
               <li className="flex items-start gap-3">{CHECK}<span>Filters out parts drivers and sub-trades and patches them straight through to your cell or parts counter.</span></li>
             </ul>
-          </div>
+          </Reveal>
         </div>
       </section>
 

@@ -253,3 +253,40 @@ export const SAMPLE_VOICES: Record<TradeKey, { dispatcher: string; customer: str
 };
 /** Used if one of the voices above isn't available to the account. */
 export const FALLBACK_VOICES = { dispatcher: "cjVigY5qzO86Huf0OWal", caller: "iP95p4xoKVk53GoZ742B" };
+
+/** The animated call scene in each page's hero: a call comes in, the AI answers and books, a text pops up. */
+export const CALL_SCENES: Record<TradeKey, { business: string; setting: string; lines: Line[]; toast: { title: string; body: string } }> = {
+  mechanics: {
+    business: "Sea-to-Sky Auto & Truck",
+    setting: "Bay 2 · you're under a 2019 F-150",
+    lines: [
+      { speaker: "Caller", text: "Hi, can I get an oil change on my Civic this week?" },
+      { speaker: "AI Dispatcher", text: "Sure. I have Tuesday at 9:00 AM or Wednesday at 1:30. Which works?" },
+      { speaker: "Caller", text: "Tuesday at 9, thanks. It's Jenna." },
+      { speaker: "AI Dispatcher", text: "Booked, Jenna. I've texted you the drop-off details." },
+    ],
+    toast: { title: "Oil change booked", body: "Tue 9:00 AM · 2018 Honda Civic · Jenna (604-555-0136)" },
+  },
+  contractors: {
+    business: "Atwell Peak Contracting",
+    setting: "On the roof · saw running",
+    lines: [
+      { speaker: "Caller", text: "Hi, I've got a leak around my skylight. Can someone take a look?" },
+      { speaker: "AI Dispatcher", text: "We can. Is Thursday at 8:00 AM good for a site visit? What's the address?" },
+      { speaker: "Caller", text: "Thursday works. 1420 Pemberton Ave." },
+      { speaker: "AI Dispatcher", text: "You're booked. I've texted you the confirmation." },
+    ],
+    toast: { title: "Site visit booked", body: "Thu 8:00 AM · Skylight leak · 1420 Pemberton Ave" },
+  },
+  retail: {
+    business: "Garibaldi Outdoor & Gear",
+    setting: "Saturday rush · line at the register",
+    lines: [
+      { speaker: "Caller", text: "Do you do ski boot fittings this weekend?" },
+      { speaker: "AI Dispatcher", text: "Yes. I have Saturday at 11:00 AM or 2:00 PM. Which works?" },
+      { speaker: "Caller", text: "11, please. It's Sarah." },
+      { speaker: "AI Dispatcher", text: "You're booked, Sarah. Parking details are on their way by text." },
+    ],
+    toast: { title: "Fitting booked", body: "Sat 11:00 AM · Ski boot fitting · Sarah (604-555-0174)" },
+  },
+};
