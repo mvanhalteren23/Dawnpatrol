@@ -13,10 +13,13 @@ async function main() {
   // ADMIN_PASSWORD is only needed to create the first admin; once that login exists it can be
   // removed from the environment (it never changes an existing password).
   const existing = await db.user.findUnique({ where: { email } });
-  if (!existing && !password) throw new Error("Set ADMIN_PASSWORD before seeding");
+  // A database that already has an admin (e.g. the preview copy, which has no ADMIN_EMAIL or
+  // ADMIN_PASSWORD set) keeps it; only a brand-new database needs ADMIN_PASSWORD.
+  const anyAdmin = existing ?? (await db.user.findFirst({ where: { role: "ADMIN", disabled: false }, orderBy: { createdAt: "asc" } }));
+  if (!anyAdmin && !password) throw new Error("Set ADMIN_PASSWORD before seeding");
   const admin = existing
     ? await db.user.update({ where: { email }, data: { role: "ADMIN" } })
-    : await db.user.create({ data: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password!, 12) } });
+    : anyAdmin ?? (await db.user.create({ data: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password!, 12) } }));
   console.log(`Admin: ${admin.email}`);
 
   for (const p of DEFAULT_PROMPTS) {
