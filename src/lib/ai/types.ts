@@ -3,6 +3,12 @@
 export const PROVIDERS = ["anthropic", "gemini"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
+/** Whether a model name belongs to the provider (a Claude model can't run on Gemini, and vice versa). */
+export function modelFitsProvider(provider: Provider, model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return provider === "anthropic" ? m.startsWith("claude") : /^(models\/)?(gemini|gemma|learnlm)/.test(m);
+}
+
 export const TASKS = {
   research: { label: "Account research", web: true, help: "Web research on one business (Claude: web search + fetch; Gemini: Google Search + page reading)." },
   prospecting: { label: "Prospect search", web: true, help: "Find new businesses matching your criteria." },

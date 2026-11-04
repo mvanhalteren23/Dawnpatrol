@@ -4,7 +4,7 @@ import { getSetting, setSetting } from "../settings";
 import { safeJson } from "../utils";
 import { anthropicConfigured } from "./anthropic";
 import { geminiConfigured } from "./gemini";
-import { PROVIDERS, TASK_KEYS, TASKS, type Provider, type Route, type Routes, type Target, type Task, type Usage } from "./types";
+import { modelFitsProvider, PROVIDERS, TASK_KEYS, TASKS, type Provider, type Route, type Routes, type Target, type Task, type Usage } from "./types";
 
 // Which provider and model each task runs on. Stored in the "ai.routes" setting and edited in
 // CRM → Settings → AI models, so models can be swapped without a deploy. Each route has an
@@ -42,7 +42,11 @@ export function defaultRoutes(): Routes {
 
 function validTarget(x: unknown): Target | null {
   const t = x as Partial<Target> | null;
-  return t && PROVIDERS.includes(t.provider as Provider) && typeof t.model === "string" && t.model.trim() ? { provider: t.provider as Provider, model: t.model.trim() } : null;
+  if (!t || !PROVIDERS.includes(t.provider as Provider) || typeof t.model !== "string" || !t.model.trim()) return null;
+  const provider = t.provider as Provider;
+  // A saved route can pair a provider with the other provider's model (provider changed, model
+  // left as it was). Run that provider's default model instead of a call that can only fail.
+  return { provider, model: modelFitsProvider(provider, t.model) ? t.model.trim() : DEFAULT_MODELS[provider] };
 }
 
 export async function getRoutes(): Promise<Routes> {

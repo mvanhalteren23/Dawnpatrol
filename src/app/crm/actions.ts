@@ -1038,15 +1038,18 @@ export async function seedDefaultPrompts() {
 
 export async function saveAiRoutes(form: FormData) {
   await requireAdmin();
-  const { PROVIDERS, TASK_KEYS } = await import("@/lib/ai/types");
-  const { saveRoutes } = await import("@/lib/ai/router");
+  const { modelFitsProvider, PROVIDERS, TASK_KEYS } = await import("@/lib/ai/types");
+  const { DEFAULT_MODELS, saveRoutes } = await import("@/lib/ai/router");
   const provider = (v: string) => (PROVIDERS as readonly string[]).includes(v) ? (v as (typeof PROVIDERS)[number]) : null;
+  // A model typed for the other provider (or left over after switching provider) becomes that
+  // provider's default, so a route can't be saved in a state where every call fails.
+  const model = (p: (typeof PROVIDERS)[number], m: string) => (m && modelFitsProvider(p, m) ? m : DEFAULT_MODELS[p]);
   const routes = Object.fromEntries(
     TASK_KEYS.map((t) => {
       const p = provider(str(form, `${t}_provider`)) ?? "anthropic";
       const fp = provider(str(form, `${t}_fb_provider`));
       const fm = str(form, `${t}_fb_model`).trim();
-      return [t, { provider: p, model: str(form, `${t}_model`).trim() || (p === "gemini" ? "gemini-flash-latest" : "claude-sonnet-5-5"), fallback: fp && fm ? { provider: fp, model: fm } : null }];
+      return [t, { provider: p, model: model(p, str(form, `${t}_model`).trim()), fallback: fp && fm ? { provider: fp, model: model(fp, fm) } : null }];
     }),
   );
   await saveRoutes(routes as Parameters<typeof saveRoutes>[0]);

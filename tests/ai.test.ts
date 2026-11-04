@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { estimateCost, TASK_KEYS, TASKS } from "@/lib/ai/types";
+import { estimateCost, modelFitsProvider, TASK_KEYS, TASKS } from "@/lib/ai/types";
 
 describe("AI router types", () => {
   it("estimates Claude cost at list prices and leaves Gemini to Google", () => {
     expect(estimateCost("anthropic", "claude-sonnet-5-5", 1_000_000, 100_000)).toBeCloseTo(3);
     expect(estimateCost("anthropic", "unknown-model", 1000, 1000)).toBeNull();
     expect(estimateCost("gemini", "gemini-flash-latest", 1000, 1000)).toBeNull();
+  });
+
+  it("matches model names to their provider", () => {
+    expect(modelFitsProvider("anthropic", "claude-sonnet-5-5")).toBe(true);
+    expect(modelFitsProvider("gemini", "gemini-flash-latest")).toBe(true);
+    expect(modelFitsProvider("gemini", "models/gemini-2.5-pro")).toBe(true);
+    expect(modelFitsProvider("gemini", "claude-sonnet-5-5")).toBe(false);
+    expect(modelFitsProvider("anthropic", "gemini-flash-latest")).toBe(false);
   });
 
   it("marks the web research jobs", () => {
