@@ -4,6 +4,7 @@ import { syncCalls } from "@/lib/call-sync";
 import { runScheduledReports } from "@/lib/client-reports";
 import { processDueLeads } from "@/lib/followup";
 import { processAudits } from "@/lib/call-audit";
+import { expireIdleDemos } from "@/lib/agent-lifecycle";
 
 export const maxDuration = 300;
 
@@ -18,5 +19,7 @@ export async function GET(req: Request) {
   const followUpCalls = await processDueLeads(25).catch((err: Error) => err.message);
   // Call audits: backstop for the 20-minute GitHub Actions trigger.
   const audits = await processAudits().catch((err: Error) => err.message);
-  return NextResponse.json({ ...sync, reports, followUpCalls, audits });
+  // Demo agents idle for 30 days come out of ElevenLabs (kept in the CRM, can be revived).
+  const demos = await expireIdleDemos().catch((err: Error) => err.message);
+  return NextResponse.json({ ...sync, reports, followUpCalls, audits, demos });
 }

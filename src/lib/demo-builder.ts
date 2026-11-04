@@ -40,6 +40,7 @@ export async function createDemoAgent(accountId: string, opts: { name?: string; 
       bookingEnabled: opts.bookingEnabled,
       bookingTitle: `Demo booking (${account.name})`,
       bookingAddsToCrm: false, // demo bookings are pretend customers, not leads
+      lifecycle: "demo",
     },
   });
   const runId = account.website || account.domain ? await startKbDraft(r.id) : null;

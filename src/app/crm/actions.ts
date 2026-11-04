@@ -761,6 +761,7 @@ export async function createReceptionist(accountId: string, form: FormData) {
       businessName: str(form, "businessName") || account.name,
       ragToken: randomBytes(24).toString("base64url"),
       demoExtension: !followup && form.get("demo") === "on" ? await freeExtension() : null,
+      lifecycle: !followup && form.get("demo") === "on" ? "demo" : "production",
       ...(followup
         ? { agentType: "followup", leadFormKey: newLeadFormKey(), leadAlertOn: "leads", persona: "Warm, upbeat and to the point. Sounds like a helpful person from the office, never pushy." }
         : {}),
@@ -1238,6 +1239,27 @@ export async function createDemoReceptionist(accountId: string, form: FormData) 
 async function freeExtension(): Promise<string> {
   const taken = await db.receptionist.findMany({ where: { demoExtension: { not: null } }, select: { demoExtension: true } });
   return nextFreeExtension(taken.map((t) => t.demoExtension));
+}
+
+/** A signed client: a fresh production agent copied from their demo (admin). */
+export async function promoteDemo(receptionistId: string) {
+  const session = await requireAdmin();
+  const { promoteToProduction } = await import("@/lib/agent-lifecycle");
+  const res = await promoteToProduction(receptionistId, { id: session.sub, email: session.email });
+  if (!res.ok) back(`/crm/receptionists/${"existingId" in res && res.existingId ? res.existingId : receptionistId}`, { error: res.message });
+  after(() => res.background().catch((e) => console.error("promote sync", e)));
+  back(`/crm/receptionists/${res.id}`, { notice: `Production receptionist created with ${res.items} knowledge items from the demo, and syncing to ElevenLabs. Next: set up their line (or keep their number), connect their calendar, and work through onboarding. The demo stays on the demo line until it expires.` });
+}
+
+/** Bring an expired demo back onto the demo line. */
+export async function reviveDemoAction(receptionistId: string) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { accountId: true, lifecycle: true } });
+  await guard(session, r.accountId);
+  if (r.lifecycle !== "expired") back(`/crm/receptionists/${receptionistId}`, { notice: "This demo is already live" });
+  const { reviveDemo } = await import("@/lib/agent-lifecycle");
+  const ext = await reviveDemo(receptionistId).catch((e) => back(`/crm/receptionists/${receptionistId}`, { error: `Couldn't revive it: ${(e as Error).message}` }));
+  back(`/crm/receptionists/${receptionistId}`, { notice: `Demo revived on extension ${ext}` });
 }
 
 /**

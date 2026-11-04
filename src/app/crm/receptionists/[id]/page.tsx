@@ -8,7 +8,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { formatDate } from "@/lib/utils";
-import { Field, Notice, PageHeader, StatusBadge } from "@/components/ui";
+import { Badge, Field, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
@@ -23,7 +23,8 @@ import { syncCallsThrottled } from "@/lib/call-sync";
 import { FollowupSettingsCard, WebsiteFormCard } from "@/components/FollowupCards";
 import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
-import { draftKbFromWebsite, getBusinessLine, previewOpenings, removeBusinessLine, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { demoExpiry } from "@/lib/agent-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -50,20 +51,30 @@ export default async function ReceptionistPage({ params, searchParams }: { param
     ? await db.user.findMany({ where: { role: { in: ["ADMIN", "REP"] }, disabled: false, google: { isNot: null } }, select: { id: true, name: true, email: true } })
     : (await googleConnection(session.sub)).connected ? [{ id: session.sub, name: "You", email: session.email }] : [];
   const { number: demoNumber } = await demoLineConfig();
+  const expiresAt = r.lifecycle === "demo" ? (await demoExpiry([r])).get(r.id) ?? null : null;
+  const promotedTo = r.lifecycle !== "production" ? await db.receptionist.findFirst({ where: { promotedFromId: r.id }, select: { id: true, name: true } }) : null;
+  const promotedFrom = r.promotedFromId ? await db.receptionist.findUnique({ where: { id: r.promotedFromId }, select: { id: true, name: true } }) : null;
+  const canPromote = isAdmin && r.lifecycle !== "production" && r.agentType === "inbound" && !promotedTo;
 
   return (
     <div>
       <AutoRefresh active={kbRun?.status === "RUNNING"} />
       <PageHeader
         title={`${r.name} — ${r.businessName}`}
-        subtitle={<span className="flex items-center gap-2"><Link href={`/crm/accounts/${r.accountId}`}>{r.account.name}</Link><StatusBadge status={r.syncStatus} />{r.lastSyncedAt ? <span className="text-xs text-slate-400">synced {formatDate(r.lastSyncedAt, true)}</span> : null}</span>}
+        subtitle={<span className="flex items-center gap-2"><Link href={`/crm/accounts/${r.accountId}`}>{r.account.name}</Link><Badge className={r.lifecycle === "production" ? "bg-emerald-100 text-emerald-800" : r.lifecycle === "demo" ? "bg-sky-100 text-sky-800" : "bg-slate-200 text-slate-600"}>{r.lifecycle === "production" ? "Production" : r.lifecycle === "demo" ? "Demo" : "Expired demo"}</Badge><StatusBadge status={r.syncStatus} />{r.lastSyncedAt ? <span className="text-xs text-slate-400">synced {formatDate(r.lastSyncedAt, true)}</span> : null}</span>}
         actions={<>
           <form action={draftKbFromWebsite.bind(null, r.id)}><SubmitButton className="btn-secondary" pendingText="Starting…">Draft KB from website (Claude)</SubmitButton></form>
-          <form action={syncToElevenLabs.bind(null, r.id)}><SubmitButton pendingText="Syncing…">Sync to ElevenLabs</SubmitButton></form>
+          {r.lifecycle === "expired"
+            ? <form action={reviveDemoAction.bind(null, r.id)}><SubmitButton pendingText="Reviving…">Revive demo</SubmitButton></form>
+            : <form action={syncToElevenLabs.bind(null, r.id)}><SubmitButton pendingText="Syncing…">Sync to ElevenLabs</SubmitButton></form>}
+          {canPromote ? <form action={promoteDemo.bind(null, r.id)}><SubmitButton className="btn-secondary" pendingText="Promoting…">Promote to production</SubmitButton></form> : null}
         </>}
       />
       <Flash params={sp} />
       {r.demoExtension ? <Notice kind="success">Demo: call <b>{demoNumber ? formatPhone(demoNumber) : "the demo line"}</b> and enter extension <b>{r.demoExtension}</b> to hear {r.name} answer for {r.businessName}. Send the prospect the same number and extension.</Notice> : null}
+      {r.lifecycle === "demo" ? <Notice>{expiresAt ? <>Demo agent: if nobody calls it or changes it, it&apos;s removed from ElevenLabs on <b>{formatDate(expiresAt)}</b> (settings and knowledge stay here and it can be revived).</> : <>Demo agent: kept while {r.account.name} is an active deal.</>}{promotedTo ? <> Promoted to <Link href={`/crm/receptionists/${promotedTo.id}`}>{promotedTo.name} (production)</Link>.</> : canPromote ? " When they sign, Promote to production gives them a fresh production agent with this demo's settings and knowledge." : ""}</Notice> : null}
+      {r.lifecycle === "expired" ? <Notice>This demo expired {r.expiredAt ? formatDate(r.expiredAt) : ""}: it was removed from ElevenLabs and the demo line. Its settings and knowledge are kept. Revive it to put it back on the demo line with a new extension.{promotedTo ? <> The client&apos;s production agent is <Link href={`/crm/receptionists/${promotedTo.id}`}>{promotedTo.name}</Link>.</> : null}</Notice> : null}
+      {promotedFrom ? <Notice kind="success">Production agent, promoted from the demo <Link href={`/crm/receptionists/${promotedFrom.id}`}>{promotedFrom.name}</Link>.</Notice> : null}
       {!elevenLabsConfigured() ? <Notice kind="error">ELEVENLABS_API_KEY is not set — sync is disabled.</Notice> : null}
       {r.syncStatus === "DIRTY" ? <Notice>Knowledge or settings changed since the last sync. Sync to push them to the live agent.</Notice> : null}
       {r.syncError && r.syncStatus === "FAILED" ? <Notice kind="error">Last sync failed: {r.syncError}</Notice> : null}

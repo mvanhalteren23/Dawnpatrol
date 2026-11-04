@@ -281,6 +281,11 @@ model Receptionist {
   ragToken              String         @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
   demoExtension         String?        @unique
+  // "production" = a client's (or our own) live agent; "demo" = a prospect's demo, deleted from
+  // ElevenLabs after 30 idle days ("expired": settings and knowledge kept, so it can be revived).
+  lifecycle             String         @default("production")
+  expiredAt             DateTime?
+  promotedFromId        String? // the demo this production agent was promoted from
   // "inbound" = answers calls (receptionist); "followup" = calls website leads back within minutes.
   agentType             String         @default("inbound")
   followupGoal          String         @default("") // e.g. "Book a site visit for a quote"

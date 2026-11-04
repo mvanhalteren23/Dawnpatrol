@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { demoLineConfig, formatPhone } from "@/lib/demo-line";
 import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { formatDate } from "@/lib/utils";
+import { demoExpiry } from "@/lib/agent-lifecycle";
 import { Badge, Empty, Field, Notice, PageHeader, StageBadge, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { assignDemoExtension, clearDemoExtension, createBuilderAgent, saveDemoLineSettings } from "../actions";
@@ -25,12 +26,13 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
     db.receptionist.findFirst({ where: { agentType: "builder" } }),
   ]);
   const app = appUrl();
+  const expiry = await demoExpiry(demos);
 
   return (
     <div className="max-w-5xl">
       <PageHeader
         title="Demo line"
-        subtitle={<>Prospects call <b>{config.number ? formatPhone(config.number) : "your demo number"}</b>, enter their extension, and hear their own AI receptionist. {demoCalls} demo calls in the last 30 days.</>}
+        subtitle={<>Prospects call <b>{config.number ? formatPhone(config.number) : "your demo number"}</b>, enter their extension, and hear their own AI receptionist. {demoCalls} demo calls in the last 30 days. Demos with no calls or changes for 30 days are removed from ElevenLabs (unless the deal is active) and can be revived from their page.</>}
       />
       <Flash params={await searchParams} />
       {!process.env.TWILIO_AUTH_TOKEN ? <Notice kind="error">Set TWILIO_AUTH_TOKEN — the directory rejects calls it can&apos;t verify came from Twilio.</Notice> : null}
@@ -39,7 +41,7 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
       <div className="card mb-6 overflow-x-auto p-0">
         {demos.length ? (
           <table className="table">
-            <thead><tr><th>Ext</th><th>Prospect</th><th>Receptionist</th><th>Ready?</th><th>Demo calls</th><th>Last call</th><th></th></tr></thead>
+            <thead><tr><th>Ext</th><th>Prospect</th><th>Receptionist</th><th>Ready?</th><th>Demo calls</th><th>Last call</th><th>Expires</th><th></th></tr></thead>
             <tbody>{demos.map((r) => (
               <tr key={r.id}>
                 <td className="text-lg font-semibold">{r.demoExtension}</td>
@@ -48,6 +50,7 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
                 <td>{r.elevenLabsAgentId ? <StatusBadge status={r.syncStatus} /> : <Badge className="bg-red-100 text-red-800">not synced</Badge>}</td>
                 <td>{r._count.calls}</td>
                 <td className="text-xs">{formatDate(r.calls[0]?.startedAt, true)}</td>
+                <td className="text-xs">{r.lifecycle !== "demo" ? <span className="text-slate-400">{r.lifecycle === "production" ? "production" : ""}</span> : expiry.get(r.id) ? formatDate(expiry.get(r.id)!) : <span className="text-slate-500">kept (active deal)</span>}</td>
                 <td><form action={clearDemoExtension.bind(null, r.id)}><button className="text-xs text-slate-400 hover:text-red-600">remove</button></form></td>
               </tr>
             ))}</tbody>

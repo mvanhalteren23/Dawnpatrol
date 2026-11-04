@@ -301,6 +301,7 @@ export function agentConfig(
 
 export async function syncReceptionist(receptionistId: string): Promise<{ agentId: string; docs: number }> {
   const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, include: { knowledge: true } });
+  if (r.lifecycle === "expired") throw new Error("This demo has expired. Click Revive demo to bring it back.");
   const previous = safeJson<KbDocRef[]>(r.elevenLabsKbDocs, []);
   try {
     const compiled = compileByCategory(r.knowledge, r.businessName);
