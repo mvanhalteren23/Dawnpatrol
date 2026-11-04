@@ -191,7 +191,7 @@ export async function callerFollowUp(businessName: string, transcript: string, c
 
 const CallNotesSchema = z.object({
   summary: z.string().describe("2-4 sentences: who answered, what was discussed, how it ended"),
-  outcome: z.enum(["connected", "booked", "voicemail", "no_answer", "call_back", "not_interested", "wrong_number"]).describe("Best description of how the call went"),
+  outcome: z.enum(["connected", "booked", "interested", "voicemail", "no_answer", "call_back", "not_interested", "wrong_number"]).describe("Best description of how the call went: interested = they want to see or hear a demo, or asked for more, but nothing was booked"),
   nextStep: z.string().describe("One concrete suggested next step for the salesperson"),
   transcript: z.string().describe("Speaker-labelled transcript (Rep: / Prospect:)"),
 });
@@ -205,6 +205,24 @@ export async function summarizeCallRecording(audio: { data: Buffer; mimeType: st
     return gemini.structuredAudio(t.model, CallNotesSchema, `This is a recorded outbound sales call from ${company}, which sells AI receptionists to small businesses. ${context}\nThe rep is on one channel, the person called on the other. Transcribe it, then summarise only what was actually said. Don't invent details; if the call was a voicemail or nobody answered, say so.`, audio);
   });
   return res.data;
+}
+
+const CallFactsSchema = z.object({
+  facts: z.array(z.object({
+    question: z.string().describe("What a caller to the prospect's business might ask, e.g. 'Do you work on diesel trucks?'"),
+    answer: z.string().describe("The answer, using only what the prospect said on the call"),
+  })).describe("Facts the prospect stated about their own business: services, areas, hours, booking, pricing approach, policies, who handles which calls. Empty if they shared none."),
+});
+
+/** Business facts the prospect stated on a sales call, as Q&A for their demo agent's knowledge base. */
+export async function extractCallFacts(transcript: string, businessName: string): Promise<{ question: string; answer: string }[]> {
+  const ex = await structured(
+    "extraction",
+    CallFactsSchema,
+    `This is the transcript of a sales call to ${businessName}. List only facts the prospect (not the rep) stated about their own business, worded as a customer's question and the business's answer. Never invent, generalise or add anything they didn't say; skip small talk, objections and anything about the AI receptionist product itself. No payment, banking, SIN or health details.`,
+    transcript,
+  );
+  return ex.data.facts.filter((f) => f.question.trim() && f.answer.trim()).slice(0, 20);
 }
 
 // --- AI voicemail scripts ------------------------------------------------------

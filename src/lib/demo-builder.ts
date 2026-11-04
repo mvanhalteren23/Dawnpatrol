@@ -12,7 +12,7 @@ import { companyName } from "./brand";
 import { addDays } from "./utils";
 import { isClientStage } from "./constants";
 import { matchAccount } from "./agent-booking";
-import { answersToKnowledge, parseAnswers, pickDiscoveryQuestions } from "./discovery-rules";
+import { answersToKnowledge, parseAnswers, pickDiscoveryQuestions, type QA } from "./discovery-rules";
 
 // Demo agents for prospects, and the server side of the company receptionist's sales tools:
 // get_personalization_questions, save_personalization_answers and take_client_message.
@@ -88,8 +88,24 @@ export async function savePersonalizationAnswers(house: Receptionist, input: Cal
       data: { name: input.business_name?.trim() || input.caller_name?.trim() || "Caller", phone: input.caller_phone?.trim() || null, industry: input.business_type?.trim() || null, source: "inbound", notes: `Created from a call with ${house.name}.` },
     });
   }
-  const kb = answersToKnowledge(answers, input.caller_name ?? null, new Date());
-  await recordActivity({ accountId: account.id, type: "NOTE", direction: "INBOUND", source: "receptionist", subject: `Personalization answers from the call (${answers.length})`, body: kb.content });
+  const added = await addAnswersToDemo(account, answers, { who: input.caller_name?.trim() || null, by: house.name, source: `a call with ${house.name}` });
+  return {
+    result: { saved: true, answers: answers.length, message: "Saved. Tell the caller their demo agent will already know what they just shared, and that anything else can be added during the demo. Then wrap up." },
+    background: added.background,
+  };
+}
+
+type AccountRow = NonNullable<Awaited<ReturnType<typeof db.account.findUnique>>>;
+
+/**
+ * Put what a prospect told us into their demo agent's knowledge (live straight away), building
+ * the demo agent first if the account has none. Logs it, flags the account for review, and returns
+ * the slow part (website draft + ElevenLabs sync) as `background`.
+ */
+export async function addAnswersToDemo(account: AccountRow, answers: QA[], o: { who: string | null; by: string; source: string; title?: string; tag?: string; intro?: string }) {
+  const kb = answersToKnowledge(answers, o.who, new Date(), o.intro);
+  if (o.title) kb.title = o.title;
+  await recordActivity({ accountId: account.id, type: "NOTE", direction: "INBOUND", source: "receptionist", subject: `Answers for the demo agent from ${o.source} (${answers.length})`, body: kb.content });
 
   const existing = await db.receptionist.findFirst({ where: { accountId: account.id, demoExtension: { not: null } }, orderBy: { createdAt: "asc" } });
   let demo = existing;
@@ -103,10 +119,10 @@ export async function savePersonalizationAnswers(house: Receptionist, input: Cal
     demo = created.receptionist;
     runId = created.runId;
   }
-  await db.knowledgeItem.create({ data: { receptionistId: demo.id, category: "OTHER", title: kb.title, content: kb.content, tags: "owner-call", isActive: true, updatedBy: house.name } });
+  await db.knowledgeItem.create({ data: { receptionistId: demo.id, category: "OTHER", title: kb.title, content: kb.content, tags: o.tag ?? "owner-call", isActive: true, updatedBy: o.by } });
   await db.account.update({
     where: { id: account.id },
-    data: { needsReview: true, reviewReason: `${input.caller_name?.trim() || "The caller"} answered ${answers.length} personalization question${answers.length === 1 ? "" : "s"} on a call with ${house.name}. They're in ${existing ? "their demo agent" : "a new demo agent built for them"}: check it before the demo.` },
+    data: { needsReview: true, reviewReason: `${answers.length} answer${answers.length === 1 ? "" : "s"} from ${o.source} went into ${existing ? "their demo agent" : "a new demo agent built for them"}: check it before the demo.` },
   });
 
   const demoId = demo.id;
@@ -114,10 +130,51 @@ export async function savePersonalizationAnswers(house: Receptionist, input: Cal
   const background = existing
     ? () => syncReceptionist(demoId).then(() => undefined).catch((e) => console.error("demo agent sync after answers", e))
     : () => finishDemoAgent(demoId, runId, createdById).catch((e) => console.error("demo agent build after answers", e));
-  return {
-    result: { saved: true, answers: answers.length, message: "Saved. Tell the caller their demo agent will already know what they just shared, and that anything else can be added during the demo. Then wrap up." },
-    background,
-  };
+  return { demoId, created: !existing, background };
+}
+
+const BUILD_FROM_CALL = new Set(["booked", "interested"]);
+
+/**
+ * Way 3a: a rep's dialer call where the prospect was interested or booked. The facts they gave
+ * (from the call transcript) plus the website draft become their demo agent. Runs once per call;
+ * `force` is the "Build demo from this call" button, for any outcome. The slow part (website draft
+ * and sync) is returned as `background` for the caller to run after responding.
+ */
+export async function buildDemoFromCall(activityId: string, opts: { force?: boolean } = {}): Promise<{ ok: boolean; message: string; demoId?: string; background?: () => Promise<void> }> {
+  const call = await db.activity.findUnique({ where: { id: activityId }, include: { account: true } });
+  if (!call || call.type !== "CALL") return { ok: false, message: "Call not found" };
+  if (!opts.force && !BUILD_FROM_CALL.has(call.outcome ?? "")) return { ok: false, message: "Only interested or booked calls build a demo automatically" };
+  const transcript = call.body?.split("Transcript:\n")[1]?.trim();
+  if (!transcript) return { ok: false, message: "This call has no transcript yet (it appears a minute or two after the call, when Gemini is set up)" };
+  const tag = `call:${call.id}`;
+  const demoIds = (await db.receptionist.findMany({ where: { accountId: call.accountId, demoExtension: { not: null } }, select: { id: true } })).map((r) => r.id);
+  if (demoIds.length && (await db.knowledgeItem.count({ where: { receptionistId: { in: demoIds }, tags: tag } }))) {
+    return { ok: true, message: "This call is already in the demo agent", demoId: demoIds[0] };
+  }
+  // The recording and the rep's outcome can both trigger this at once: only one build per call.
+  if (!opts.force) {
+    const claimed = await db.setting.create({ data: { key: `demo.fromCall.${call.id}`, value: new Date().toISOString() } }).then(() => true).catch(() => false);
+    if (!claimed) return { ok: true, message: "A demo is already being built from this call" };
+  }
+  const { extractCallFacts } = await import("./ai");
+  const facts = await extractCallFacts(transcript, call.account.name);
+  if (!facts.length && !call.account.website && !call.account.domain) return { ok: false, message: "The call had no business details and the account has no website, so there's nothing to build the demo from yet" };
+  const day = call.occurredAt.toISOString().slice(0, 10);
+  let demoId: string;
+  let background: (() => Promise<void>) | null;
+  if (facts.length) {
+    const added = await addAnswersToDemo(call.account, facts, { who: null, by: "sales call", source: `the sales call on ${day}`, title: `From the sales call (${day})`, tag, intro: `What the prospect said about their business on a sales call on ${day}. Use it to answer callers.` });
+    demoId = added.demoId;
+    background = added.background;
+  } else if (demoIds[0]) {
+    return { ok: true, message: "No new business details on this call; the demo agent is unchanged", demoId: demoIds[0] };
+  } else {
+    const created = await createDemoAgent(call.accountId, { createdById: call.createdById, googleUserId: null, bookingEnabled: (await googleConnection()).calendar });
+    demoId = created.receptionist.id;
+    background = () => finishDemoAgent(demoId, created.runId, call.createdById);
+  }
+  return { ok: true, background, message: facts.length ? `Added ${facts.length} detail${facts.length === 1 ? "" : "s"} from the call to the demo agent` : "Demo agent being built from the website", demoId };
 }
 
 /** take_client_message: an existing client's request, emailed to support (team@) and logged on their account. */

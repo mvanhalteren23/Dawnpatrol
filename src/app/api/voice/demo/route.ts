@@ -6,6 +6,8 @@ import { recordActivity } from "@/lib/outreach";
 import { cleanDigits, gatherExtension, samePhone, say, twiml } from "@/lib/twilio";
 import { appUrl } from "@/lib/app-url";
 import { twilioSignatureOk } from "@/lib/twilio-request";
+import { builderAgent, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
+import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
 
 // Demo line directory. Twilio's Voice webhook for the demo number points here:
 //   1. Greet and <Gather> an extension.
@@ -49,16 +51,33 @@ export async function POST(req: Request) {
   const attempt = Number(url.searchParams.get("attempt") ?? 0);
   const action = (n: number) => `${base()}/api/voice/demo?step=ext&attempt=${n}`;
 
+  // Our own legs dialling in from a dialer call (demo builder, live demo): no greeting, and the
+  // digits are a builder session code or a demo extension.
+  const internal = isInternalLeg(from);
+
   // First hit: greet and ask for the extension.
   if (url.searchParams.get("step") !== "ext") {
-    return xml(gatherExtension(config.greeting, action(1), action(1)));
+    return xml(internal ? silentGatherTwiml(action(1)) : gatherExtension(config.greeting, action(1), action(1)));
   }
 
   const digits = cleanDigits(params.Digits);
+  if (internal && isBuilderCode(digits)) {
+    const [session, builder] = await Promise.all([getBuilderSession(digits), builderAgent()]);
+    const account = session ? await db.account.findUnique({ where: { id: session.accountId }, select: { name: true } }) : null;
+    if (!session || !account || !builder?.elevenLabsAgentId) return xml(twiml("<Hangup/>"));
+    try {
+      return xml(await registerTwilioCall(builder.elevenLabsAgentId, from, to, { dynamicVariables: { session_code: session.code, prospect_business: account.name, prospect_first_name: session.prospectName, rep_name: session.repName } }));
+    } catch (err) {
+      console.error("demo line: builder register-call failed", err);
+      return xml(twiml("<Hangup/>"));
+    }
+  }
   const receptionist = digits
     ? await db.receptionist.findUnique({ where: { demoExtension: digits }, include: { account: { include: { contacts: true } } } })
     : null;
 
+  if (receptionist?.elevenLabsAgentId && internal) return connect(receptionist.elevenLabsAgentId, from, to); // live demo on a builder call (logged there)
+  if (internal) return xml(twiml("<Hangup/>"));
   if (receptionist?.elevenLabsAgentId) {
     const account = receptionist.account;
     after(async () => {

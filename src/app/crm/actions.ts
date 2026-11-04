@@ -324,6 +324,7 @@ export async function setupDialerAction() {
 const CALL_OUTCOMES: Record<string, string> = {
   connected: "Connected",
   booked: "Booked a meeting",
+  interested: "Interested",
   call_back: "Asked to call back",
   voicemail: "Left voicemail",
   no_answer: "No answer",
@@ -343,6 +344,18 @@ const NEXT_STEPS: Record<string, string> = {
  * account (booked → meeting/Demo stage, not interested → Lost when ticked, wrong number → review).
  * Returns a plain result so the dialer can move on to the next prospect without a page reload.
  */
+/** "Build demo from this call" on a recorded call in the account timeline. */
+export async function buildDemoFromCallAction(activityId: string) {
+  const session = await requireStaff();
+  const call = await db.activity.findUniqueOrThrow({ where: { id: activityId }, select: { accountId: true } });
+  await guard(session, call.accountId);
+  const { buildDemoFromCall } = await import("@/lib/demo-builder");
+  const res = await buildDemoFromCall(activityId, { force: true }).catch((e) => ({ ok: false, message: (e as Error).message, demoId: undefined, background: undefined }));
+  if (res.background) after(res.background);
+  if (res.ok && res.demoId) back(`/crm/receptionists/${res.demoId}`, { notice: res.message });
+  back(`/crm/accounts/${call.accountId}`, res.ok ? { notice: res.message } : { error: res.message });
+}
+
 export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; error?: string }> {
   const session = await requireStaff();
   const accountId = str(form, "accountId");
@@ -383,6 +396,14 @@ export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; er
   }
   if (dues.length) await db.account.update({ where: { id: accountId }, data: { nextFollowUpAt: new Date(Math.min(...dues.map((d) => d.getTime()))) } });
 
+  // Interested or booked: build their demo agent from the call (once the transcript is in).
+  if (call && (outcome === "booked" || outcome === "interested")) {
+    const callId = call.id;
+    after(async () => {
+      const { buildDemoFromCall } = await import("@/lib/demo-builder");
+      await buildDemoFromCall(callId).then((r) => r.background?.()).catch((e) => console.error("demo from call", e));
+    });
+  }
   if (outcome === "booked") {
     await recordActivity({ accountId, contactId, type: "MEETING", direction: "OUTBOUND", subject: "Meeting booked by phone", body: note || null, source: "dialer", createdById: session.sub });
   }
@@ -1198,10 +1219,18 @@ export async function createDemoReceptionist(accountId: string, form: FormData) 
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { receptionists: { where: { demoExtension: { not: null } }, take: 1 } } });
   if (isClientStage(account.stage) && session.role !== "ADMIN") back(`/crm/accounts/${accountId}`, { error: "This account is a client: an administrator sets up its production receptionist" });
   if (account.receptionists[0]) back(`/crm/receptionists/${account.receptionists[0].id}`, { notice: "This prospect already has a demo receptionist" });
-  if (!account.website && !account.domain) back(`/crm/accounts/${accountId}?edit=1`, { error: "Add the prospect's website first: the demo's knowledge is drafted from it" });
+  // Optional answers to the account's personalization questions go in alongside the website draft.
+  const answers = Array.from({ length: 10 }, (_, i) => ({ question: str(form, `question_${i}`).trim(), answer: str(form, `answer_${i}`).trim() })).filter((qa) => qa.question && qa.answer);
+  if (!account.website && !account.domain && !answers.length) back(`/crm/accounts/${accountId}?edit=1`, { error: "Add the prospect's website first (the demo's knowledge is drafted from it), or answer some of the questions" });
   const mine = await googleConnection(session.sub);
   const { createDemoAgent, finishDemoAgent } = await import("@/lib/demo-builder");
+  const { answersToKnowledge } = await import("@/lib/discovery-rules");
   const { receptionist: r, runId } = await createDemoAgent(accountId, { name: str(form, "name"), createdById: session.sub, googleUserId: mine.connected ? session.sub : null, bookingEnabled: mine.calendar });
+  if (answers.length) {
+    const me = await db.user.findUnique({ where: { id: session.sub }, select: { email: true } });
+    const kb = answersToKnowledge(answers, null, new Date(), "What we know about the business. Use it to answer callers.");
+    await db.knowledgeItem.create({ data: { receptionistId: r.id, category: "OTHER", title: `From ${me?.email ?? "the rep"} (${new Date().toISOString().slice(0, 10)})`, content: kb.content, tags: "rep-notes", isActive: true, updatedBy: me?.email ?? null } });
+  }
   after(() => finishDemoAgent(r.id, runId, session.sub).catch((err) => console.error("demo receptionist sync", err)));
   back(`/crm/receptionists/${r.id}`, { notice: `Building ${account.name}'s demo: Claude is reading their website, then it syncs to ElevenLabs (a minute or two). Demo line extension ${r.demoExtension}.`, ...(runId ? { kbRun: runId } : {}) });
 }
@@ -1209,6 +1238,36 @@ export async function createDemoReceptionist(accountId: string, form: FormData) 
 async function freeExtension(): Promise<string> {
   const taken = await db.receptionist.findMany({ where: { demoExtension: { not: null } }, select: { demoExtension: true } });
   return nextFreeExtension(taken.map((t) => t.demoExtension));
+}
+
+/**
+ * The live demo builder (Dialer → "Add demo builder"): one agent for the company, kept on the
+ * company's own account (the one whose receptionist adds bookings to the CRM).
+ */
+export async function createBuilderAgent(form: FormData) {
+  await requireAdmin();
+  const existing = await db.receptionist.findFirst({ where: { agentType: "builder" } });
+  if (existing) back(`/crm/receptionists/${existing.id}`, { notice: "The demo builder already exists" });
+  const house = await db.receptionist.findFirst({ where: { bookingAddsToCrm: true }, orderBy: { createdAt: "asc" } });
+  if (!house) back("/crm/demo-line", { error: "Set up your own receptionist first (tick \"Add each booking to this CRM\" on it): the builder lives on the same account" });
+  const company = await googleConnection();
+  const r = await db.receptionist.create({
+    data: {
+      accountId: house.accountId,
+      agentType: "builder",
+      name: str(form, "name") || "Sam",
+      businessName: await companyName(),
+      persona: "Friendly, curious and efficient, like a helpful project coordinator. Keeps it moving and never pushy.",
+      ragToken: randomBytes(24).toString("base64url"),
+      bookingEnabled: company.calendar,
+      bookingTitle: "Pricing & setup call",
+      bookingSlotMinutes: 30,
+      timezone: house.timezone,
+      bookingHours: house.bookingHours,
+    },
+  });
+  after(() => syncReceptionist(r.id).then(() => undefined).catch((e) => console.error("builder sync", e)));
+  back(`/crm/receptionists/${r.id}`, { notice: `${r.name}, the demo builder, is syncing to ElevenLabs. Reps will see "Add demo builder" on live dialer calls once it shows Synced.` });
 }
 
 export async function assignDemoExtension(receptionistId: string) {

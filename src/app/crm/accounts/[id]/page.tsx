@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MAX_DISCOVERY_QUESTIONS, pickDiscoveryQuestions } from "@/lib/discovery-rules";
+import { builderAgent } from "@/lib/live-builder";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/auth";
@@ -16,6 +17,7 @@ import { dialerStatus } from "@/lib/dialer";
 import {
   setAccountOwner,
   createDemoReceptionist,
+  buildDemoFromCallAction,
   addContact,
   checkoutLink,
   createDriveFolders,
@@ -111,6 +113,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const timeline = filter.types.length ? account.activities.filter((a) => filter.types.includes(a.type)) : account.activities;
   const notes = account.activities.filter((a) => a.type === "NOTE");
   const discovery = pickDiscoveryQuestions(account);
+  const builder = await builderAgent();
   const draft = { subject: draftRun?.subject, body: draftRun?.body };
   const researchPrompts = prompts.filter((p) => p.kind === "RESEARCH");
   const outreachPrompts = prompts.filter((p) => p.kind === "OUTREACH");
@@ -338,6 +341,18 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
               <form action={createDemoReceptionist.bind(null, account.id)} className="mb-3 space-y-2 rounded-lg bg-dawn-50 p-3">
                 <div className="text-sm font-medium">Demo receptionist</div>
                 <p className="text-xs text-slate-600">One click: Claude reads {account.domain ?? "their website"}, builds the knowledge base, and puts a receptionist for {account.name} on the demo line under its own extension. Meetings booked on a demo call go into {myGoogle.calendar ? "your calendar" : "the company calendar (connect your own in Settings)"}.</p>
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-slate-600">Add what you know about the business (optional)</summary>
+                  <div className="mt-2 space-y-2">
+                    {discovery.questions.map((q, i) => (
+                      <label key={q} className="block">
+                        <span className="text-slate-700">{q}</span>
+                        <input type="hidden" name={`question_${i}`} value={q} />
+                        <input name={`answer_${i}`} className="input mt-0.5" placeholder="Leave blank if you don't know" />
+                      </label>
+                    ))}
+                  </div>
+                </details>
                 <div className="flex gap-2">
                   <input name="name" placeholder="Receptionist name (Ava)" className="input" />
                   <SubmitButton className="btn whitespace-nowrap" pendingText="Building…">Create demo</SubmitButton>
@@ -385,7 +400,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
 
         {/* RIGHT: research, outreach, timeline */}
         <div className="space-y-6 lg:col-span-3">
-          {dialer.ready && dialTargets.length ? <Dialer targets={dialTargets} title="Call" /> : null}
+          {dialer.ready && dialTargets.length ? <Dialer targets={dialTargets} title="Call" builder={builder?.elevenLabsAgentId ? builder.name : null} /> : null}
           <div className="card">
             <h2 className="mb-3">Claude research</h2>
             <form action={runResearch.bind(null, account.id)} className="space-y-2">
@@ -502,6 +517,11 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                     {a.subject ? <div className="font-medium">{a.subject}{a.durationSec ? <span className="ml-1 text-xs font-normal text-slate-500">({Math.floor(a.durationSec / 60)}:{String(a.durationSec % 60).padStart(2, "0")})</span> : null}</div> : null}
                     {a.recordingSid ? <audio controls preload="none" src={`/api/dialer/recording/${a.id}`} className="my-1 h-8 w-full max-w-sm" /> : null}
                     {a.body ? <div className="whitespace-pre-wrap text-xs text-slate-600">{a.body.slice(0, 600)}</div> : null}
+                    {a.type === "CALL" && !isClient && mine && a.body?.includes("Transcript:\n") ? (
+                      <form action={buildDemoFromCallAction.bind(null, a.id)} className="mt-1">
+                        <SubmitButton className="btn-secondary py-0.5 text-xs" pendingText="Building…">Build demo from this call</SubmitButton>
+                      </form>
+                    ) : null}
                   </li>
                 ))}
               </ol>

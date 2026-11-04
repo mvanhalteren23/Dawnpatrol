@@ -5,7 +5,7 @@ import { STAGE_PROBABILITY, weightedForecastCents } from "./team-rules";
 
 // Team scoreboard: what each person did in a period, what they own, and what it should be worth.
 
-export const CONVERSATION_OUTCOMES = ["connected", "booked", "call_back", "not_interested"];
+export const CONVERSATION_OUTCOMES = ["connected", "booked", "interested", "call_back", "not_interested"];
 
 export type RepRow = {
   id: string | null; // null = unassigned / system

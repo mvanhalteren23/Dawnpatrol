@@ -13,6 +13,7 @@ import { Flash } from "@/components/Flash";
 import { audioUrl, DEFAULT_VM_PROMPT, voicemailSettings } from "@/lib/voicemail";
 import { deleteVoicemail, saveVoicemailSettings, setDefaultVoicemail, uploadVoicemail } from "../actions";
 import { dialAccountInclude, toDialTarget } from "@/lib/dial-targets";
+import { builderAgent } from "@/lib/live-builder";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // pre-writing + voicing AI voicemails
@@ -56,6 +57,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
     db.receptionist.findMany({ where: { voiceId: { not: null } }, select: { name: true, voiceId: true } }),
     isAdmin ? teamMembers() : Promise.resolve([]),
   ]);
+  const builder = await builderAgent();
   const controls: DialerControls = {
     voicemails: voicemails.map((v) => ({ id: v.id, name: v.name })),
     defaultVoicemailId: vmSettings.defaultId && voicemails.some((v) => v.id === vmSettings.defaultId) ? vmSettings.defaultId : (voicemails[0]?.id ?? null),
@@ -67,7 +69,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
   if (sort === "best") rows.sort((x, y) => y.priority - x.priority);
   const targets: DialTarget[] = rows;
   const calls = today.reduce((n, t) => n + t._count, 0);
-  const connects = today.filter((t) => ["connected", "booked", "call_back", "not_interested"].includes(t.outcome ?? "")).reduce((n, t) => n + t._count, 0);
+  const connects = today.filter((t) => ["connected", "booked", "interested", "call_back", "not_interested"].includes(t.outcome ?? "")).reduce((n, t) => n + t._count, 0);
   const booked = today.find((t) => t.outcome === "booked")?._count ?? 0;
 
   return (
@@ -98,7 +100,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
         <button className="btn-secondary">Apply</button>
       </form>
       <Flash params={sp} />
-      <Dialer targets={targets} title="Call list" emptyText="No active prospects with a phone number match these filters." controls={controls} />
+      <Dialer targets={targets} title="Call list" emptyText="No active prospects with a phone number match these filters." controls={controls} builder={builder?.elevenLabsAgentId ? builder.name : null} />
 
       {isAdmin ? <details id="voicemail" className="card mt-6" open={sp.vm === "1"}>
         <summary className="cursor-pointer font-semibold">Voicemail settings</summary>

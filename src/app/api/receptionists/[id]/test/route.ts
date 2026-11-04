@@ -4,6 +4,7 @@ import { apiSession } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { buildReceptionistPrompt, compileKnowledgeBase } from "@/lib/rag";
 import { buildFollowupPrompt } from "@/lib/followup-rules";
+import { buildBuilderPrompt } from "@/lib/builder-rules";
 import { receptionistReply } from "@/lib/ai";
 
 export const maxDuration = 60;
@@ -21,7 +22,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     // The test chat has no calendar tools, so it uses the collect-preferred-times flow.
     // Follow-up agents are tested against a sample website lead.
-    const prompt = r.agentType === "followup"
+    // The demo builder is tested as if a rep brought it into a call with a sample shop (no tools).
+    const prompt = r.agentType === "builder"
+      ? buildBuilderPrompt({ ...r, companyName: r.businessName, bookingEnabled: false })
+          .replaceAll("{{rep_name}}", "Matt")
+          .replaceAll("{{prospect_business}}", "Sample Auto Repair") + "\n(Test chat: the tools aren't available here. Make up two sample questions about an auto shop instead of calling get_build_questions, and describe what you would do at each tool step.)"
+      : r.agentType === "followup"
       ? buildFollowupPrompt({ ...r, bookingEnabled: false })
           .replaceAll("{{lead_name}}", "Dana Lee (sample lead)")
           .replaceAll("{{lead_request}}", "Sample request: I'd like a quote. Please call me.")

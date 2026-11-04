@@ -142,4 +142,7 @@ export async function attachRecording(o: { callSid: string; accountId: string; c
       body: [fresh.body, `Summary: ${notes.summary}`, `Suggested next step: ${notes.nextStep}`, `Transcript:\n${notes.transcript}`].filter(Boolean).join("\n\n"),
     },
   });
+  // Interested or booked: their demo agent is built from what they said plus their website.
+  const { buildDemoFromCall } = await import("./demo-builder");
+  await buildDemoFromCall(a.id).then((r) => r.background?.()).catch((e) => console.error("demo from call", e));
 }

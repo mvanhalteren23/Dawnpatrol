@@ -7,21 +7,22 @@ import { elevenLabsConfigured } from "@/lib/elevenlabs";
 import { formatDate } from "@/lib/utils";
 import { Badge, Empty, Field, Notice, PageHeader, StageBadge, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";
-import { assignDemoExtension, clearDemoExtension, saveDemoLineSettings } from "../actions";
+import { assignDemoExtension, clearDemoExtension, createBuilderAgent, saveDemoLineSettings } from "../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function DemoLinePage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
   await requireAdmin();
   const config = await demoLineConfig();
-  const [demos, others, demoCalls] = await Promise.all([
+  const [demos, others, demoCalls, builder] = await Promise.all([
     db.receptionist.findMany({
       where: { demoExtension: { not: null } },
       orderBy: { demoExtension: "asc" },
       include: { account: true, _count: { select: { calls: true, knowledge: true } }, calls: { orderBy: { startedAt: "desc" }, take: 1 } },
     }),
-    db.receptionist.findMany({ where: { demoExtension: null }, include: { account: true }, orderBy: { updatedAt: "desc" }, take: 50 }),
+    db.receptionist.findMany({ where: { demoExtension: null, agentType: { not: "builder" } }, include: { account: true }, orderBy: { updatedAt: "desc" }, take: 50 }),
     db.activity.count({ where: { source: "demo-line", occurredAt: { gte: new Date(Date.now() - 30 * 86400000) } } }),
+    db.receptionist.findFirst({ where: { agentType: "builder" } }),
   ]);
   const app = appUrl();
 
@@ -52,6 +53,19 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
             ))}</tbody>
           </table>
         ) : <div className="p-5"><Empty>No demos yet. On a prospect&apos;s account, add a receptionist with &quot;Demo for this prospect&quot; ticked, fill its knowledge base (Draft KB from website is fastest), then Sync to ElevenLabs.</Empty></div>}
+      </div>
+
+      <div className="card mb-6 space-y-2 text-sm">
+        <h2>Demo builder (live, on dialer calls)</h2>
+        <p className="text-slate-600">On a live dialer call, the rep clicks <b>Add demo builder</b>: this AI joins the call, asks the prospect about their business (research&apos;s questions plus a couple of basics), builds their demo receptionist, and offers to connect them to it live. If the rep has left, it books a pricing and setup call into the rep&apos;s calendar first. It dials in through the demo number, so that number must be set.</p>
+        {builder ? (
+          <p className="flex flex-wrap items-center gap-2"><Link href={`/crm/receptionists/${builder.id}`}>{builder.name}, the demo builder</Link><StatusBadge status={builder.syncStatus} />{builder.syncError ? <span className="text-xs text-red-700">{builder.syncError.slice(0, 200)}</span> : null}</p>
+        ) : (
+          <form action={createBuilderAgent} className="flex gap-2">
+            <input name="name" placeholder="Builder's name (Sam)" className="input max-w-xs" />
+            <button className="btn">Set up the demo builder</button>
+          </form>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

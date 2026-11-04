@@ -37,6 +37,7 @@ export type DialTarget = {
 const OUTCOMES = [
   ["connected", "Connected"],
   ["booked", "Booked a meeting"],
+  ["interested", "Interested"],
   ["call_back", "Call back later"],
   ["voicemail", "Left voicemail"],
   ["no_answer", "No answer"],
@@ -49,6 +50,7 @@ type Outcome = (typeof OUTCOMES)[number][0];
 const DEFAULT_NEXT: Record<Outcome, { call?: number; email?: boolean; demo?: boolean; prep?: boolean }> = {
   connected: { email: true, call: 7 },
   booked: { prep: true },
+  interested: { demo: true, call: 3 },
   call_back: { call: 1 },
   voicemail: { call: 3, email: true },
   no_answer: { call: 2 },
@@ -66,7 +68,7 @@ function fmt(sec: number) {
  * Browser dialer (Twilio Voice SDK). One click per call; after hanging up, pick an outcome and
  * next steps, then "Save & next" moves to the next prospect ready to dial.
  */
-export function Dialer({ targets, title, emptyText, controls }: { targets: DialTarget[]; title?: string; emptyText?: string; controls?: DialerControls }) {
+export function Dialer({ targets, title, emptyText, controls, builder }: { targets: DialTarget[]; title?: string; emptyText?: string; controls?: DialerControls; builder?: string | null }) {
   const device = useRef<Device | null>(null);
   const call = useRef<Call | null>(null);
   const [active, setActive] = useState(0);
@@ -86,6 +88,8 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
   const [delay, setDelay] = useState(5);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [amd, setAmd] = useState<string | null>(null);
+  const [builderNote, setBuilderNote] = useState<string | null>(null);
+  const [builderOn, setBuilderOn] = useState(false);
   const opts = useRef({ mode, vmMode, vmId, delay });
   opts.current = { mode, vmMode, vmId, delay };
   const answered = useRef(false);
@@ -318,6 +322,8 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
     setCallSid("");
     setOutcome("");
     setAmd(null);
+    setBuilderNote(null);
+    setBuilderOn(false);
     setCountdown(null);
     answered.current = false;
     setPhase("connecting");
@@ -357,6 +363,16 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
       setError((e as Error).message);
       setPhase("idle");
     }
+  }
+
+  // The live demo builder (way 3b): moves this call into a conference with the builder agent.
+  async function builderAction(remove: boolean) {
+    const sid = call.current?.parameters.CallSid;
+    if (!sid) return;
+    setBuilderNote(remove ? "Removing the AI…" : `Adding ${builder}…`);
+    const res = (await fetch("/api/dialer/builder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid, remove }) }).then((r) => r.json()).catch(() => ({ ok: false, message: "Network error" }))) as { ok: boolean; message: string };
+    setBuilderNote(res.message);
+    if (res.ok) setBuilderOn(!remove);
   }
 
   function hangUp() {
@@ -482,7 +498,13 @@ export function Dialer({ targets, title, emptyText, controls }: { targets: DialT
             <button type="button" onClick={hangUp} className="btn-danger">Hang up</button>
             <button type="button" onClick={() => { call.current?.mute(!muted); setMuted(!muted); }} className="btn-secondary">{muted ? "Unmute" : "Mute"}</button>
             <button type="button" onClick={() => setKeypad(!keypad)} className="btn-secondary">Keypad</button>
+            {builder && phase === "live" && !(amd ?? "").startsWith("machine") ? (
+              builderOn
+                ? <button type="button" onClick={() => void builderAction(true)} className="btn-secondary" title="The builder and any live demo leave; you and the prospect stay connected">Remove AI</button>
+                : <button type="button" onClick={() => void builderAction(false)} className="btn" title={`${builder} joins the call, asks about their business, builds their demo receptionist and can connect them to it live. Introduce it first; you can stay on or hang up.`}>Add demo builder</button>
+            ) : null}
           </div>
+          {builderNote ? <p className="mt-1 text-xs text-slate-600">{builderNote}{builderOn ? " Introduce it, then stay on or hang up: it carries on with the prospect." : ""}</p> : null}
           {keypad ? (
             <div className="mt-2 grid w-48 grid-cols-3 gap-1">
               {"123456789*0#".split("").map((k) => (

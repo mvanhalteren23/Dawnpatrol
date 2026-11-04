@@ -19,6 +19,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   call_back: "asked for a call back",
   connected: "spoke with them",
   booked: "booked a meeting",
+  interested: "interested",
   not_interested: "not interested",
   wrong_number: "wrong number",
 };

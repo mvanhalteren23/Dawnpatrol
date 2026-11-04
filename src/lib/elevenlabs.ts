@@ -1,4 +1,5 @@
 import "server-only";
+import { BUILDER_DYNAMIC_DEFAULTS, buildBuilderPrompt, builderOpening } from "./builder-rules";
 import { db } from "./db";
 import { buildReceptionistPrompt, compileByCategory } from "./rag";
 import { buildFollowupPrompt, followupOpening, type FollowupProfile } from "./followup-rules";
@@ -46,7 +47,9 @@ type ToolIds = Record<string, string>;
 const str = (description: string) => ({ type: "string", description });
 
 /** Webhook tools that let the agent read the calendar and book (see src/lib/agent-booking.ts). */
-export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string; followUpOn: string; followUpChannel: string }) {
+export function bookingTools(r: { id: string; ragToken: string; timezone: string; bookingMeetingType: string; bookingQuestions: string; followUpOn: string; followUpChannel: string; agentType?: string }) {
+  // The demo builder books into the rep's calendar: it passes its call session along.
+  const session = r.agentType === "builder" ? { session_code: { type: "string", dynamic_variable: "session_code" } } : {};
   const confirmations = r.followUpOn === "bookings" || r.followUpOn === "both";
   const base = `${appUrl()}/api/agent-tools/${r.id}`;
   const headers = { Authorization: `Bearer ${r.ragToken}` };
@@ -65,6 +68,7 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
           properties: {
             preferred_date: str("Day the caller asked for, as YYYY-MM-DD. Leave empty if they have no preference."),
             time_of_day: { type: "string", description: "Caller's preferred time of day", enum: ["any", "morning", "afternoon", "evening"] },
+            ...session,
           },
           required: [],
         },
@@ -107,6 +111,7 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
                 }
               : {}),
             conversation_id: { type: "string", dynamic_variable: "system__conversation_id" },
+            ...session,
             notes: str("Anything else the team should know before the call."),
           },
           required: ["start_iso", "caller_name", "caller_phone"],
@@ -211,12 +216,36 @@ async function mergedDataCollection(agentId: string | null, followup = false) {
   return { ...(current?.platform_settings?.data_collection ?? {}), ...ours };
 }
 
+/** The live demo builder (src/lib/live-builder.ts): every tool acts on the call's session. */
+export function builderTools(r: { id: string; ragToken: string }) {
+  const headers = { Authorization: `Bearer ${r.ragToken}` };
+  const tool = (name: string, action: string, description: string, extra: Record<string, unknown> = {}, required: string[] = []) => ({
+    type: "webhook",
+    name,
+    description,
+    response_timeout_secs: 20,
+    api_schema: {
+      url: `${appUrl()}/api/agent-tools/${r.id}/builder/${action}`,
+      method: "POST",
+      request_headers: headers,
+      request_body_schema: { type: "object", properties: { session_code: { type: "string", dynamic_variable: "session_code" }, ...extra }, required },
+    },
+  });
+  return {
+    get_build_questions: tool("get_build_questions", "questions", "Get the questions to ask about this business, once they've said now is a good time."),
+    save_build_answers: tool("save_build_answers", "answers", "Save every question you asked and the owner's answer, after the last question.", { answers: str("One 'Question: answer' line per question asked, in their words. Leave out skipped ones.") }, ["answers"]),
+    demo_status: tool("demo_status", "status", "Check whether their receptionist is ready to hear, and whether the rep is still on the call."),
+    connect_live_demo: tool("connect_live_demo", "live-demo", "Connect them to their new receptionist, live, once demo_status says it's ready. You leave the call after this."),
+    leave_call: tool("leave_call", "leave", "Leave the call when you're done and they don't want the live demo (or after handing back to the rep)."),
+  };
+}
+
 type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string };
 
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -243,17 +272,21 @@ export function agentConfig(
   toolIds: string[] = [],
 ) {
   const followup = r.agentType === "followup";
-  const greeting = followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
+  const builder = r.agentType === "builder"; // the live demo builder: businessName is our company's name
+  const greeting = builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
+  const dynamicDefaults = builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
-    name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : ""}`,
+    name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : ""}`,
     conversation_config: {
       agent: {
         first_message: greeting,
         language: r.language,
         // Follow-up calls start with these filled from the lead; defaults keep test calls working.
-        ...(followup ? { dynamic_variables: { dynamic_variable_placeholders: { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } } } : {}),
+        ...(dynamicDefaults ? { dynamic_variables: { dynamic_variable_placeholders: dynamicDefaults } } : {}),
         prompt: {
-          prompt: followup ? buildFollowupPrompt(fullFollowupProfile(r)) : buildReceptionistPrompt(r),
+          prompt: builder
+            ? buildBuilderPrompt({ name: r.name, companyName: r.businessName, persona: r.persona, bookingEnabled: Boolean(r.bookingEnabled), extraInstructions: r.extraInstructions })
+            : followup ? buildFollowupPrompt(fullFollowupProfile(r)) : buildReceptionistPrompt(r),
           ...(process.env.ELEVENLABS_LLM ? { llm: process.env.ELEVENLABS_LLM } : {}),
           knowledge_base: docs.map((d) => ({ type: "text", id: d.docId, name: d.name, usage_mode: "auto" })),
           tool_ids: toolIds,

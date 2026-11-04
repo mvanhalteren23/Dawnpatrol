@@ -104,13 +104,13 @@ export function parseAnswers(text: string): QA[] {
   return out.filter((qa) => qa.answer && !skipped.test(qa.answer)).slice(0, 20);
 }
 
-/** The knowledge-base entry built from the caller's answers. */
-export function answersToKnowledge(answers: QA[], callerName: string | null, date: Date): { title: string; content: string } {
+/** The knowledge-base entry built from the answers; `intro` replaces the default opening line. */
+export function answersToKnowledge(answers: QA[], callerName: string | null, date: Date, intro?: string): { title: string; content: string } {
   const day = date.toISOString().slice(0, 10);
   return {
     title: `From the owner (call on ${day})`,
     content: [
-      `What ${callerName?.trim() || "the owner"} told us on the phone when booking their demo. Use it to answer callers.`,
+      intro ?? `What ${callerName?.trim() || "the owner"} told us on the phone when booking their demo. Use it to answer callers.`,
       "",
       ...answers.flatMap((qa) => [`Q: ${qa.question}`, `A: ${qa.answer}`, ""]),
     ].join("\n").trim(),
