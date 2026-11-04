@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MAX_DISCOVERY_QUESTIONS, pickDiscoveryQuestions } from "@/lib/discovery-rules";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/auth";
@@ -109,6 +110,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const filter = TIMELINE_FILTERS.find((f) => f.key === (sp.tl ?? "")) ?? TIMELINE_FILTERS[0]!;
   const timeline = filter.types.length ? account.activities.filter((a) => filter.types.includes(a.type)) : account.activities;
   const notes = account.activities.filter((a) => a.type === "NOTE");
+  const discovery = pickDiscoveryQuestions(account);
   const draft = { subject: draftRun?.subject, body: draftRun?.body };
   const researchPrompts = prompts.filter((p) => p.kind === "RESEARCH");
   const outreachPrompts = prompts.filter((p) => p.kind === "OUTREACH");
@@ -201,6 +203,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
               <Field label="Next follow-up"><input name="nextFollowUpAt" type="date" defaultValue={account.nextFollowUpAt?.toISOString().slice(0, 10) ?? ""} className="input" /></Field>
               <Field label="Tags"><input name="tags" defaultValue={account.tags} className="input" /></Field>
               <Field label="Notes" className="col-span-2"><textarea name="notes" rows={3} defaultValue={account.notes} className="input" /></Field>
+              <Field label={`Personalization questions (one per line, up to ${MAX_DISCOVERY_QUESTIONS}; asked on the phone after they book a demo)`} className="col-span-2"><textarea name="discoveryQuestions" rows={4} defaultValue={discovery.source === "research" ? discovery.questions.join("\n") : ""} placeholder={discovery.questions.join("\n")} className="input" /></Field>
               {account.estMissedCallsPerWeek && account.avgJobValueCents ? (
                 <div className="col-span-2 rounded-lg bg-dawn-50 p-3 text-sm text-dawn-700">
                   Revenue at risk: ~{formatMoney(account.estMissedCallsPerWeek * account.avgJobValueCents * 4.3 * 0.3)} / month <span className="text-xs">(missed calls × job value × 30% close rate)</span>
@@ -324,6 +327,13 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <div className="text-xs text-slate-500">{r._count.knowledge} KB items · {r._count.calls} calls{r.demoExtension ? ` · demo ext ${r.demoExtension}` : ""}</div>
               </Link>
             ))}
+            {!isClient ? (
+              <div className="mb-3 rounded-lg border border-slate-200 p-3 text-sm">
+                <div className="font-medium">Personalization questions</div>
+                <p className="text-xs text-slate-500">{discovery.source === "research" ? "Written by research for this business." : `No research questions yet: callers get the ${discovery.trade === "general" ? "general" : discovery.trade} set.`} After booking a demo on your line, the receptionist asks these and adds the answers to this account&apos;s demo agent.</p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-xs text-slate-700">{discovery.questions.map((q) => <li key={q}>{q}</li>)}</ol>
+              </div>
+            ) : null}
             {!isClient && mine && !account.receptionists.some((r) => r.demoExtension) ? (
               <form action={createDemoReceptionist.bind(null, account.id)} className="mb-3 space-y-2 rounded-lg bg-dawn-50 p-3">
                 <div className="text-sm font-medium">Demo receptionist</div>

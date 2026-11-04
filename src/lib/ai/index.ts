@@ -58,13 +58,14 @@ export const ResearchSummarySchema = z.object({
     linkedin: z.string().nullable(),
   })),
   suggestedOpener: z.string().describe("One-sentence personalised opener for outreach"),
+  kbQuestions: z.array(z.string()).describe("Up to 5 short questions to ask this business's owner on a phone call, to build their AI receptionist's knowledge base: things their callers would ask that the report doesn't answer (services they do or don't do, service area, how bookings work, pricing on the phone, warranties, emergencies, who handles supplier calls). Specific to this business and its trade, one plain spoken sentence each, no names or contact details."),
 });
 export type ResearchSummary = z.infer<typeof ResearchSummarySchema>;
 
 export async function researchAccount(renderedPrompt: string): Promise<AiResult & { summary: ResearchSummary | null }> {
   const report = await webResearch("research", renderedPrompt, { maxSearches: 5, maxFetches: 3 });
   try {
-    const ex = await structured("extraction", ResearchSummarySchema, "Extract the structured fields from this research report. Fill a field only when the report states it; use null otherwise. Copy websites, phone numbers, emails and names exactly as written in the report, and never construct or guess them. Only include decision makers named in the report. Set estMissedCallsPerWeek and avgJobValueUsd only if the report gives specific evidence for them, otherwise null. Set match to not_confirmed if the report says it couldn't confirm the business.", report.text);
+    const ex = await structured("extraction", ResearchSummarySchema, "Extract the structured fields from this research report. Fill a field only when the report states it; use null otherwise. Copy websites, phone numbers, emails and names exactly as written in the report, and never construct or guess them. Only include decision makers named in the report. Set estMissedCallsPerWeek and avgJobValueUsd only if the report gives specific evidence for them, otherwise null. Set match to not_confirmed if the report says it couldn't confirm the business. kbQuestions are the one field you write yourself: questions for the owner about what the report leaves open.", report.text);
     return { ...combine(report, ex), summary: ex.data };
   } catch (err) {
     console.error("research extraction failed", err);

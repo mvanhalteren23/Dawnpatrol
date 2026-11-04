@@ -65,6 +65,7 @@ model Account {
   fitScore              Int? // 0-100, from Claude research or manual
   tags                  String  @default("") // comma separated
   notes                 String  @default("")
+  discoveryQuestions    String  @default("") // JSON array: questions to ask on the phone to personalise their demo agent (from research)
   estMissedCallsPerWeek Int?
   avgJobValueCents      Int?
   // Set when something created or changed this account automatically (e.g. a receptionist

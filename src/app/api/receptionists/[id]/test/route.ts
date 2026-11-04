@@ -25,7 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       ? buildFollowupPrompt({ ...r, bookingEnabled: false })
           .replaceAll("{{lead_name}}", "Dana Lee (sample lead)")
           .replaceAll("{{lead_request}}", "Sample request: I'd like a quote. Please call me.")
-      : buildReceptionistPrompt({ ...r, bookingEnabled: false });
+      : buildReceptionistPrompt({ ...r, bookingEnabled: false, bookingAddsToCrm: false });
     const reply = await receptionistReply(prompt, compileKnowledgeBase(r.knowledge, r.businessName), messages);
     return NextResponse.json({ reply });
   } catch (err) {

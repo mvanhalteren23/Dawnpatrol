@@ -116,7 +116,76 @@ export function bookingTools(r: { id: string; ragToken: string; timezone: string
   };
 }
 
-/** Create or update the booking tools; returns the tool ids to attach to the agent. */
+/**
+ * The company's own receptionist (bookingAddsToCrm): personalise a prospect's demo agent after
+ * booking, and pass existing clients' requests to support (see src/lib/demo-builder.ts).
+ */
+export function salesTools(r: { id: string; ragToken: string }) {
+  const base = `${appUrl()}/api/agent-tools/${r.id}`;
+  const headers = { Authorization: `Bearer ${r.ragToken}` };
+  const caller = {
+    caller_name: str("Caller's full name."),
+    caller_phone: str("Caller's phone number, as confirmed with them."),
+    caller_email: str("Caller's email, if they gave one."),
+    business_name: str("Caller's business name."),
+    business_type: str("Type of business, e.g. auto repair, plumbing, retail store."),
+  };
+  return {
+    get_personalization_questions: {
+      type: "webhook",
+      name: "get_personalization_questions",
+      description: "After a demo is booked and the caller agrees to a few questions, get the questions to ask them about their business. Pass the same details used for the booking.",
+      response_timeout_secs: 15,
+      api_schema: {
+        url: `${base}/questions`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: { type: "object", properties: caller, required: ["caller_phone"] },
+      },
+    },
+    save_personalization_answers: {
+      type: "webhook",
+      name: "save_personalization_answers",
+      description: "Save the caller's answers to the personalization questions so their demo agent knows their business. Call it once, after the last question (or when they want to stop).",
+      response_timeout_secs: 20,
+      api_schema: {
+        url: `${base}/answers`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: {
+            ...caller,
+            answers: str("Every question you asked and the caller's answer in their words, one 'Question: answer' line each. Leave out questions they skipped."),
+            conversation_id: { type: "string", dynamic_variable: "system__conversation_id" },
+          },
+          required: ["caller_phone", "answers"],
+        },
+      },
+    },
+    take_client_message: {
+      type: "webhook",
+      name: "take_client_message",
+      description: "An existing client needs support, a change to their receptionist, or help with billing: send their request to the support team.",
+      response_timeout_secs: 20,
+      api_schema: {
+        url: `${base}/client-message`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: {
+            ...caller,
+            request: str("What they need, in a sentence or two, as confirmed back to them."),
+            urgency: { type: "string", enum: ["normal", "urgent"], description: "urgent only if their receptionist or phone line isn't working, or they say it can't wait." },
+          },
+          required: ["caller_phone", "request"],
+        },
+      },
+    },
+  };
+}
+
 /** Post-call fields ElevenLabs extracts from each call; the CRM uses them for outcomes and caller follow-ups. */
 export const DATA_COLLECTION = {
   caller_name: { type: "string", description: "The caller's name as they gave it, or empty if not given." },
@@ -142,24 +211,29 @@ async function mergedDataCollection(agentId: string | null, followup = false) {
   return { ...(current?.platform_settings?.data_collection ?? {}), ...ours };
 }
 
-async function syncBookingTools(r: Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; elevenLabsToolIds: string }): Promise<ToolIds> {
-  const existing = safeJson<ToolIds>(r.elevenLabsToolIds, {});
-  if (!r.bookingEnabled) return existing; // keep the tools around; they're just detached from the agent
-  const ids: ToolIds = {};
-  for (const [name, tool_config] of Object.entries(bookingTools(r))) {
-    const id = existing[name];
+type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string };
+
+/** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
+async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
+  const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}) };
+  const attached: string[] = [];
+  for (const [name, tool_config] of Object.entries(wanted)) {
+    const id = ids[name];
+    let synced: string | null = null;
     if (id) {
       try {
         await el(`/tools/${id}`, { method: "PATCH", body: JSON.stringify({ tool_config }) });
-        ids[name] = id;
-        continue;
+        synced = id;
       } catch (e) {
         if (!String(e).includes(" 404 ")) throw e; // deleted in ElevenLabs: recreate below
       }
     }
-    ids[name] = (await el<{ id: string }>("/tools", { method: "POST", body: JSON.stringify({ tool_config }) })).id;
+    synced ??= (await el<{ id: string }>("/tools", { method: "POST", body: JSON.stringify({ tool_config }) })).id;
+    ids[name] = synced;
+    attached.push(synced);
   }
-  return ids;
+  return { ids, attached };
 }
 
 export function agentConfig(
@@ -206,9 +280,9 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
       docs.push({ category: d.category, docId: created.id, name: d.name });
     }
 
-    const toolIds = await syncBookingTools(r);
+    const { ids: toolIds, attached } = await syncAgentTools(r);
     const config = {
-      ...agentConfig(r, docs, r.bookingEnabled ? Object.values(toolIds) : []),
+      ...agentConfig(r, docs, attached),
       platform_settings: { data_collection: await mergedDataCollection(r.elevenLabsAgentId, r.agentType === "followup") },
     };
     let agentId = r.elevenLabsAgentId;

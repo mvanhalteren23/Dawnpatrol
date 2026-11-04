@@ -29,7 +29,7 @@ describe("research guard", () => {
       {
         match: "confirmed", fitScore: 70, estMissedCallsPerWeek: null, avgJobValueUsd: null, industry: "Plumbing",
         website: "https://acmeplumbing.ca", city: null, state: null, phone: "(604) 555-0101", employees: null,
-        keyFacts: [], painSignals: [], suggestedOpener: "",
+        keyFacts: [], painSignals: [], suggestedOpener: "", kbQuestions: [],
         decisionMakers: [
           { name: "Jane Smith", title: "Owner", email: "jane@acmeplumbing.ca", phone: "604-555-9999", linkedin: null },
           { name: "Bob Jones", title: "GM", email: "bob@acmeplumbing.ca", phone: null, linkedin: null },

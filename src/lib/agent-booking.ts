@@ -197,6 +197,39 @@ export function normalizeBusinessName(name: string): string {
   return name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]/g, " ").replace(/\b(ltd|limited|inc|incorporated|corp|corporation|co|company|llc|the)\b/g, " ").replace(/\s+/g, " ").trim();
 }
 
+type AccountRow = NonNullable<Awaited<ReturnType<typeof db.account.findUnique>>>;
+
+/**
+ * Find a caller's account: contact email, then company email domain, then phone, then business
+ * name. Used when booking and by the personalization and client-message tools.
+ */
+export async function matchAccount(input: { email?: string | null; phone?: string | null; businessName?: string | null }): Promise<{ account: AccountRow | null; matchedBy: string | null }> {
+  const email = input.email?.includes("@") ? input.email.trim().toLowerCase() : null;
+  const domain = email && !FREE_MAIL.test(email) ? normalizeDomain(email) : null;
+  const phone = input.phone?.trim() || null;
+  const businessName = input.businessName?.trim() || null;
+  let matchedBy: string | null = null;
+  let account: AccountRow | null = email ? (await db.contact.findFirst({ where: { email }, include: { account: true } }))?.account ?? null : null;
+  if (account) matchedBy = `contact email (${email})`;
+  if (!account && domain) {
+    account = await db.account.findUnique({ where: { domain } });
+    if (account) matchedBy = `email domain (${domain})`;
+  }
+  if (!account) {
+    const id = phone ? await findAccountIdByPhone(phone) : null;
+    account = id ? await db.account.findUnique({ where: { id } }) : null;
+    if (account) matchedBy = `phone number (${phone})`;
+  }
+  if (!account && businessName) {
+    const key = normalizeBusinessName(businessName);
+    const candidates = await db.account.findMany({ where: { name: { contains: key.split(" ")[0] ?? key, mode: "insensitive" } } });
+    account = candidates.find((a) => normalizeBusinessName(a.name) === key) ?? null;
+    if (account) matchedBy = `business name (${businessName})`;
+  }
+
+  return { account, matchedBy };
+}
+
 type LeadResult = { accountId: string; created: boolean; researchRunId: string | null };
 
 /**
@@ -211,24 +244,9 @@ async function addLead(r: Receptionist, input: BookingInput, label: string, subj
   const businessName = input.business_name?.trim() || null;
   const name = businessName || input.caller_name!.trim();
 
-  let matchedBy: string | null = null;
-  let account = email ? (await db.contact.findFirst({ where: { email }, include: { account: true } }))?.account ?? null : null;
-  if (account) matchedBy = `contact email (${email})`;
-  if (!account && domain) {
-    account = await db.account.findUnique({ where: { domain } });
-    if (account) matchedBy = `email domain (${domain})`;
-  }
-  if (!account) {
-    const id = await findAccountIdByPhone(phone);
-    account = id ? await db.account.findUnique({ where: { id } }) : null;
-    if (account) matchedBy = `phone number (${phone})`;
-  }
-  if (!account && businessName) {
-    const key = normalizeBusinessName(businessName);
-    const candidates = await db.account.findMany({ where: { name: { contains: key.split(" ")[0] ?? key, mode: "insensitive" } } });
-    account = candidates.find((a) => normalizeBusinessName(a.name) === key) ?? null;
-    if (account) matchedBy = `business name (${businessName})`;
-  }
+  const match = await matchAccount({ email, phone, businessName });
+  let account = match.account;
+  const matchedBy = match.matchedBy;
 
   const created = !account;
   if (!account) {

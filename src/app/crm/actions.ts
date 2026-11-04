@@ -40,6 +40,13 @@ import { DEFAULT_CALL_HOURS } from "@/lib/followup-rules";
 import { newLeadFormKey } from "@/lib/followup";
 import { parseWeeklyHours } from "@/lib/booking";
 import { leadAlertFromForm } from "@/lib/follow-up-rules";
+import { cleanQuestions } from "@/lib/discovery-rules";
+
+/** Blank = back to research's (or the trade's) questions. */
+const discoveryFromForm = (text: string) => {
+  const qs = cleanQuestions(text.split(/\r?\n/));
+  return qs.length ? JSON.stringify(qs) : "";
+};
 
 function back(path: string, params?: Record<string, string>): never {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -146,6 +153,7 @@ export async function updateAccount(accountId: string, form: FormData) {
         avgJobValueCents: avg,
         tags: joinTags(str(form, "tags").split(",")),
         notes: str(form, "notes"),
+        ...(form.has("discoveryQuestions") ? { discoveryQuestions: discoveryFromForm(str(form, "discoveryQuestions")) } : {}),
         nextFollowUpAt: optStr(form, "nextFollowUpAt") ? new Date(str(form, "nextFollowUpAt")) : null,
       },
     });
@@ -1192,33 +1200,10 @@ export async function createDemoReceptionist(accountId: string, form: FormData) 
   if (account.receptionists[0]) back(`/crm/receptionists/${account.receptionists[0].id}`, { notice: "This prospect already has a demo receptionist" });
   if (!account.website && !account.domain) back(`/crm/accounts/${accountId}?edit=1`, { error: "Add the prospect's website first: the demo's knowledge is drafted from it" });
   const mine = await googleConnection(session.sub);
-  const r = await db.receptionist.create({
-    data: {
-      accountId,
-      name: str(form, "name") || "Ava",
-      businessName: account.name,
-      ragToken: randomBytes(24).toString("base64url"),
-      demoExtension: await freeExtension(),
-      createdById: session.sub,
-      googleUserId: mine.connected ? session.sub : null,
-      bookingEnabled: mine.calendar,
-      bookingTitle: `Demo booking (${account.name})`,
-      bookingAddsToCrm: false, // demo bookings are pretend customers, not leads
-    },
-  });
-  const runId = await startKbDraft(r.id);
-  after(async () => {
-    await executeKbDraft(runId);
-    await db.knowledgeItem.updateMany({ where: { receptionistId: r.id, tags: "claude-draft" }, data: { isActive: true } });
-    try {
-      await syncReceptionist(r.id);
-      const { number } = await demoLineConfig();
-      await recordActivity({ accountId, type: "NOTE", source: "system", subject: "Demo receptionist ready", body: `Call ${number ? formatPhone(number) : "the demo line"}, extension ${r.demoExtension}, to hear ${r.name} answer for ${account.name}.`, createdById: session.sub });
-    } catch (err) {
-      console.error("demo receptionist sync", err);
-    }
-  });
-  back(`/crm/receptionists/${r.id}`, { notice: `Building ${account.name}'s demo: Claude is reading their website, then it syncs to ElevenLabs (a minute or two). Demo line extension ${r.demoExtension}.`, kbRun: runId });
+  const { createDemoAgent, finishDemoAgent } = await import("@/lib/demo-builder");
+  const { receptionist: r, runId } = await createDemoAgent(accountId, { name: str(form, "name"), createdById: session.sub, googleUserId: mine.connected ? session.sub : null, bookingEnabled: mine.calendar });
+  after(() => finishDemoAgent(r.id, runId, session.sub).catch((err) => console.error("demo receptionist sync", err)));
+  back(`/crm/receptionists/${r.id}`, { notice: `Building ${account.name}'s demo: Claude is reading their website, then it syncs to ElevenLabs (a minute or two). Demo line extension ${r.demoExtension}.`, ...(runId ? { kbRun: runId } : {}) });
 }
 
 async function freeExtension(): Promise<string> {

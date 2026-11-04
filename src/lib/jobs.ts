@@ -6,6 +6,7 @@ import { writeAccountDoc } from "./drive";
 import { googleConnection } from "./google";
 import { accountVariables, COMPANY_PROFILE_PROMPT, COMPANY_PROFILE_PROMPT_NAME, renderPrompt } from "./prompts";
 import { verifySummary } from "./research-guard";
+import { cleanQuestions } from "./discovery-rules";
 import { getSetting } from "./settings";
 import { aiConfigured } from "./ai";
 import { companyName } from "./brand";
@@ -119,6 +120,8 @@ export async function applyResearchSummary(accountId: string, s: ResearchSummary
       employees: pick(a.employees, s.employees),
       estMissedCallsPerWeek: pick(a.estMissedCallsPerWeek, s.estMissedCallsPerWeek),
       avgJobValueCents: pick(a.avgJobValueCents, s.avgJobValueUsd != null ? Math.round(s.avgJobValueUsd * 100) : null),
+      // Like the other fields: questions edited by hand stay unless research is applied with overwrite.
+      ...((overwrite || !a.discoveryQuestions) && cleanQuestions(s.kbQuestions).length ? { discoveryQuestions: JSON.stringify(cleanQuestions(s.kbQuestions)) } : {}),
     },
   });
   const known = new Set(a.contacts.map((c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim().toLowerCase()));
