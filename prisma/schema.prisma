@@ -346,6 +346,7 @@ model Receptionist {
   updatedAt             DateTime       @updatedAt
 
   knowledge KnowledgeItem[]
+  kbHistory KnowledgeRevision[]
   calls     CallLog[]
   followUps FollowUpMessage[]
 }
@@ -369,6 +370,27 @@ model FollowUpMessage {
 
   @@index([receptionistId, createdAt])
   @@index([conversationId])
+}
+
+/**
+ * One change to a receptionist's knowledge base (by the team or the client), with the item before
+ * and after, so any change can be undone. Undoing is itself a change.
+ */
+model KnowledgeRevision {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  itemId         String // the KnowledgeItem (may since be deleted)
+  action         String // create | update | delete
+  before         String? // JSON of the item before the change (null for create)
+  after          String? // JSON of the item after the change (null for delete)
+  byEmail        String?
+  byRole         String? // ADMIN | REP | CLIENT | system
+  undoOfId       String? // set when this change undid another
+  undoneAt       DateTime? // set on a change once it has been undone
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, createdAt])
 }
 
 model KnowledgeItem {

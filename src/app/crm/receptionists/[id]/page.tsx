@@ -13,6 +13,8 @@ import { Flash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
+import { KbHistory } from "@/components/KbHistory";
+import { kbHistory } from "@/lib/kb-history";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { googleConnection } from "@/lib/google";
@@ -175,6 +177,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
         <div className="space-y-6 lg:col-span-3">
           {followup ? <div className="card"><h2 className="mb-3">Website leads</h2><LeadList leads={leads} showNotes /></div> : null}
           <KnowledgeBaseEditor receptionistId={r.id} items={r.knowledge} returnTo={returnTo} />
+          <KbHistory receptionistId={r.id} revisions={await kbHistory(r.id)} returnTo={returnTo} teamName="Team" />
           <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} />
         </div>
       </div>

@@ -5,7 +5,7 @@ import { Badge, Empty } from "./ui";
 
 type Item = { id: string; category: string; title: string; content: string; tags: string; isActive: boolean; updatedBy: string | null; updatedAt: Date };
 
-function ItemForm({ receptionistId, returnTo, item }: { receptionistId: string; returnTo: string; item?: Item }) {
+function ItemForm({ receptionistId, returnTo, item, client }: { receptionistId: string; returnTo: string; item?: Item; client?: boolean }) {
   return (
     <form action={saveKbItem.bind(null, receptionistId, returnTo)} className="grid gap-2">
       {item ? <input type="hidden" name="id" value={item.id} /> : null}
@@ -17,7 +17,7 @@ function ItemForm({ receptionistId, returnTo, item }: { receptionistId: string; 
       </div>
       <textarea name="content" defaultValue={item?.content} rows={item ? 4 : 3} placeholder="What the receptionist should know or say" className="input" required />
       <div className="flex items-center gap-3">
-        <input name="tags" defaultValue={item?.tags} placeholder="tags" className="input max-w-xs" />
+        {client ? null : <input name="tags" defaultValue={item?.tags} placeholder="tags" className="input max-w-xs" />}
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" name="isActive" defaultChecked={item ? item.isActive : true} /> Active</label>
         <button className="btn-secondary ml-auto">{item ? "Save" : "Add to knowledge base"}</button>
       </div>
@@ -25,20 +25,23 @@ function ItemForm({ receptionistId, returnTo, item }: { receptionistId: string; 
   );
 }
 
-export function KnowledgeBaseEditor({ receptionistId, items, returnTo }: { receptionistId: string; items: Item[]; returnTo: string }) {
-  const drafts = items.filter((i) => i.tags.includes("claude-draft")).length;
+/** `client`: the client portal, where changes go live straight away and drafts stay with the team. */
+export function KnowledgeBaseEditor({ receptionistId, items, returnTo, client = false }: { receptionistId: string; items: Item[]; returnTo: string; client?: boolean }) {
+  const drafts = client ? 0 : items.filter((i) => i.tags.includes("claude-draft")).length;
+  // Claude's unreviewed drafts are the team's job; clients see what's live or switched off.
+  const shown = client ? items.filter((i) => !i.tags.includes("claude-draft")) : items;
   return (
     <div className="space-y-4">
-      <div className="card"><h2 className="mb-3">Add knowledge</h2><ItemForm receptionistId={receptionistId} returnTo={returnTo} /></div>
+      <div className="card"><h2 className="mb-3">Add knowledge</h2>{client ? <p className="mb-2 text-xs text-slate-500">Changes go live within a minute. Made a mistake? Undo it under History.</p> : null}<ItemForm receptionistId={receptionistId} returnTo={returnTo} client={client} /></div>
       {drafts ? (
         <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <span>{drafts} items drafted by Claude are waiting for review (inactive until approved).</span>
           <form action={activateAllDrafts.bind(null, receptionistId, returnTo)}><button className="btn-secondary">Approve all drafts</button></form>
         </div>
       ) : null}
-      {items.length === 0 ? <Empty>No knowledge yet. Add services, hours, pricing and FAQs — the receptionist only answers from what&apos;s here.</Empty> : null}
+      {shown.length === 0 ? <Empty>No knowledge yet. Add services, hours, pricing and FAQs — the receptionist only answers from what&apos;s here.</Empty> : null}
       {KB_CATEGORIES.map((cat) => {
-        const inCat = items.filter((i) => i.category === cat);
+        const inCat = shown.filter((i) => i.category === cat);
         if (!inCat.length) return null;
         return (
           <div key={cat} className="card">
@@ -50,7 +53,7 @@ export function KnowledgeBaseEditor({ receptionistId, items, returnTo }: { recep
                     <span className="font-medium">{item.title} {!item.isActive ? <Badge className="bg-amber-100 text-amber-800">inactive</Badge> : null}{item.tags.includes("claude-draft") ? <Badge className="bg-violet-100 text-violet-800">claude draft</Badge> : null}</span>
                     <span className="text-xs text-slate-400">{item.updatedBy ?? ""} · {formatDate(item.updatedAt)}</span>
                   </summary>
-                  <div className="mt-3"><ItemForm receptionistId={receptionistId} returnTo={returnTo} item={item} /></div>
+                  <div className="mt-3"><ItemForm receptionistId={receptionistId} returnTo={returnTo} item={item} client={client} /></div>
                   <form action={deleteKbItem.bind(null, receptionistId, item.id, returnTo)} className="mt-2"><button className="text-xs text-red-600">Delete</button></form>
                 </details>
               ))}
