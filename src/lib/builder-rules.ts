@@ -5,6 +5,7 @@
 // same way (the demo agent's extension). See src/lib/live-builder.ts.
 
 import { escapeXml, twiml } from "./twilio";
+import { safetyRules } from "./safety-rules";
 
 export const BUILDER_CODE_LENGTH = 6;
 
@@ -88,5 +89,6 @@ Steps:
    When it's ready, say: "I'll connect you now. It'll ring through in a few seconds and answer like it would for your customers, so ask it something a customer would." Then call connect_live_demo. You leave the call after that.
    If demo_status says it failed, apologise and say {{rep_name}} will show it to them on the follow-up.
 6. If they don't want to hear it now: thank them, then call leave_call (with {{rep_name}} on the call, say you're handing back to them).
+${safetyRules({ businessName: r.companyName, timezone: "America/Vancouver", bookingTool: r.bookingEnabled })}
 ${r.extraInstructions ? `\nAdditional instructions:\n${r.extraInstructions}\n` : ""}`;
 }

@@ -11,6 +11,7 @@ import { KB_CATEGORIES } from "@/lib/constants";
 import { markDirty, syncReceptionist } from "@/lib/elevenlabs";
 import { recordActivity } from "@/lib/outreach";
 import { recordKbChange, undoKbChange } from "@/lib/kb-history";
+import { looksLikeInstructions } from "@/lib/safety-rules";
 import type { SessionPayload } from "@/lib/session";
 import { str } from "@/lib/utils";
 
@@ -77,6 +78,8 @@ export async function saveKbItem(receptionistId: string, returnTo: string, form:
     updatedBy: session.email,
   };
   if (!data.title || !data.content) done(returnTo, "Title and content are required", "error");
+  // Knowledge is facts about the business, never instructions to the AI (prompt injection).
+  if (looksLikeInstructions(`${data.title}\n${data.content}`)) done(returnTo, "That reads like an instruction to the AI rather than information about the business, so it wasn't saved. Describe the fact instead (for example \"We're closed on Sundays\"), or ask the team.", "error");
   // A client can't grow the knowledge base without limit (it's sent to the agent on every sync).
   if (!existing && (await db.knowledgeItem.count({ where: { receptionistId } })) >= 300) done(returnTo, "This knowledge base has reached 300 entries. Combine or remove some, or ask the team.", "error");
   await db.$transaction(async (tx) => {

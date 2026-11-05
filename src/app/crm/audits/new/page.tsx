@@ -47,6 +47,7 @@ export default async function NewAuditPage({ searchParams }: { searchParams: Pro
             <select name="industry" defaultValue={account?.industry && !/auto|mechanic|repair|garage/i.test(account.industry) ? "other" : "auto_repair"} className="input">
               <option value="auto_repair">Auto repair / mechanic</option>
               <option value="other">Other service business</option>
+              <option value="safety">Safety test of one of our AI receptionists (tries to trick it; never use on real staff)</option>
             </select>
           </Field>
           <Field label="Time zone"><input name="timezone" defaultValue="America/Vancouver" className="input" /></Field>

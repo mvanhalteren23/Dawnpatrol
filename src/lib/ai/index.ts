@@ -1,4 +1,5 @@
 import "server-only";
+import { looksLikeInstructions, safetyRules } from "../safety-rules";
 import { z } from "zod";
 import { companyName } from "../brand";
 import * as claude from "./anthropic";
@@ -176,13 +177,14 @@ const SmsReplySchema = z.object({
 });
 
 /** Reply to a customer's text on the business line, from the receptionist's knowledge base. */
-export async function smsReply(o: { businessName: string; agentName: string; knowledgeBase: string; history: ChatTurn[]; bookingLink: string | null }) {
+export async function smsReply(o: { businessName: string; agentName: string; timezone: string; knowledgeBase: string; history: ChatTurn[]; bookingLink: string | null }) {
   const instructions = [
     `You answer text messages for ${o.businessName} as ${o.agentName}, its AI assistant. Customers text the business number.`,
     "Answer only from the knowledge base below. If it doesn't cover something, say the team will get back to them, and set needsOwner.",
     "Never invent prices, availability, policies or promises. Never ask for payment, banking, SIN or health details.",
     o.bookingLink ? `When someone wants to book, send this link to pick a time: ${o.bookingLink}` : "When someone wants to book, ask for two times that suit them and say the team will confirm.",
     "Keep it to one or two short sentences, like a real text. If asked, say plainly you're an AI assistant.",
+    safetyRules({ businessName: o.businessName, timezone: o.timezone, channel: "text", now: new Date() }),
     `<knowledge_base>\n${o.knowledgeBase || "(empty)"}\n</knowledge_base>`,
   ].join("\n");
   const transcript = o.history.map((t) => `${t.role === "user" ? "Customer" : "You"}: ${t.content}`).join("\n");
@@ -245,7 +247,7 @@ export async function extractCallFacts(transcript: string, businessName: string)
     `This is the transcript of a sales call to ${businessName}. List only facts the prospect (not the rep) stated about their own business, worded as a customer's question and the business's answer. Never invent, generalise or add anything they didn't say; skip small talk, objections and anything about the AI receptionist product itself. No payment, banking, SIN or health details.`,
     transcript,
   );
-  return ex.data.facts.filter((f) => f.question.trim() && f.answer.trim()).slice(0, 20);
+  return ex.data.facts.filter((f) => f.question.trim() && f.answer.trim() && !looksLikeInstructions(`${f.question} ${f.answer}`)).slice(0, 20);
 }
 
 // --- AI voicemail scripts ------------------------------------------------------

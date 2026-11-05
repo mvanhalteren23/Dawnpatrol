@@ -10,6 +10,7 @@ import { dialerCallerId } from "./dialer";
 import { registerTwilioCall, syncReceptionist } from "./elevenlabs";
 import { recordKbChange } from "./kb-history";
 import { parseAnswers } from "./discovery-rules";
+import { looksLikeInstructions } from "./safety-rules";
 import { isoDate, localDate } from "./booking";
 import { textsCustomers } from "./customer-texts";
 import { checkinDue, checkinHours, holidayQuestion, holidaysFor, matchQuestion, parseUnanswered, questionKey, saysClosed, upcomingHolidays } from "./customer-text-rules";
@@ -204,7 +205,7 @@ export async function answerQuestions(receptionistId: string, answers: { questio
   const closed: string[] = [];
   for (const a of answers) {
     const answer = a.answer.trim().slice(0, 2000);
-    if (!answer) continue;
+    if (!answer || looksLikeInstructions(answer)) continue;
     const q = (a.questionId && open.find((o) => o.id === a.questionId)) || open.find((o) => o.key === questionKey(a.question)) || matchQuestion(a.question, open);
     const title = (q?.question ?? a.question).trim().slice(0, 200);
     const holiday = q?.kind === "holiday";

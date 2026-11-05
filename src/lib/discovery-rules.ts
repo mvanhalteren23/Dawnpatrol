@@ -2,6 +2,8 @@
 // tested). Research writes questions for each researched account; callers we haven't researched
 // get the set for their type of business. Answers go into the prospect's demo agent.
 
+import { looksLikeInstructions } from "./safety-rules";
+
 export const MAX_DISCOVERY_QUESTIONS = 5;
 
 export type DiscoveryTrade = "mechanics" | "contractors" | "retail" | "general";
@@ -101,7 +103,8 @@ export function parseAnswers(text: string): QA[] {
     if (split) out.push({ question: split[1]!.trim(), answer: split[2]!.trim() });
   }
   const skipped = /^(skip(ped)?|n\/?a|none|no answer|not sure|don'?t know|unknown|-+)\.?$/i;
-  return out.filter((qa) => qa.answer && !skipped.test(qa.answer)).slice(0, 20);
+  // Answers that read like instructions to the AI are dropped (they'd go straight into an agent).
+  return out.filter((qa) => qa.answer && !skipped.test(qa.answer) && !looksLikeInstructions(`${qa.question} ${qa.answer}`)).slice(0, 20);
 }
 
 /** The knowledge-base entry built from the answers; `intro` replaces the default opening line. */

@@ -60,7 +60,8 @@ export async function createAudit(form: FormData) {
     back(path, { error: `Shop hours: ${(err as Error).message}` });
   }
   const timezone = str(form, "timezone") || "America/Vancouver";
-  const industry = str(form, "industry") === "other" ? "other" : "auto_repair";
+  const picked = str(form, "industry");
+  const industry = picked === "other" || picked === "safety" ? picked : "auto_repair";
   const customScenarios = str(form, "customScenarios").slice(0, 3000);
   const callsPerDay = Math.min(5, Math.max(1, optInt(form, "callsPerDay") ?? 3));
   const afterHoursCalls = Math.min(7, Math.max(0, optInt(form, "afterHoursCalls") ?? 3));

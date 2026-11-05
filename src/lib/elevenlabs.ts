@@ -1,6 +1,7 @@
 import "server-only";
 import { BUILDER_DYNAMIC_DEFAULTS, buildBuilderPrompt, builderOpening } from "./builder-rules";
 import { buildCheckinPrompt, CHECKIN_DYNAMIC_DEFAULTS, checkinOpening } from "./customer-text-rules";
+import { defaultGreeting } from "./safety-rules";
 import { db } from "./db";
 import { buildReceptionistPrompt, compileByCategory } from "./rag";
 import { buildFollowupPrompt, followupOpening, type FollowupProfile } from "./followup-rules";
@@ -210,12 +211,37 @@ export const FOLLOWUP_DATA_COLLECTION = {
   },
 };
 
-/** Add our data-collection fields without dropping any configured by hand in ElevenLabs. */
-async function mergedDataCollection(agentId: string | null, followup = false) {
+/**
+ * Platform settings every agent gets, merged into what's already set in ElevenLabs so nothing
+ * configured by hand is lost: our data-collection fields; the prompt-injection and stay-on-topic
+ * guardrails on; no client-side overrides of the prompt, first message, voice or tools; and
+ * conversations deleted after RETENTION_DAYS (calls are copied into the CRM within a day).
+ */
+export const RETENTION_DAYS = 90;
+
+async function mergedPlatformSettings(agentId: string | null, followup = false) {
   const ours = followup ? { ...DATA_COLLECTION, ...FOLLOWUP_DATA_COLLECTION } : DATA_COLLECTION;
-  if (!agentId) return ours;
-  const current = await el<{ platform_settings?: { data_collection?: Record<string, unknown> } }>(`/agents/${agentId}`).catch(() => null);
-  return { ...(current?.platform_settings?.data_collection ?? {}), ...ours };
+  type Settings = { data_collection?: Record<string, unknown>; guardrails?: Record<string, unknown>; privacy?: Record<string, unknown>; overrides?: { conversation_config_override?: Record<string, Record<string, unknown>> } & Record<string, unknown> };
+  const current = agentId ? (await el<{ platform_settings?: Settings }>(`/agents/${agentId}`).catch(() => null))?.platform_settings ?? {} : {};
+  const g = current.guardrails ?? {};
+  const o = current.overrides ?? {};
+  const cco = o.conversation_config_override ?? {};
+  const agentOverride = (cco.agent ?? {}) as Record<string, unknown>;
+  const retention = Number(current.privacy?.retention_days ?? -1);
+  return {
+    data_collection: { ...(current.data_collection ?? {}), ...ours },
+    guardrails: { version: "1", ...g, focus: { ...((g.focus as object) ?? {}), is_enabled: true }, prompt_injection: { ...((g.prompt_injection as object) ?? {}), is_enabled: true } },
+    overrides: {
+      ...o,
+      conversation_config_override: {
+        ...cco,
+        agent: { ...agentOverride, first_message: false, language: false, prompt: { ...((agentOverride.prompt as object) ?? {}), prompt: false, tool_ids: false, knowledge_base: false } },
+        tts: { ...(cco.tts ?? {}), voice_id: false },
+      },
+    },
+    // Shorter is fine (someone chose it); unlimited (-1) or longer becomes 90 days.
+    privacy: { ...(current.privacy ?? {}), retention_days: retention > 0 && retention <= RETENTION_DAYS ? retention : RETENTION_DAYS },
+  };
 }
 
 /** The live demo builder (src/lib/live-builder.ts): every tool acts on the call's session. */
@@ -301,7 +327,7 @@ export function agentConfig(
   const followup = r.agentType === "followup";
   const builder = r.agentType === "builder"; // the live demo builder: businessName is our company's name
   const checkin = r.agentType === "checkin"; // the weekly owner check-in: businessName is our company's name too
-  const greeting = checkin ? checkinOpening({ name: r.name, companyName: r.businessName }) : builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
+  const greeting = checkin ? checkinOpening({ name: r.name, companyName: r.businessName }) : builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || defaultGreeting({ businessName: r.businessName, name: r.name });
   const dynamicDefaults = checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
@@ -345,16 +371,24 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
     }
 
     const { ids: toolIds, attached } = await syncAgentTools(r);
-    const config = {
-      ...agentConfig(r, docs, attached),
-      platform_settings: { data_collection: await mergedDataCollection(r.elevenLabsAgentId, r.agentType === "followup") },
+    const platform = await mergedPlatformSettings(r.elevenLabsAgentId, r.agentType === "followup");
+    const config = { ...agentConfig(r, docs, attached), platform_settings: platform };
+    // If ElevenLabs ever rejects the security settings, still sync the agent (with a warning)
+    // rather than leave it out of date.
+    const send = async (body: object) => {
+      if (r.elevenLabsAgentId) {
+        await el(`/agents/${r.elevenLabsAgentId}`, { method: "PATCH", body: JSON.stringify(body) });
+        return r.elevenLabsAgentId;
+      }
+      return (await el<{ agent_id: string }>("/agents/create", { method: "POST", body: JSON.stringify(body) })).agent_id;
     };
-    let agentId = r.elevenLabsAgentId;
-    if (agentId) {
-      await el(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(config) });
-    } else {
-      const created = await el<{ agent_id: string }>("/agents/create", { method: "POST", body: JSON.stringify(config) });
-      agentId = created.agent_id;
+    let agentId: string;
+    try {
+      agentId = await send(config);
+    } catch (err) {
+      if (!/ (400|422) /.test(String(err))) throw err;
+      console.warn("ElevenLabs rejected the security settings; synced without them", r.id, (err as Error).message.slice(0, 300));
+      agentId = await send({ ...config, platform_settings: { data_collection: platform.data_collection } });
     }
 
     await db.receptionist.update({

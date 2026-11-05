@@ -126,7 +126,7 @@ export async function handleCustomerText(r: R, fromRaw: string, body: string): P
         const items = await db.knowledgeItem.findMany({ where: { receptionistId: r.id } });
         const history = (await db.smsMessage.findMany({ where: { receptionistId: r.id, phone: from, createdAt: { gte: new Date(Date.now() - 48 * 3600_000) } }, orderBy: { createdAt: "asc" }, take: 20 }))
           .map((m) => ({ role: m.direction === "IN" ? ("user" as const) : ("assistant" as const), content: m.body }));
-        const out = await smsReply({ businessName: r.businessName, agentName: r.name, knowledgeBase: compileKnowledgeBase(items, r.businessName), history, bookingLink: await bookingLink(r) });
+        const out = await smsReply({ businessName: r.businessName, agentName: r.name, timezone: r.timezone, knowledgeBase: compileKnowledgeBase(items, r.businessName), history, bookingLink: await bookingLink(r) });
         if (out.reply) await textCustomer(r, from, out.reply, "chat");
         if (out.needsOwner) await alertOwner(r, `Text to ${r.businessName} from ${from}: "${body.slice(0, 300)}"${out.ownerNote ? `\n${out.ownerNote}` : ""}\nReplied: "${out.reply.slice(0, 200)}"`);
       } catch (err) {

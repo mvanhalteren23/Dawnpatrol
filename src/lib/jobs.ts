@@ -7,6 +7,7 @@ import { googleConnection } from "./google";
 import { accountVariables, COMPANY_PROFILE_PROMPT, COMPANY_PROFILE_PROMPT_NAME, renderPrompt } from "./prompts";
 import { verifySummary } from "./research-guard";
 import { cleanQuestions } from "./discovery-rules";
+import { looksLikeInstructions } from "./safety-rules";
 import { getSetting } from "./settings";
 import { aiConfigured } from "./ai";
 import { companyName } from "./brand";
@@ -195,7 +196,8 @@ export async function executeKbDraft(runId: string) {
     const result = await draftKnowledgeBase(businessName, website, notes);
     // Drafts land inactive and tagged so a human reviews before the receptionist uses them.
     await db.knowledgeItem.createMany({
-      data: result.items.map((i) => ({ receptionistId, category: i.category, title: i.title, content: i.content, tags: "claude-draft", isActive: false, updatedBy: "claude" })),
+      // Website text that reads like instructions to an AI is dropped (prompt injection via a website).
+      data: result.items.filter((i) => !looksLikeInstructions(`${i.title}\n${i.content}`)).map((i) => ({ receptionistId, category: i.category, title: i.title, content: i.content, tags: "claude-draft", isActive: false, updatedBy: "claude" })),
     });
     await db.researchRun.update({
       where: { id: runId },

@@ -6,6 +6,7 @@ import { companyName } from "@/lib/brand";
 import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { KbHistory } from "@/components/KbHistory";
 import { OpenQuestions } from "@/components/CustomerCare";
+import { defaultGreeting } from "@/lib/safety-rules";
 import { kbHistory } from "@/lib/kb-history";
 import { RequestChangeForm } from "@/components/RequestChangeForm";
 import { TestChat } from "@/components/TestChat";
@@ -39,7 +40,7 @@ export default async function PortalKnowledge({ searchParams }: { searchParams: 
           </div>
           <div className="space-y-6 lg:col-span-2">
             <RequestChangeForm receptionistId={receptionist.id} returnTo={returnTo} defaultTopic="Services or prices" />
-            <TestChat receptionistId={receptionist.id} greeting={receptionist.greeting || `Thanks for calling ${receptionist.businessName}, this is ${receptionist.name}. How can I help you today?`} />
+            <TestChat receptionistId={receptionist.id} greeting={receptionist.greeting || defaultGreeting({ businessName: receptionist.businessName, name: receptionist.name })} />
           </div>
         </div>
       )}
