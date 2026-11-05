@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import type { CallLog, Receptionist } from "@prisma/client";
 import { db } from "./db";
+import { getSetting } from "./settings";
 import { appUrl } from "./app-url";
 import { companyName } from "./brand";
 import { escapeXml, sendSms, toE164, twiml, twilioApi } from "./twilio";
@@ -68,7 +69,8 @@ export async function checkinAgent(): Promise<R | null> {
   const house = await db.receptionist.findFirst({ where: { bookingAddsToCrm: true }, orderBy: { createdAt: "asc" } });
   if (!house) return null;
   const r = await db.receptionist.create({
-    data: { accountId: house.accountId, agentType: "checkin", name: "Jordan", businessName: await companyName(), persona: "Friendly, quick and respectful of the owner's time.", ragToken: randomBytes(24).toString("base64url"), timezone: house.timezone },
+    // Named and voiced like the company receptionist (set by "Set up Grace").
+    data: { accountId: house.accountId, agentType: "checkin", name: (await getSetting("checkin.name")) || house.name, voiceId: (await getSetting("checkin.voiceId")) || house.voiceId, businessName: await companyName(), persona: "Friendly, quick and respectful of the owner's time.", ragToken: randomBytes(24).toString("base64url"), timezone: house.timezone },
   });
   await syncReceptionist(r.id).catch((e) => console.error("check-in agent sync", e));
   return db.receptionist.findUnique({ where: { id: r.id } });

@@ -9,6 +9,7 @@ import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
 import { samePhone, toE164 } from "./twilio";
 import { deleteEvent } from "./calendar";
+import { normalizeBusinessName } from "./business-names";
 import { findAccountIdByPhone } from "./team";
 import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
 import { queueProfileResearch } from "./jobs";
@@ -230,10 +231,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
 
 const FREE_MAIL = /@(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|icloud|me|mac|aol|proton|protonmail|shaw|telus|rogers|sympatico|bell)\./i;
 
-/** "Acme Plumbing Ltd." -> "acme plumbing" for loose name matching. */
-export function normalizeBusinessName(name: string): string {
-  return name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]/g, " ").replace(/\b(ltd|limited|inc|incorporated|corp|corporation|co|company|llc|the)\b/g, " ").replace(/\s+/g, " ").trim();
-}
+export { normalizeBusinessName };
 
 type AccountRow = NonNullable<Awaited<ReturnType<typeof db.account.findUnique>>>;
 

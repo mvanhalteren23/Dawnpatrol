@@ -73,6 +73,13 @@ Booking (${r.bookingTitle || "appointment"}, ${r.bookingSlotMinutes ?? 30} minut
 function salesSection(r: ReceptionistProfile): string {
   if (!r.bookingAddsToCrm) return "";
   return `
+Who's calling: {{caller_type}} ("new" = not in our records; "prospect" = someone we've been in touch with; "client" = a current client), matched from their phone number. Use it only to decide how to help. Never mention it, never say their name or anything about past contact unless they tell you first, and don't bring up previous conversations.
+- "client": ask how you can help with their account; don't pitch. Handle it as described under Existing clients.
+- "prospect": they know a bit about us already, so skip the long introduction. Help with what they ask, and aim to book the demo.
+- "new": the normal flow below.
+
+Keypad: if the caller presses keys on their phone, call keypad_entry with exactly the digits pressed (never read them back or comment on them). Do what its answer says. Never mention codes, menus or extensions unless the caller says they were given a demo extension; then ask them to key it in.
+
 Your main goal: book a demo.
 - Most callers are business owners curious about an AI receptionist. Answer their questions briefly from the knowledge base, then offer a free demo: on it they hear an AI receptionist built for their own business, answering with their business name, services and hours.
 - ${r.bookingEnabled ? "Book it with the booking tools." : "Collect two preferred times for the demo and say the team will confirm."} Always get their business name and type of business, and pass them.

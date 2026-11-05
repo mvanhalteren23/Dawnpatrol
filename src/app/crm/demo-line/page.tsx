@@ -8,7 +8,8 @@ import { formatDate } from "@/lib/utils";
 import { demoExpiry } from "@/lib/agent-lifecycle";
 import { Badge, Empty, Field, Notice, PageHeader, StageBadge, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";
-import { assignDemoExtension, clearDemoExtension, createBuilderAgent, saveDemoLineSettings } from "../actions";
+import { assignDemoExtension, clearDemoExtension, createBuilderAgent, saveDemoLineSettings, saveMenuCode, setupGraceAction } from "../actions";
+import { GRACE_DEFAULT_VOICE, houseFollowupAgent, houseReceptionist, menuCode } from "@/lib/house-line";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
     db.receptionist.findFirst({ where: { agentType: "builder" } }),
   ]);
   const app = appUrl();
+  const [house, houseFollowup, checkinAgentRow, code] = await Promise.all([houseReceptionist(), houseFollowupAgent(), db.receptionist.findFirst({ where: { agentType: "checkin" } }), menuCode()]);
   const expiry = await demoExpiry(demos);
 
   return (
@@ -56,6 +58,26 @@ export default async function DemoLinePage({ searchParams }: { searchParams: Pro
             ))}</tbody>
           </table>
         ) : <div className="p-5"><Empty>No demos yet. On a prospect&apos;s account, add a receptionist with &quot;Demo for this prospect&quot; ticked, fill its knowledge base (Draft KB from website is fastest), then Sync to ElevenLabs.</Empty></div>}
+      </div>
+
+      <div className="card mb-6 space-y-3 text-sm">
+        <h2>Your business line</h2>
+        <p className="text-slate-600">Callers to {config.number ? formatPhone(config.number) : "the demo number"} reach your receptionist, who knows whether they&apos;re new, a prospect or a client (from their number) without bringing up past conversations. Key the menu code during a call to open the demo menu, then enter an extension or say the company name. Prospects with a demo extension can key it in too.</p>
+        <ul className="space-y-1">
+          {[["Receptionist", house], ["Website form follow-up", houseFollowup], ["Owner check-ins", checkinAgentRow]].map(([label, a]) => {
+            const r = a as typeof house;
+            return <li key={label as string} className="flex flex-wrap items-center gap-2"><span className="w-44 text-slate-500">{label as string}</span>{r ? <><Link href={`/crm/receptionists/${r.id}`}>{r.name}</Link><StatusBadge status={r.syncStatus} />{r.syncError ? <span className="text-xs text-red-700">{r.syncError.slice(0, 160)}</span> : null}</> : <span className="text-slate-400">not set up</span>}</li>;
+          })}
+        </ul>
+        <form action={setupGraceAction} className="flex flex-wrap items-end gap-2">
+          <Field label="Name"><input name="name" defaultValue={house?.name === "Grace" || !house ? "Grace" : house.name} className="input w-32" /></Field>
+          <Field label="ElevenLabs voice ID"><input name="voiceId" defaultValue={house?.voiceId ?? GRACE_DEFAULT_VOICE} className="input w-64" /></Field>
+          <button className="btn">{house?.name === "Grace" && houseFollowup ? "Update and sync" : "Set up Grace"}</button>
+        </form>
+        <form action={saveMenuCode} className="flex items-end gap-2">
+          <Field label="Demo menu code (keypad)"><input name="menuCode" defaultValue={code} inputMode="numeric" className="input w-28" /></Field>
+          <button className="btn-secondary">Save code</button>
+        </form>
       </div>
 
       <div className="card mb-6 space-y-2 text-sm">

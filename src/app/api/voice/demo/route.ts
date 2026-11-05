@@ -8,6 +8,9 @@ import { appUrl } from "@/lib/app-url";
 import { twilioSignatureOk } from "@/lib/twilio-request";
 import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
+import { callerType, houseReceptionist } from "@/lib/house-line";
+import { matchDemoByName } from "@/lib/house-line-rules";
+import { escapeXml } from "@/lib/twilio";
 
 // Demo line directory. Twilio's Voice webhook for the demo number points here:
 //   1. Greet and <Gather> an extension.
@@ -55,9 +58,36 @@ export async function POST(req: Request) {
   // digits are a builder session code or a demo extension.
   const internal = isInternalLeg(from);
 
-  // First hit: greet and ask for the extension.
-  if (url.searchParams.get("step") !== "ext") {
-    return xml(internal ? silentGatherTwiml(action(1)) : gatherExtension(config.greeting, action(1), action(1)));
+  const step = url.searchParams.get("step");
+
+  // The demo menu (the owner keyed their code to Grace) and a prospect's demo by extension: the
+  // keypad tool moved the live call here. Pick a demo by extension or by saying the company name.
+  if (!internal && (step === "menu" || step === "pick" || step === "open")) {
+    const demos = await db.receptionist.findMany({ where: { demoExtension: { not: null }, elevenLabsAgentId: { not: null } }, select: { id: true, demoExtension: true, businessName: true, elevenLabsAgentId: true } });
+    const pick = (n: number) => `${base()}/api/voice/demo?step=pick&attempt=${n}`;
+    const menu = (prompt: string, n: number) =>
+      xml(twiml(`<Gather input="dtmf speech" finishOnKey="#" timeout="6" speechTimeout="auto" hints="${escapeXml(demos.map((d) => d.businessName).join(", ").slice(0, 900))}" action="${escapeXml(pick(n))}" method="POST">${say(prompt)}</Gather><Redirect method="POST">${escapeXml(pick(n))}</Redirect>`));
+    if (step === "menu") return menu("Demo menu. Enter the extension and press pound, or say the company name.", 1);
+    const ext = step === "open" ? cleanDigits(url.searchParams.get("ext") ?? "") : cleanDigits(params.Digits);
+    const chosen = demos.find((d) => ext && d.demoExtension === ext) ?? (step === "pick" && params.SpeechResult ? matchDemoByName(params.SpeechResult, demos) : null);
+    if (chosen) return connect(chosen.elevenLabsAgentId!, from, to);
+    if (step === "open" || attempt >= MAX_ATTEMPTS) return xml(twiml(`${say("Sorry, that demo isn't available right now. Goodbye.")}<Hangup/>`));
+    return menu("Sorry, I couldn't find that one. Enter the extension, or say the company name.", attempt + 1);
+  }
+
+  // First hit. Our own legs (builder, live demo) wait for digits. Everyone else reaches Grace, the
+  // company receptionist, told only what kind of caller it is; without her, the old directory.
+  if (step !== "ext") {
+    if (internal) return xml(silentGatherTwiml(action(1)));
+    const grace = await houseReceptionist();
+    if (grace?.elevenLabsAgentId) {
+      try {
+        return xml(await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { caller_type: await callerType(from), call_sid: params.CallSid ?? "" } }));
+      } catch (err) {
+        console.error("demo line: receptionist register-call failed", err);
+      }
+    }
+    return xml(gatherExtension(config.greeting, action(1), action(1)));
   }
 
   const digits = cleanDigits(params.Digits);

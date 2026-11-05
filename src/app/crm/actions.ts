@@ -1279,6 +1279,42 @@ export async function reviveDemoAction(receptionistId: string) {
 }
 
 /**
+ * "Set up Grace": the company receptionist on the demo number, the follow-up agent for the
+ * website's demo form and the owner check-in agent, with one name and voice; then sync them all.
+ */
+export async function setupGraceAction(form: FormData) {
+  await requireAdmin();
+  const { GRACE_DEFAULT_VOICE, setupGrace } = await import("@/lib/house-line");
+  const name = str(form, "name").trim().slice(0, 40) || "Grace";
+  const voiceId = str(form, "voiceId").trim() || GRACE_DEFAULT_VOICE;
+  if (!/^[A-Za-z0-9]{10,40}$/.test(voiceId)) back("/crm/demo-line", { error: "That doesn't look like an ElevenLabs voice ID (copy it from the voice's ⋯ menu → Copy voice ID)" });
+  let res: Awaited<ReturnType<typeof setupGrace>>;
+  try {
+    res = await setupGrace({ name, voiceId });
+  } catch (err) {
+    back("/crm/demo-line", { error: (err as Error).message });
+  }
+  // The receptionist syncs now (so any error shows); the others right after.
+  const [first, ...rest] = res.ids;
+  const firstError = await syncReceptionist(first!).then(() => null).catch((e: Error) => e.message);
+  after(async () => {
+    for (const id of rest) await syncReceptionist(id).catch((e) => console.error("grace sync", id, e));
+  });
+  if (firstError) back("/crm/demo-line", { error: `${name} was set up but didn't sync: ${firstError.slice(0, 300)}` });
+  back("/crm/demo-line", { notice: `${res.notes.join(". ")}. The follow-up and check-in agents are syncing now; refresh in a minute.` });
+}
+
+/** The keypad code that opens the demo menu on the company line (checked by the app, never told to the agent). */
+export async function saveMenuCode(form: FormData) {
+  await requireAdmin();
+  const code = str(form, "menuCode").replace(/\D/g, "");
+  if (code.length < 4 || code.length > 8) back("/crm/demo-line", { error: "Use 4 to 8 digits" });
+  const { setSetting } = await import("@/lib/settings");
+  await setSetting("demo.menuCode", code);
+  back("/crm/demo-line", { notice: "Demo menu code saved" });
+}
+
+/**
  * The live demo builder (Dialer → "Add demo builder"): one agent for the company, kept on the
  * company's own account (the one whose receptionist adds bookings to the CRM).
  */

@@ -3,6 +3,7 @@ import { verifySharedSecret } from "@/lib/webhook-verify";
 import { processAudits } from "@/lib/call-audit";
 import { processCustomerTexts } from "@/lib/customer-texts";
 import { processCheckins } from "@/lib/owner-checkin";
+import { processDueLeads } from "@/lib/followup";
 
 export const maxDuration = 300;
 
@@ -15,5 +16,7 @@ export async function GET(req: Request) {
   const audits = await processAudits().catch((e: Error) => ({ error: e.message }));
   const texts = await processCustomerTexts().catch((e: Error) => ({ error: e.message }));
   const checkins = await processCheckins().catch((e: Error) => ({ error: e.message }));
-  return NextResponse.json({ audits, texts, checkins });
+  // Website leads that came in outside calling hours: called as soon as calling hours start.
+  const leads = await processDueLeads(10).catch((e: Error) => e.message);
+  return NextResponse.json({ audits, texts, checkins, leads });
 }

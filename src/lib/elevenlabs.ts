@@ -138,6 +138,22 @@ export function salesTools(r: { id: string; ragToken: string }) {
     business_type: str("Type of business, e.g. auto repair, plumbing, retail store."),
   };
   return {
+    keypad_entry: {
+      type: "webhook",
+      name: "keypad_entry",
+      description: "The caller pressed keys on their phone keypad. Pass exactly the digits they pressed. Never read the digits back.",
+      response_timeout_secs: 10,
+      api_schema: {
+        url: `${base}/keypad`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: { digits: str("The digits the caller keyed, in order (0-9 only)."), call_sid: { type: "string", dynamic_variable: "call_sid" } },
+          required: ["digits"],
+        },
+      },
+    },
     get_personalization_questions: {
       type: "webhook",
       name: "get_personalization_questions",
@@ -328,7 +344,8 @@ export function agentConfig(
   const builder = r.agentType === "builder"; // the live demo builder: businessName is our company's name
   const checkin = r.agentType === "checkin"; // the weekly owner check-in: businessName is our company's name too
   const greeting = checkin ? checkinOpening({ name: r.name, companyName: r.businessName }) : builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || defaultGreeting({ businessName: r.businessName, name: r.name });
-  const dynamicDefaults = checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
+  const dynamicDefaults = house ? { caller_type: "new", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
@@ -377,8 +394,14 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
     // rather than leave it out of date.
     const send = async (body: object) => {
       if (r.elevenLabsAgentId) {
-        await el(`/agents/${r.elevenLabsAgentId}`, { method: "PATCH", body: JSON.stringify(body) });
-        return r.elevenLabsAgentId;
+        try {
+          await el(`/agents/${r.elevenLabsAgentId}`, { method: "PATCH", body: JSON.stringify(body) });
+          return r.elevenLabsAgentId;
+        } catch (err) {
+          // Not in this ElevenLabs account (deleted, or the account changed): create it afresh.
+          if (!String(err).includes(" 404 ")) throw err;
+          console.warn("agent not found in ElevenLabs; creating a new one", r.id, r.elevenLabsAgentId);
+        }
       }
       return (await el<{ agent_id: string }>("/agents/create", { method: "POST", body: JSON.stringify(body) })).agent_id;
     };

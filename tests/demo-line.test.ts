@@ -11,9 +11,16 @@ const receptionists: Record<string, { id: string; name: string; elevenLabsAgentI
 const recordActivity = vi.fn(async () => ({}));
 const registerTwilioCall = vi.fn(async () => "<Response><Connect/></Response>");
 
+let house: { id: string; name: string; elevenLabsAgentId: string | null } | null = null;
 vi.mock("@/lib/db", () => ({
-  db: { receptionist: { findUnique: async ({ where }: { where: { demoExtension?: string; id?: string } }) => (where.demoExtension ? receptionists[where.demoExtension] ?? null : null) } },
+  db: {
+    receptionist: {
+      findUnique: async ({ where }: { where: { demoExtension?: string; id?: string } }) => (where.demoExtension ? receptionists[where.demoExtension] ?? null : null),
+      findFirst: async () => house,
+    },
+  },
 }));
+vi.mock("@/lib/house-line", () => ({ houseReceptionist: async () => house, callerType: async (from: string) => (from === "+16045550101" ? "client" : "new") }));
 vi.mock("@/lib/demo-line", () => ({ demoLineConfig: async () => ({ number: "+17786504870", greeting: "Welcome to the demo line.", fallbackReceptionistId: null }) }));
 vi.mock("@/lib/elevenlabs", () => ({ registerTwilioCall }));
 vi.mock("@/lib/outreach", () => ({ recordActivity }));
@@ -65,6 +72,14 @@ describe("demo line webhook", () => {
 
   it("rejects unsigned requests", async () => {
     expect((await call("", base, false)).status).toBe(403);
+  });
+
+  it("puts callers through to the company receptionist when there is one, with the caller type only", async () => {
+    house = { id: "h1", name: "Grace", elevenLabsAgentId: "agent_grace" };
+    const r = await call("", { ...base, From: "+16045550101" });
+    expect(r.body).toContain("<Connect");
+    expect(registerTwilioCall).toHaveBeenCalledWith("agent_grace", "+16045550101", "+17786504870", { dynamicVariables: { caller_type: "client", call_sid: "CA1" } });
+    house = null;
   });
 
   it("greets and gathers an extension on the first hit", async () => {

@@ -11,8 +11,9 @@ import { connectedEmail } from "@/lib/google";
 import { researchNewAccounts } from "@/lib/jobs";
 import { appBase } from "@/lib/twilio-request";
 import { INDUSTRIES, TRADE_KEYS, type TradeKey } from "@/lib/site-content";
+import { houseFollowupAgent } from "@/lib/house-line";
 
-export type DemoRequestState = { ok?: boolean; error?: string; name?: string; phone?: string; business?: string };
+export type DemoRequestState = { ok?: boolean; error?: string; name?: string; phone?: string; business?: string; callback?: "soon" | "morning" | null; caller?: string };
 
 const field = (form: FormData, key: string, max: number) => String(form.get(key) ?? "").trim().slice(0, max);
 
@@ -54,6 +55,20 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "NOTE", direction: "INBOUND", subject: `Website demo request: ${tradeLabel}`, body, source: "website" });
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "TASK", subject: `Call ${name} to book their demo${preferredDate ? ` (prefers ${preferredDate})` : ""}`, dueAt: addDays(new Date(), 1), source: "website" });
 
+  // Grace (the follow-up agent) calls them back within a couple of minutes, 8am-8pm Pacific
+  // (forms outside those hours are called at 8am).
+  const grace = await houseFollowupAgent().catch(() => null);
+  let callback: DemoRequestState["callback"] = null;
+  if (grace?.elevenLabsAgentId) {
+    const { intakeLead, callAfterDelay } = await import("@/lib/followup");
+    const intake = await intakeLead(grace, { name, phone, email, business, location, message: `Website demo request (${tradeLabel})${preferredDate ? `, prefers ${preferredDate}` : ""}` }, { source: "website", consent: true }).catch((e) => {
+      console.error("demo request follow-up", e);
+      return null;
+    });
+    if (intake?.action === "calling") after(() => callAfterDelay(grace, intake.lead.id));
+    callback = intake?.action === "calling" ? "soon" : intake?.action === "queued" ? "morning" : null;
+  }
+
   after(async () => {
     if (!dup) await researchNewAccounts([account.id]).catch((e) => console.warn("demo request research", e));
     // Sales: tell the account's rep, or the company account (matt@), straight away.
@@ -68,5 +83,5 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
       }).catch((e) => console.warn("demo request email", e));
     }
   });
-  return { ok: true, name, phone, business };
+  return { ok: true, name, phone, business, callback, caller: grace?.name };
 }

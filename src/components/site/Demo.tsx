@@ -63,7 +63,12 @@ function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: bo
           <div className="space-y-3 rounded-[12px] bg-[#1F3B2D] p-6 text-[#EFE6D4]">
             <div className="font-condensed-700 text-xl uppercase text-[#D8B47A]">✓ Demo request received</div>
             <p className="text-sm leading-relaxed">
-              Thanks, <strong>{state.name || "friend"}</strong>. We&apos;ll call <strong>{state.phone || "you"}</strong> within one business day to book your demo{state.business ? <> and set up a live test call for <strong>{state.business}</strong></> : null}.
+              Thanks, <strong>{state.name || "friend"}</strong>.{" "}
+              {state.callback === "soon"
+                ? <>{state.caller ?? "Our assistant"}, our AI assistant, will call <strong>{state.phone || "you"}</strong> in the next couple of minutes to book your demo.</>
+                : state.callback === "morning"
+                  ? <>{state.caller ?? "Our assistant"}, our AI assistant, will call <strong>{state.phone || "you"}</strong> after 8am Pacific to book your demo.</>
+                  : <>We&apos;ll call <strong>{state.phone || "you"}</strong> within one business day to book your demo{state.business ? <> and set up a live test call for <strong>{state.business}</strong></> : null}.</>}
             </p>
             <button type="button" onClick={onClose} className="mt-2 h-[48px] cursor-pointer rounded-[12px] bg-[#D8B47A] px-5 text-sm font-semibold text-[#1F3B2D]">Back to site</button>
           </div>
@@ -91,6 +96,7 @@ function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: bo
             </div>
             <label className="block text-sm font-semibold">Email (optional)<input name="email" type="email" maxLength={200} placeholder="you@yourshop.ca" className={`${inputClass} mt-1`} /></label>
             <label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" name="followup" defaultChecked={followup} className="mt-1 h-4 w-4 accent-[#1F3B2D]" />Also interested in the Follow-Up Agent add-on (website leads called back within minutes)</label>
+            <p className="text-xs text-[#6B5A43]">By sending this, you agree we may call and text you about your demo, including by our AI assistant. Reply STOP to opt out of texts.</p>
             {state?.error ? <p role="alert" className="text-sm font-semibold text-[#A8401F]">{state.error}</p> : null}
             <div className="flex items-center justify-end gap-3 pt-2">
               <button type="button" onClick={onClose} className="h-[48px] cursor-pointer rounded-[12px] border-2 border-[#1F3B2D] px-5 text-sm font-semibold text-[#1F3B2D]">Cancel</button>
