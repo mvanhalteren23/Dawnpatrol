@@ -762,11 +762,14 @@ export async function createReceptionist(accountId: string, form: FormData) {
       ragToken: randomBytes(24).toString("base64url"),
       demoExtension: !followup && form.get("demo") === "on" ? await freeExtension() : null,
       lifecycle: !followup && form.get("demo") === "on" ? "demo" : "production",
-      ...(followup
-        ? { agentType: "followup", leadFormKey: newLeadFormKey(), leadAlertOn: "leads", persona: "Warm, upbeat and to the point. Sounds like a helpful person from the office, never pushy." }
-        : {}),
+      ...(followup ? { agentType: "followup", leadFormKey: newLeadFormKey() } : {}),
     },
   });
+  // Every new agent starts from a template (best-practice settings and starter knowledge).
+  const { applyTemplateToNew } = await import("@/lib/agent-template-apply");
+  const { TEMPLATE_KEYS } = await import("@/lib/agent-templates");
+  const picked = str(form, "template");
+  await applyTemplateToNew(r.id, (TEMPLATE_KEYS as string[]).includes(picked) ? (picked as (typeof TEMPLATE_KEYS)[number]) : null);
   back(`/crm/receptionists/${r.id}`, followup ? { notice: "Follow-up agent created. Fill in its goal, questions and rules, draft its knowledge from the website, sync it, then send a test lead." } : undefined);
 }
 
@@ -1239,6 +1242,19 @@ export async function createDemoReceptionist(accountId: string, form: FormData) 
 async function freeExtension(): Promise<string> {
   const taken = await db.receptionist.findMany({ where: { demoExtension: { not: null } }, select: { demoExtension: true } });
   return nextFreeExtension(taken.map((t) => t.demoExtension));
+}
+
+/** Fill an existing agent's blank settings and missing starter knowledge from a template. */
+export async function applyTemplateAction(receptionistId: string, form: FormData) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { accountId: true } });
+  await guard(session, r.accountId);
+  const { TEMPLATE_KEYS } = await import("@/lib/agent-templates");
+  const key = str(form, "template");
+  if (!(TEMPLATE_KEYS as string[]).includes(key)) back(`/crm/receptionists/${receptionistId}`, { error: "Pick a template" });
+  const { applyTemplateToExisting } = await import("@/lib/agent-template-apply");
+  const res = await applyTemplateToExisting(receptionistId, key as (typeof TEMPLATE_KEYS)[number], session.email);
+  back(`/crm/receptionists/${receptionistId}`, { notice: res.settings || res.knowledge ? `Template applied: ${res.settings} setting${res.settings === 1 ? "" : "s"} filled in and ${res.knowledge} starter knowledge entr${res.knowledge === 1 ? "y" : "ies"} added (entries marked TO FILL IN stay off until written). Sync to push it live.` : "Nothing to fill in: this agent already has everything the template sets." });
 }
 
 /** A signed client: a fresh production agent copied from their demo (admin). */

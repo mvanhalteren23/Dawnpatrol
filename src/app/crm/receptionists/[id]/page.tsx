@@ -23,8 +23,9 @@ import { syncCallsThrottled } from "@/lib/call-sync";
 import { FollowupSettingsCard, WebsiteFormCard } from "@/components/FollowupCards";
 import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
-import { draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { applyTemplateAction, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 import { demoExpiry } from "@/lib/agent-lifecycle";
+import { AGENT_TEMPLATES, TEMPLATE_KEYS, templateFor } from "@/lib/agent-templates";
 import { BookingsList, CustomerTextSettings, OpenQuestions } from "@/components/CustomerCare";
 import { bookingLink, textsCustomers } from "@/lib/customer-texts";
 
@@ -94,6 +95,16 @@ export default async function ReceptionistPage({ params, searchParams }: { param
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-2">
           {customerCare ? <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={careLink} /> : null}
+          {r.agentType === "inbound" || r.agentType === "followup" ? (
+            <form action={applyTemplateAction.bind(null, r.id)} className="card space-y-2 text-sm">
+              <h2>Template</h2>
+              <p className="text-xs text-slate-500">Fills in blank settings and adds missing starter knowledge (payment, recording and emergency policies, plus TO FILL IN entries). It never overwrites what&apos;s already set. Safety rules are always built in.</p>
+              <div className="flex gap-2">
+                <select name="template" defaultValue={templateFor(r.account.industry, r.agentType).key} className="input">{TEMPLATE_KEYS.map((k) => <option key={k} value={k}>{AGENT_TEMPLATES[k].label}</option>)}</select>
+                <button className="btn-secondary whitespace-nowrap">Apply template</button>
+              </div>
+            </form>
+          ) : null}
           <form action={updateReceptionist.bind(null, r.id)} className="card grid grid-cols-2 gap-3">
             <h2 className="col-span-2">Agent settings</h2>
             <Field label="Receptionist name"><input name="name" defaultValue={r.name} className="input" /></Field>

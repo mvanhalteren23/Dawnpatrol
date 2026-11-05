@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MAX_DISCOVERY_QUESTIONS, pickDiscoveryQuestions } from "@/lib/discovery-rules";
 import { builderAgent } from "@/lib/live-builder";
+import { AGENT_TEMPLATES, TEMPLATE_KEYS, templateFor } from "@/lib/agent-templates";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/auth";
@@ -366,6 +367,9 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                   <button className="btn-secondary whitespace-nowrap">+ Receptionist</button>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="demo" defaultChecked={!isClient} /> Demo for this prospect — give it an extension on the demo line</label>
+                <label className="flex items-center gap-2 text-xs text-slate-600">Start from
+                  <select name="template" defaultValue={templateFor(account.industry).key} className="input py-1 text-xs">{TEMPLATE_KEYS.filter((k) => k !== "followup").map((k) => <option key={k} value={k}>{AGENT_TEMPLATES[k].label}</option>)}</select>
+                </label>
               </form>
             ) : null}
             {session.role === "ADMIN" ? (

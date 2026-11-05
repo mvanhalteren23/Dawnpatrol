@@ -43,6 +43,9 @@ export async function createDemoAgent(accountId: string, opts: { name?: string; 
       lifecycle: "demo",
     },
   });
+  // The trade's template: best-practice settings and starter knowledge, before the website draft.
+  const { applyTemplateToNew } = await import("./agent-template-apply");
+  await applyTemplateToNew(r.id);
   const runId = account.website || account.domain ? await startKbDraft(r.id) : null;
   return { receptionist: r, runId };
 }
