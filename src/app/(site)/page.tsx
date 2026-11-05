@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { INDUSTRIES, PRICING } from "@/lib/site-content";
+import { INDUSTRIES, PRICES, PRICING } from "@/lib/site-content";
+import { Price } from "@/components/site/Currency";
 import { DemoButton } from "@/components/site/Demo";
 import { DispatchSimulator } from "@/components/site/DispatchSimulator";
 import { FollowupAddon } from "@/components/site/FollowupAddon";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Head Above Digital | AI Voice Receptionist for the Trades",
-  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops and local storefronts. Answers every call, books the job and texts you the details. $${PRICING.monthly}/month with ${PRICING.includedMinutes} minutes.`,
+  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops and local storefronts. Answers every call, books the job and texts you the details. From CA$${PRICES.CAD.monthly} (US$${PRICES.USD.monthly}) a month with ${PRICING.includedMinutes} minutes.`,
   alternates: { canonical: "/" },
 };
 
@@ -45,7 +46,7 @@ export default async function Home() {
             {demo ? <p className="text-sm text-[#EFE6D4]/85">Or call our own AI receptionist: <a href={`tel:${demo.tel}`} className="font-semibold text-[#D8B47A]">{demo.label}</a></p> : null}
             <div className="grid max-w-xl grid-cols-3 gap-4 border-t border-[#173022] pt-4">
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">24/7</div><div className="text-xs text-[#EFE6D4]">Every call picked up, no voicemail</div></div>
-              <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">${PRICING.monthly} / MO</div><div className="text-xs text-[#EFE6D4]">{PRICING.includedMinutes} call minutes included</div></div>
+              <div><div className="font-condensed-800 text-2xl text-[#D8B47A]"><Price kind="monthly" /> / MO</div><div className="text-xs text-[#EFE6D4]">{PRICING.includedMinutes} call minutes included</div></div>
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">ZERO TECH</div><div className="text-xs text-[#EFE6D4]">We set it up &amp; support by phone</div></div>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { FOLLOWUP_ADDON_PRICE, FOLLOWUP_EXAMPLES, type TradeKey } from "@/lib/site-content";
 import { DemoButton } from "./Demo";
+import { Price } from "./Currency";
 import { Eyebrow } from "./Sections";
 
 // The Follow-Up Agent add-on: a website form comes in, and the agent calls the person back within
@@ -41,7 +42,7 @@ export function FollowupAddon({ trade = "contractors" }: { trade?: TradeKey }) {
           <div className="flex flex-wrap items-center gap-4">
             <DemoButton trade={trade} followup>Add the Follow-Up Agent</DemoButton>
             <span className="text-sm text-[#EFE6D4]/85">
-              {FOLLOWUP_ADDON_PRICE ? <>Add to any plan for <strong className="text-[#D8B47A]">${FOLLOWUP_ADDON_PRICE}/month</strong>.</> : "Add it to any plan. Ask us for pricing."} Every lead, call summary and booking is in your dashboard.
+              {FOLLOWUP_ADDON_PRICE ? <>Add to any plan for <strong className="text-[#D8B47A]"><Price kind="addon" />/month</strong>.</> : "Add it to any plan. Ask us for pricing."} Every lead, call summary and booking is in your dashboard.
             </span>
           </div>
         </div>

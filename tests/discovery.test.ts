@@ -67,3 +67,17 @@ describe("company receptionist prompt", () => {
     expect(buildReceptionistPrompt({ ...base, bookingAddsToCrm: true })).toContain("Collect two preferred times for the demo");
   });
 });
+
+describe("website currency", () => {
+  it("shows USD to US visitors and CAD to everyone else, with both price lists", async () => {
+    const { currencyForCountry, formatMoney, PRICES } = await import("@/lib/site-content");
+    expect(currencyForCountry("US")).toBe("USD");
+    expect(currencyForCountry("us")).toBe("USD");
+    expect(currencyForCountry("CA")).toBe("CAD");
+    expect(currencyForCountry(null)).toBe("CAD");
+    expect(PRICES.CAD).toMatchObject({ monthly: 139, blockPrice: 25 });
+    expect(PRICES.USD).toMatchObject({ monthly: 109, blockPrice: 19 });
+    expect(formatMoney("USD", 3600)).toBe("US$3,600");
+    expect(formatMoney("CAD", 139)).toBe("CA$139");
+  });
+});

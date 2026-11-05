@@ -11,10 +11,27 @@ export const BRAND = {
   signal: "#A8401F",
 } as const;
 
-export const PRICING = { monthly: 139, includedMinutes: 200, blockMinutes: 100, blockPrice: 25, minimumMonths: 3 } as const;
+export const PRICING = { includedMinutes: 200, blockMinutes: 100, minimumMonths: 3 } as const;
 
-/** The Follow-Up Agent add-on's monthly price; null shows "ask us" until it's set. */
-export const FOLLOWUP_ADDON_PRICE: number | null = null;
+/** Prices by currency: Canadian businesses pay in CAD, US businesses in USD (website toggle). */
+export type Currency = "CAD" | "USD";
+export const CURRENCIES: Currency[] = ["CAD", "USD"];
+export const PRICES: Record<Currency, { monthly: number; blockPrice: number; symbol: string; name: string }> = {
+  CAD: { monthly: 139, blockPrice: 25, symbol: "CA$", name: "Canadian dollars" },
+  USD: { monthly: 109, blockPrice: 19, symbol: "US$", name: "US dollars" },
+};
+
+/** The currency a visitor sees first: USD in the United States, CAD everywhere else. */
+export function currencyForCountry(country: string | null | undefined): Currency {
+  return country?.trim().toUpperCase() === "US" ? "USD" : "CAD";
+}
+
+export function formatMoney(currency: Currency, amount: number): string {
+  return `${PRICES[currency].symbol}${amount.toLocaleString("en-US")}`;
+}
+
+/** The Follow-Up Agent add-on's monthly price in each currency; null shows "ask us" until it's set. */
+export const FOLLOWUP_ADDON_PRICE: Record<Currency, number> | null = null;
 
 /** What the Follow-Up Agent does for each trade: a website form, then a call within minutes. */
 export const FOLLOWUP_EXAMPLES: Record<TradeKey, { form: string; call: string; booked: string }> = {
