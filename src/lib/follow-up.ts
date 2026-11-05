@@ -100,7 +100,8 @@ export async function checkMinuteUsage(r: Receptionist, now = new Date()) {
   ]);
   const cap = account?.subscription?.plan?.includedMinutes || 200;
   const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
-  if (minutes < cap * 0.8) return { minutes, cap, alerted: false };
+  // 75% of the plan: a heads-up before extra minutes are billed automatically.
+  if (minutes < cap * 0.75) return { minutes, cap, alerted: false };
   const key = `minutes.alert.${r.id}.${month.key}`;
   if (await getSetting(key)) return { minutes, cap, alerted: false };
   await setSetting(key, new Date().toISOString());
@@ -112,7 +113,7 @@ export async function checkMinuteUsage(r: Receptionist, now = new Date()) {
     await sendPlainEmail({
       to,
       subject: `${account?.name ?? r.businessName} has used ${minutes} of ${cap} minutes this month`,
-      body: `${r.name} (${r.businessName}) has used ${minutes} of the ${cap} minutes in their plan for ${month.label} (${Math.round((minutes / cap) * 100)}%).\n\nTalk to them about their call volume before the month runs out.\n\n${appBase()}/crm/accounts/${r.accountId}`,
+      body: `${r.name} (${r.businessName}) has used ${minutes} of the ${cap} minutes in their plan for ${month.label} (${Math.round((minutes / cap) * 100)}%).\n\nMinutes over ${cap} are billed automatically in 100-minute blocks on their next invoice. Worth a call about their plan before the month runs out.\n\n${appBase()}/crm/accounts/${r.accountId}`,
     }).catch((e) => console.warn("minute alert email", e));
   }
   return { minutes, cap, alerted: true };

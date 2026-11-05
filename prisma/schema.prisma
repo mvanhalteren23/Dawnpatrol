@@ -216,7 +216,8 @@ model Plan {
   includedMinutes Int      @default(0)
   minimumMonths   Int      @default(0) // minimum contract term
   features        String   @default("") // newline separated
-  stripePriceId   String?
+  stripePriceId   String? // CAD price
+  stripePriceIdUsd String? // USD price, for US clients
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
 

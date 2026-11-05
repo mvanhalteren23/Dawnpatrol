@@ -2,7 +2,9 @@ import "server-only";
 import { appUrl } from "./app-url";
 import Stripe from "stripe";
 import { db } from "./db";
-import { changeStage } from "./outreach";
+import { changeStage, recordActivity } from "./outreach";
+import { getSetting, setSetting } from "./settings";
+import { blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, salesTaxFor, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
 export function stripe(): Stripe {
@@ -49,16 +51,21 @@ async function ensureCustomer(accountId: string): Promise<string> {
 /** Hosted Stripe Checkout for a plan — send the link to the client or open it from the portal. */
 export async function createCheckout(accountId: string, planId: string, returnPath: string): Promise<string> {
   const plan = await db.plan.findUniqueOrThrow({ where: { id: planId } });
-  if (!plan.stripePriceId) throw new Error(`Plan "${plan.name}" has no Stripe price id`);
+  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { state: true } });
+  // US clients pay in USD; everyone else in CAD.
+  const currency = currencyForAccount(account.state);
+  const priceId = currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId;
+  if (!priceId) throw new Error(`Plan "${plan.name}" has no Stripe ${currency} price id (CRM → Billing → the plan)`);
+  const taxRate = await taxRateId(salesTaxFor(account.state));
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
   const app = appUrl();
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
     customer,
-    line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     client_reference_id: accountId,
-    subscription_data: { metadata: { accountId, planId } },
+    subscription_data: { metadata: { accountId, planId }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
     success_url: `${app}${returnPath}?billing=success`,
     cancel_url: `${app}${returnPath}?billing=cancelled`,
   });
@@ -68,11 +75,104 @@ export async function createCheckout(accountId: string, planId: string, returnPa
 
 export async function createPortalSession(accountId: string, returnPath: string): Promise<string> {
   const customer = await ensureCustomer(accountId);
+  const sub = await db.subscription.findUnique({ where: { accountId }, include: { plan: { select: { minimumMonths: true } } } });
+  const locked = cancelLocked(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 3);
   const session = await stripe().billingPortal.sessions.create({
     customer,
     return_url: `${appUrl()}${returnPath}`,
+    configuration: await portalConfiguration(locked),
   });
   return session.url;
+}
+
+/** When a client can cancel in the portal (end of their minimum term), for the billing page. */
+export async function cancelAvailableFrom(accountId: string): Promise<Date | null> {
+  const sub = await db.subscription.findUnique({ where: { accountId }, include: { plan: { select: { minimumMonths: true } } } });
+  const until = cancelLockedUntil(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 3);
+  return until && until.getTime() > Date.now() ? until : null;
+}
+
+/**
+ * Two Stripe customer-portal setups, created once and kept: during the minimum term (card,
+ * invoices and details, no cancel option) and after it (cancel at the end of the billing period).
+ */
+async function portalConfiguration(locked: boolean): Promise<string> {
+  const key = locked ? "stripe.portal.locked" : "stripe.portal.open";
+  const existing = await getSetting(key);
+  if (existing) return existing;
+  const config = await stripe().billingPortal.configurations.create({
+    business_profile: { headline: locked ? "Manage your payment details and invoices" : "Manage your subscription" },
+    features: {
+      payment_method_update: { enabled: true },
+      invoice_history: { enabled: true },
+      customer_update: { enabled: true, allowed_updates: ["email", "address", "phone", "name"] },
+      subscription_cancel: locked ? { enabled: false } : { enabled: true, mode: "at_period_end", cancellation_reason: { enabled: true, options: ["too_expensive", "missing_features", "switched_service", "unused", "other"] } },
+    },
+  });
+  await setSetting(key, config.id);
+  return config.id;
+}
+
+/** The Stripe tax rate for GST/HST (created once per rate and kept). */
+async function taxRateId(tax: SalesTax): Promise<string | null> {
+  if (!tax) return null;
+  const key = `stripe.taxRate.${tax.name}.${tax.percent}`;
+  const existing = await getSetting(key);
+  if (existing) return existing;
+  const rate = await stripe().taxRates.create({ display_name: tax.name, percentage: tax.percent, inclusive: false, country: "CA", ...(tax.jurisdiction !== "CA" ? { state: tax.jurisdiction } : {}), tax_type: tax.name === "HST" ? "hst" : "gst", description: `${tax.name} ${tax.percent}%` });
+  await setSetting(key, rate.id);
+  return rate.id;
+}
+
+/**
+ * Extra minutes, billed automatically: when Stripe drafts a renewal invoice (it waits about an
+ * hour before finalising), count the month's call minutes and add the 100-minute blocks over the
+ * plan to it, with GST/HST. Flagged on the account and emailed to the team.
+ */
+async function addOverage(inv: Stripe.Invoice) {
+  if (inv.status !== "draft" || inv.billing_reason !== "subscription_cycle" || !inv.id) return;
+  const customerId = typeof inv.customer === "string" ? inv.customer : inv.customer?.id;
+  if (!customerId) return;
+  const accountId = await accountIdForCustomer(customerId, inv.parent?.subscription_details?.metadata?.accountId);
+  if (!accountId) return;
+  const account = await db.account.findUnique({ where: { id: accountId }, include: { subscription: { include: { plan: true } } } });
+  if (!account) return;
+  const start = new Date(inv.period_start * 1000);
+  const end = new Date(inv.period_end * 1000);
+  const used = await db.callLog.aggregate({
+    where: { receptionist: { accountId, lifecycle: "production" }, startedAt: { gte: start, lt: end }, outcome: { not: "SPAM" } },
+    _sum: { durationSec: true },
+  });
+  const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
+  const included = account.subscription?.plan?.includedMinutes || 200;
+  const blocks = overageBlocks(minutes, included);
+  if (!blocks) return;
+  const currency = inv.currency?.toUpperCase() === "USD" ? "USD" : "CAD";
+  const taxRate = await taxRateId(salesTaxFor(account.state));
+  await stripe().invoiceItems.create(
+    {
+      customer: customerId,
+      invoice: inv.id,
+      currency: currency.toLowerCase(),
+      amount: blocks * blockPriceCents(currency),
+      description: `Extra call minutes: ${minutes} used, ${included} included (${blocks} × 100-minute block)`,
+      metadata: { accountId, kind: "extra_minutes", minutes: String(minutes) },
+      ...(taxRate ? { tax_rates: [taxRate] } : {}),
+    },
+    { idempotencyKey: `extra-minutes-${inv.id}` },
+  );
+  const amount = (blocks * blockPriceCents(currency)) / 100;
+  const note = `${account.name} used ${minutes} of ${included} minutes (${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}): ${blocks} extra 100-minute block${blocks === 1 ? "" : "s"}, ${currency} $${amount.toFixed(2)} plus tax, added to their renewal invoice.`;
+  await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Extra minutes billed: ${blocks} block${blocks === 1 ? "" : "s"}`, body: note });
+  await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: `Extra minutes billed this month. ${note} Worth a call about their plan.` } });
+  const { supportAddress } = await import("./google");
+  const to = await supportAddress();
+  if (to) {
+    const { sendPlainEmail } = await import("./outreach");
+    await sendPlainEmail({ to, subject: `Extra minutes billed: ${account.name}`, body: `${note}
+
+${appUrl()}/crm/accounts/${accountId}` }).catch((e) => console.warn("overage email", e));
+  }
 }
 
 async function accountIdForCustomer(customerId: string, metadataAccountId?: string | null): Promise<string | null> {
@@ -171,6 +271,9 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "customer.subscription.updated":
     case "customer.subscription.deleted":
       await syncSubscription(event.data.object);
+      break;
+    case "invoice.created":
+      await addOverage(event.data.object).catch((e) => console.error("extra minutes", e));
       break;
     case "invoice.finalized":
     case "invoice.paid":

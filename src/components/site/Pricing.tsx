@@ -20,7 +20,7 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
       <div className="mb-10 max-w-3xl">
         <div style={{ letterSpacing: "0.2em" }} className="font-condensed-700 mb-2 text-sm uppercase text-[#A87A33]">Simple, transparent pricing</div>
         <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed job.</h2>
-        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no long-term lock-in: a {PRICING.minimumMonths}-month minimum, then month to month. Prices in {price.name}.</p>
+        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no long-term lock-in: a {PRICING.minimumMonths}-month minimum, then month to month. Prices in {price.name}{currency === "CAD" ? ", plus GST/HST" : ""}.</p>
         <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-[#6B5A43]"><span>Show prices in</span><CurrencyToggle /></div>
       </div>
 

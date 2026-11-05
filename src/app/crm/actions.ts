@@ -1006,6 +1006,7 @@ export async function savePlan(form: FormData) {
     minimumMonths: Math.max(0, optInt(form, "minimumMonths") ?? 0),
     features: str(form, "features"),
     stripePriceId: optStr(form, "stripePriceId"),
+    stripePriceIdUsd: optStr(form, "stripePriceIdUsd"),
   };
   if (id) await db.plan.update({ where: { id }, data });
   else await db.plan.create({ data });
