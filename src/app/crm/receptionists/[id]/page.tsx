@@ -25,6 +25,8 @@ import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
 import { draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 import { demoExpiry } from "@/lib/agent-lifecycle";
+import { BookingsList, CustomerTextSettings, OpenQuestions } from "@/components/CustomerCare";
+import { bookingLink, textsCustomers } from "@/lib/customer-texts";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,14 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const promotedTo = r.lifecycle !== "production" ? await db.receptionist.findFirst({ where: { promotedFromId: r.id }, select: { id: true, name: true } }) : null;
   const promotedFrom = r.promotedFromId ? await db.receptionist.findUnique({ where: { id: r.promotedFromId }, select: { id: true, name: true } }) : null;
   const canPromote = isAdmin && r.lifecycle !== "production" && r.agentType === "inbound" && !promotedTo;
+  const customerCare = textsCustomers(r);
+  const [careLink, openQs, recentBookings] = customerCare
+    ? await Promise.all([
+        bookingLink(r).catch(() => null),
+        db.openQuestion.findMany({ where: { receptionistId: r.id, status: "OPEN" }, orderBy: [{ kind: "desc" }, { askedCount: "desc" }] }),
+        db.booking.findMany({ where: { receptionistId: r.id, start: { gte: new Date(Date.now() - 14 * 86400_000) } }, orderBy: { start: "desc" }, take: 30 }),
+      ])
+    : [null, [], []];
 
   return (
     <div>
@@ -83,6 +93,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-2">
+          {customerCare ? <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={careLink} /> : null}
           <form action={updateReceptionist.bind(null, r.id)} className="card grid grid-cols-2 gap-3">
             <h2 className="col-span-2">Agent settings</h2>
             <Field label="Receptionist name"><input name="name" defaultValue={r.name} className="input" /></Field>
@@ -187,8 +198,10 @@ export default async function ReceptionistPage({ params, searchParams }: { param
 
         <div className="space-y-6 lg:col-span-3">
           {followup ? <div className="card"><h2 className="mb-3">Website leads</h2><LeadList leads={leads} showNotes /></div> : null}
+          {customerCare ? <OpenQuestions r={r} questions={openQs} returnTo={returnTo} /> : null}
           <KnowledgeBaseEditor receptionistId={r.id} items={r.knowledge} returnTo={returnTo} />
           <KbHistory receptionistId={r.id} revisions={await kbHistory(r.id)} returnTo={returnTo} teamName="Team" />
+          {customerCare ? <BookingsList r={r} bookings={recentBookings} returnTo={returnTo} timezone={r.timezone} /> : null}
           <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} />
         </div>
       </div>

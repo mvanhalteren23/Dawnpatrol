@@ -20,6 +20,9 @@ const RING: Record<string, string> = { always: "always", hours: "during your hou
 
 // Managed service: the team sets up and tunes the receptionist. Clients see how it's set up,
 // choose their own notifications (lead texts, reports), and request any other change.
+import { CustomerTextSettings } from "@/components/CustomerCare";
+import { bookingLink } from "@/lib/customer-texts";
+
 export default async function PortalSettings({ searchParams }: { searchParams: Promise<{ account?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
   const { session, account, receptionist, adminAccountId, q } = await loadPortal(Promise.resolve(sp));
@@ -30,6 +33,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const returnTo = `/portal/settings${q}`;
   const r = receptionist;
   const days = r ? hoursByDay(r.bookingHours) : {};
+  const link = r ? await bookingLink(r).catch(() => null) : null;
 
   return (
     <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
@@ -67,6 +71,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
           </div>
 
           <div className="space-y-6 lg:col-span-2">
+            <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>
             <div className="card">

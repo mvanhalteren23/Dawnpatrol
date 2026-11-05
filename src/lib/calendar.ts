@@ -51,3 +51,12 @@ export async function createEvent(e: NewEvent): Promise<{ id: string; htmlLink: 
   );
   return { id: created.id, htmlLink: created.htmlLink, meetLink: created.hangoutLink ?? null };
 }
+
+/** Remove an event (a booking that was rescheduled or cancelled). Already gone counts as done. */
+export async function deleteEvent(calendarId: string, eventId: string, as?: GoogleAs): Promise<void> {
+  try {
+    await googleFetch(`${API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`, { method: "DELETE" }, as);
+  } catch (err) {
+    if (!/\b(404|410)\b/.test(String(err))) throw err;
+  }
+}

@@ -167,6 +167,29 @@ export async function receptionistReply(systemPrompt: string, knowledgeBase: str
   return res.text;
 }
 
+// --- Customer texts ------------------------------------------------------------
+
+const SmsReplySchema = z.object({
+  reply: z.string().describe("The text message to send back: plain, friendly, under 300 characters, no markdown"),
+  needsOwner: z.boolean().describe("True if the owner should see this conversation: a complaint, an emergency, a question the knowledge base can't answer, a quote request, or anything you weren't sure about"),
+  ownerNote: z.string().describe("One line for the owner about what the customer wants (empty if needsOwner is false)"),
+});
+
+/** Reply to a customer's text on the business line, from the receptionist's knowledge base. */
+export async function smsReply(o: { businessName: string; agentName: string; knowledgeBase: string; history: ChatTurn[]; bookingLink: string | null }) {
+  const instructions = [
+    `You answer text messages for ${o.businessName} as ${o.agentName}, its AI assistant. Customers text the business number.`,
+    "Answer only from the knowledge base below. If it doesn't cover something, say the team will get back to them, and set needsOwner.",
+    "Never invent prices, availability, policies or promises. Never ask for payment, banking, SIN or health details.",
+    o.bookingLink ? `When someone wants to book, send this link to pick a time: ${o.bookingLink}` : "When someone wants to book, ask for two times that suit them and say the team will confirm.",
+    "Keep it to one or two short sentences, like a real text. If asked, say plainly you're an AI assistant.",
+    `<knowledge_base>\n${o.knowledgeBase || "(empty)"}\n</knowledge_base>`,
+  ].join("\n");
+  const transcript = o.history.map((t) => `${t.role === "user" ? "Customer" : "You"}: ${t.content}`).join("\n");
+  const ex = await structured("sms_chat", SmsReplySchema, instructions, `The conversation so far (latest last):\n${transcript}`);
+  return { ...ex.data, reply: ex.data.reply.trim().slice(0, 480) };
+}
+
 // --- Caller follow-ups -------------------------------------------------------
 
 const CallerSummarySchema = z.object({

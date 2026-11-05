@@ -342,6 +342,17 @@ model Receptionist {
   ringFirstNumber       String? // owner's cell, E.164
   ringSeconds           Int            @default(20)
   ringMode              String         @default("hours") // always | hours (only during bookable hours) | never (straight to the agent)
+  // Customer texts and owner check-ins (src/lib/customer-texts.ts, src/lib/owner-checkin.ts).
+  bookingKey            String?        @unique // public booking link: /book/<key>
+  rescueTextsOn         Boolean        @default(true) // text a booking link after a call that didn't book
+  smsAgentOn            Boolean        @default(true) // answer customers' texts to the business line
+  remindersOn           Boolean        @default(true) // day-before reminder, reply C/R; no-show rebook text
+  reviewRequestsOn      Boolean        @default(false) // after the appointment, text the Google review link
+  reviewLink            String         @default("")
+  reviewDelayHours      Int            @default(3)
+  checkinsOn            Boolean        @default(true) // call the owner about questions callers asked
+  checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
+  checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
   bookingAddsToCrm      Boolean        @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String         @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus            String         @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
@@ -352,6 +363,10 @@ model Receptionist {
 
   knowledge KnowledgeItem[]
   kbHistory KnowledgeRevision[]
+  bookings  Booking[]
+  texts     SmsMessage[]
+  questions OpenQuestion[]
+  checkins  OwnerCheckin[]
   calls     CallLog[]
   followUps FollowUpMessage[]
 }
@@ -375,6 +390,91 @@ model FollowUpMessage {
 
   @@index([receptionistId, createdAt])
   @@index([conversationId])
+}
+
+/**
+ * An appointment the agent (or the public booking link) booked: drives the day-before reminder,
+ * no-show rebooking and the review request.
+ */
+model Booking {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  eventId        String? // Google Calendar event
+  calendarId     String       @default("primary")
+  googleUserId   String? // whose calendar it went into (null = the company's)
+  start          DateTime
+  end            DateTime
+  timezone       String
+  title          String
+  customerName   String
+  customerPhone  String?
+  customerEmail  String?
+  source         String       @default("call") // call | link
+  status         String       @default("BOOKED") // BOOKED | CONFIRMED | RESCHEDULE_REQUESTED | CANCELLED | NO_SHOW
+  reminderSentAt DateTime?
+  confirmedAt    DateTime?
+  noShowTextAt   DateTime?
+  reviewAskedAt  DateTime?
+  replacesId     String? // the booking this one replaced (rescheduled through the link)
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, start])
+  @@index([status, start])
+}
+
+/** Texts with customers on the business line (both ways), for the text agent's context. */
+model SmsMessage {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  phone          String // the customer, E.164
+  direction      String // IN | OUT
+  kind           String       @default("chat") // chat | rescue | reminder | noshow | review | forward
+  body           String
+  bookingId      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, phone, createdAt])
+  @@index([phone, createdAt])
+}
+
+/** Something callers asked that the agent couldn't answer, or an upcoming holiday to confirm. */
+model OpenQuestion {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  kind           String       @default("caller") // caller | holiday
+  question       String
+  key            String // normalised question (or holiday:YYYY-MM-DD), for de-duplication
+  askedCount     Int          @default(1) // how many callers asked it
+  callId         String?
+  holidayDate    String? // YYYY-MM-DD
+  status         String       @default("OPEN") // OPEN | ANSWERED | DISMISSED
+  answer         String?
+  answeredBy     String? // "owner call" | an email
+  answeredAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([receptionistId, key])
+  @@index([receptionistId, status])
+}
+
+/** A call to the owner to answer open questions (at most one a week per receptionist). */
+model OwnerCheckin {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  phone          String
+  questionIds    String // JSON array of OpenQuestion ids
+  status         String       @default("CALLING") // CALLING | DONE | NO_ANSWER | TEXTED | FAILED
+  attempts       Int          @default(1)
+  callSid        String?
+  note           String?
+  createdAt      DateTime     @default(now())
+  finishedAt     DateTime?
+
+  @@index([receptionistId, createdAt])
 }
 
 /**

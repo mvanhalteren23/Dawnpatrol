@@ -7,7 +7,8 @@ import { busyIntervals, createEvent } from "./calendar";
 import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
-import { samePhone } from "./twilio";
+import { samePhone, toE164 } from "./twilio";
+import { deleteEvent } from "./calendar";
 import { findAccountIdByPhone } from "./team";
 import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
 import { queueProfileResearch } from "./jobs";
@@ -39,6 +40,21 @@ async function openSlots(r: Receptionist, now: Date) {
   const rules = slotRules(r);
   const busy = await busyIntervals(r.bookingCalendarId, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000), r.googleUserId);
   return { rules, slots: freeSlots(rules, now, busy) };
+}
+
+/** Every open slot in the booking window (the public booking page lists them by day). */
+export async function openings(r: Receptionist, now = new Date()): Promise<{ ready: boolean; slots: Date[]; message?: string }> {
+  const notReady = await ready(r);
+  if (notReady) return { ready: false, slots: [], message: notReady };
+  return { ready: true, slots: (await openSlots(r, now)).slots };
+}
+
+/** A rescheduled booking: cancel the old one and take it off the calendar. */
+async function cancelReplaced(r: Receptionist, oldId: string) {
+  const old = await db.booking.findUnique({ where: { id: oldId } });
+  if (!old || old.receptionistId !== r.id || ["CANCELLED", "NO_SHOW"].includes(old.status)) return;
+  await db.booking.update({ where: { id: old.id }, data: { status: "CANCELLED" } });
+  if (old.eventId) await deleteEvent(old.calendarId, old.eventId, old.googleUserId);
 }
 
 export async function availability(r: Receptionist, input: { preferred_date?: string; time_of_day?: string }, now = new Date()) {
@@ -78,6 +94,8 @@ export type BookingInput = {
   wants_text?: boolean | string; // older agents
   conversation_id?: string;
   notes?: string;
+  source?: "call" | "link"; // the public booking link books through here too
+  replaces_id?: string; // a booking being rescheduled through the link
 };
 
 /** The caller picks when the receptionist allows either; otherwise the receptionist's setting wins. */
@@ -140,6 +158,26 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     requestId: randomUUID(),
     as: r.googleUserId,
   });
+
+  // Every booking is recorded: reminders, no-show rebooking and review requests run from it.
+  await db.booking.create({
+    data: {
+      receptionistId: r.id,
+      eventId: event.id,
+      calendarId: r.bookingCalendarId,
+      googleUserId: r.googleUserId,
+      start,
+      end,
+      timezone: r.timezone,
+      title: r.bookingTitle,
+      customerName: input.caller_name.trim(),
+      customerPhone: toE164(input.caller_phone.trim()) || input.caller_phone.trim(),
+      customerEmail: email,
+      source: input.source ?? "call",
+      replacesId: input.replaces_id || null,
+    },
+  });
+  if (input.replaces_id) await cancelReplaced(r, input.replaces_id).catch((e) => console.error("replace booking", e));
 
   let lead: LeadResult | null = null;
   if (r.bookingAddsToCrm) {

@@ -1,5 +1,6 @@
 import "server-only";
 import { BUILDER_DYNAMIC_DEFAULTS, buildBuilderPrompt, builderOpening } from "./builder-rules";
+import { buildCheckinPrompt, CHECKIN_DYNAMIC_DEFAULTS, checkinOpening } from "./customer-text-rules";
 import { db } from "./db";
 import { buildReceptionistPrompt, compileByCategory } from "./rag";
 import { buildFollowupPrompt, followupOpening, type FollowupProfile } from "./followup-rules";
@@ -197,6 +198,7 @@ export const DATA_COLLECTION = {
   callback_number: { type: "string", description: "Best callback number the caller gave, or empty." },
   caller_email: { type: "string", description: "The caller's email address if they gave one (as spelled back), or empty." },
   summary_delivery: { type: "string", enum: ["text", "email", "none"], description: "How the caller asked to receive a summary or confirmation: text, email, or none if they declined or weren't asked." },
+  unanswered_questions: { type: "string", description: "Questions the caller asked that the agent couldn't answer from its knowledge base (it had to take a message or say the team would confirm), one per line in the caller's words. Empty if there were none." },
 };
 
 /** Follow-up agents also report how the lead went. */
@@ -240,12 +242,37 @@ export function builderTools(r: { id: string; ragToken: string }) {
   };
 }
 
+/** The weekly owner check-in agent (src/lib/owner-checkin.ts). */
+export function checkinTools(r: { id: string; ragToken: string }) {
+  return {
+    save_checkin_answers: {
+      type: "webhook",
+      name: "save_checkin_answers",
+      description: "Save the owner's answers, once, after the last question (or when they want to stop).",
+      response_timeout_secs: 30,
+      api_schema: {
+        url: `${appUrl()}/api/agent-tools/${r.id}/checkin`,
+        method: "POST",
+        request_headers: { Authorization: `Bearer ${r.ragToken}` },
+        request_body_schema: {
+          type: "object",
+          properties: {
+            checkin_id: { type: "string", dynamic_variable: "checkin_id" },
+            answers: str("One line per question asked: the question's number and text, a colon, then the owner's answer in their words. Leave out skipped ones."),
+          },
+          required: ["answers"],
+        },
+      },
+    },
+  };
+}
+
 type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string };
 
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -273,10 +300,11 @@ export function agentConfig(
 ) {
   const followup = r.agentType === "followup";
   const builder = r.agentType === "builder"; // the live demo builder: businessName is our company's name
-  const greeting = builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
-  const dynamicDefaults = builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const checkin = r.agentType === "checkin"; // the weekly owner check-in: businessName is our company's name too
+  const greeting = checkin ? checkinOpening({ name: r.name, companyName: r.businessName }) : builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`;
+  const dynamicDefaults = checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
-    name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : ""}`,
+    name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
       agent: {
         first_message: greeting,
@@ -284,7 +312,9 @@ export function agentConfig(
         // Follow-up calls start with these filled from the lead; defaults keep test calls working.
         ...(dynamicDefaults ? { dynamic_variables: { dynamic_variable_placeholders: dynamicDefaults } } : {}),
         prompt: {
-          prompt: builder
+          prompt: checkin
+            ? buildCheckinPrompt({ name: r.name, companyName: r.businessName })
+            : builder
             ? buildBuilderPrompt({ name: r.name, companyName: r.businessName, persona: r.persona, bookingEnabled: Boolean(r.bookingEnabled), extraInstructions: r.extraInstructions })
             : followup ? buildFollowupPrompt(fullFollowupProfile(r)) : buildReceptionistPrompt(r),
           ...(process.env.ELEVENLABS_LLM ? { llm: process.env.ELEVENLABS_LLM } : {}),

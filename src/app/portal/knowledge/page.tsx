@@ -5,6 +5,7 @@ import { PortalShell } from "@/components/PortalShell";
 import { companyName } from "@/lib/brand";
 import { KnowledgeBaseEditor } from "@/components/KnowledgeBaseEditor";
 import { KbHistory } from "@/components/KbHistory";
+import { OpenQuestions } from "@/components/CustomerCare";
 import { kbHistory } from "@/lib/kb-history";
 import { RequestChangeForm } from "@/components/RequestChangeForm";
 import { TestChat } from "@/components/TestChat";
@@ -16,10 +17,11 @@ export const dynamic = "force-dynamic";
 export default async function PortalKnowledge({ searchParams }: { searchParams: Promise<{ account?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
   const { session, account, receptionist, adminAccountId, q } = await loadPortal(Promise.resolve(sp));
-  const [items, company, history] = await Promise.all([
+  const [items, company, history, questions] = await Promise.all([
     receptionist ? db.knowledgeItem.findMany({ where: { receptionistId: receptionist.id }, orderBy: [{ category: "asc" }, { title: "asc" }] }) : [],
     companyName(),
     receptionist ? kbHistory(receptionist.id) : [],
+    receptionist ? db.openQuestion.findMany({ where: { receptionistId: receptionist.id, status: "OPEN" }, orderBy: [{ kind: "desc" }, { askedCount: "desc" }] }) : [],
   ]);
   const returnTo = `/portal/knowledge${q}`;
   return (
@@ -31,6 +33,7 @@ export default async function PortalKnowledge({ searchParams }: { searchParams: 
       {!receptionist ? <Empty>Your receptionist hasn&apos;t been created yet.</Empty> : (
         <div className="grid gap-6 lg:grid-cols-5">
           <div className="space-y-6 lg:col-span-3">
+            <OpenQuestions r={receptionist} questions={questions} returnTo={returnTo} />
             <KnowledgeBaseEditor receptionistId={receptionist.id} items={items} returnTo={returnTo} client />
             <KbHistory receptionistId={receptionist.id} revisions={history} returnTo={returnTo} teamName={`${company} team`} />
           </div>

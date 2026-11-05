@@ -1,11 +1,13 @@
-# Call audits place calls at planned times through the week. Vercel's Hobby plan only runs
-# crons once a day, so this pings the audit endpoint every 30 minutes during calling hours
-# (14:00–04:59 UTC ≈ 7am–9pm Pacific). It does nothing when no audit is running.
-# (On Vercel Pro, move this to a vercel.json cron and delete this workflow.)
+# The daytime sweep, every 30 minutes (14:00-04:59 UTC, about 7am-9pm Pacific). Vercel's Hobby plan
+# only runs crons once a day, so this pings /api/cron/audits, which:
+#   - places due call-audit calls and writes audit reports,
+#   - texts appointment reminders and review requests that are due,
+#   - calls owners whose weekly check-in is due (weekdays 10am-4pm their time).
+# Keep it enabled: reminders and check-ins depend on it. (On Vercel Pro, move this to a vercel.json
+# cron and delete this workflow.)
 # Needs two repository secrets: APP_URL (e.g. https://your-app.vercel.app) and CRON_SECRET
-# (the same value as the Vercel env var). Disable this workflow in GitHub between audits to save
-# Actions minutes on a private repo.
-name: Call audits
+# (the same value as the Vercel env var).
+name: Daytime sweep (audits, reminders, check-ins)
 on:
   schedule:
     - cron: "*/30 14-23 * * *"
@@ -16,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Run due audit calls
+      - name: Run the sweep
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

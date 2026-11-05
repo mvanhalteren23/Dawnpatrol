@@ -3,16 +3,23 @@ import { forwardSms, twiml, toE164, escapeXml } from "@/lib/twilio";
 import { twilioParams, xml } from "@/lib/twilio-request";
 import { isHandledReply, isOptIn, isOptOut } from "@/lib/follow-up-rules";
 import { leadAlertNumbers } from "@/lib/follow-up";
+import { after } from "next/server";
+import { handleCustomerText, receptionistForSharedText, textsCustomers } from "@/lib/customer-texts";
 
 // Texts to a business line:
 // - STOP / START from anyone: recorded so the line never texts that number again (Twilio also
 //   handles the carrier reply itself, so we answer with nothing).
 // - "1" (or "done") from the owner: marks their latest open lead handled.
-// - Anything else from a caller: forwarded to the owner's cell.
+// - Anything else from a customer: answered by the text agent (src/lib/customer-texts.ts), which
+//   also handles reminder replies and forwards what needs the owner; without it, forwarded as before.
+// The shared texting number (clients without a business line) points here too: the reply goes to
+// the client who last texted that customer.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const params = await twilioParams(req);
   if (params instanceof Response) return params;
-  const r = await db.receptionist.findUnique({ where: { businessNumber: params.To ?? "" } });
+  const r = (await db.receptionist.findUnique({ where: { businessNumber: params.To ?? "" } })) ?? (await receptionistForSharedText(params.From ?? ""));
   const body = params.Body ?? "";
   const from = toE164(params.From ?? "");
   if (!r || !body || !from) return xml(twiml(""));
@@ -35,6 +42,11 @@ export async function POST(req: Request) {
     return xml(twiml(`<Message>${escapeXml(`Marked ${open.callerName ?? open.callerNumber ?? "the caller"} as handled.`)}</Message>`));
   }
 
+  if (textsCustomers(r)) {
+    const { reply, background } = await handleCustomerText(r, from, body);
+    if (background) after(background);
+    return xml(twiml(reply ? `<Message>${escapeXml(reply)}</Message>` : ""));
+  }
   if (!r.ringFirstNumber && !owners.size) return xml(twiml(""));
   return xml(forwardSms([...owners][0]!, params.From ?? "unknown", body));
 }

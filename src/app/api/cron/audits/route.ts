@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { verifySharedSecret } from "@/lib/webhook-verify";
 import { processAudits } from "@/lib/call-audit";
+import { processCustomerTexts } from "@/lib/customer-texts";
+import { processCheckins } from "@/lib/owner-checkin";
 
 export const maxDuration = 300;
 
-// Call audits: place calls that are due, collect transcripts, analyse, write reports.
-// Called every 20 minutes during the day by .github/workflows/call-audits.yml (Vercel Hobby
+// Every 30 minutes in the day: call audits (place due calls, collect transcripts, analyse,
+// write reports), appointment reminders and review requests, and owner check-ins. Called every 30 minutes during the day by .github/workflows/call-audits.yml (Vercel Hobby
 // crons only run daily), and by the daily calls-sync job as a backstop.
 export async function GET(req: Request) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
   if (!verifySharedSecret(token, process.env.CRON_SECRET)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json(await processAudits());
+  const audits = await processAudits().catch((e: Error) => ({ error: e.message }));
+  const texts = await processCustomerTexts().catch((e: Error) => ({ error: e.message }));
+  const checkins = await processCheckins().catch((e: Error) => ({ error: e.message }));
+  return NextResponse.json({ audits, texts, checkins });
 }

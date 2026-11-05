@@ -242,6 +242,26 @@ export function bcHolidays(y: number): { date: string; name: string }[] {
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** US holidays most small businesses close for (federal list, trimmed to the common closures). */
+export function usHolidays(y: number): { date: string; name: string }[] {
+  const lastMonday = (m: number) => {
+    const d = new Date(Date.UTC(y, m, 0)); // last day of month m
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d;
+  };
+  const list: [Date, string][] = [
+    [new Date(Date.UTC(y, 0, 1)), "New Year's Day"],
+    [lastMonday(5), "Memorial Day"],
+    [new Date(Date.UTC(y, 6, 4)), "Independence Day"],
+    [nthWeekday(y, 9, 1, 1), "Labor Day"],
+    [nthWeekday(y, 11, 4, 4), "Thanksgiving"],
+    [new Date(Date.UTC(y, 11, 24)), "Christmas Eve"],
+    [new Date(Date.UTC(y, 11, 25)), "Christmas Day"],
+    [new Date(Date.UTC(y, 11, 31)), "New Year's Eve"],
+  ];
+  return list.map(([d, name]) => ({ date: ymd(d), name })).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Closed days for the booking window: holiday set (if any) plus extra YYYY-MM-DD lines. */
 export function closedDates(holidays: string, extra: string, fromYear: number): Set<string> {
   const out = new Set<string>();
