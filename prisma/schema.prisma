@@ -218,6 +218,7 @@ model Plan {
   features        String   @default("") // newline separated
   stripePriceId   String? // CAD price
   stripePriceIdUsd String? // USD price, for US clients
+  kind            String   @default("plan") // plan | addon (added to a plan at checkout, e.g. the Follow-Up Agent)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
 

@@ -306,9 +306,14 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             ) : null}
             {plans.length ? (
               <>
-                <form action={checkoutLink.bind(null, account.id)} className="mb-3 flex gap-2">
-                  <select name="planId" className="input">{plans.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatMoney(p.priceCents)}/mo</option>)}</select>
-                  <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="…">Stripe checkout link</SubmitButton>
+                <form action={checkoutLink.bind(null, account.id)} className="mb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <select name="planId" className="input">{plans.filter((p) => p.kind !== "addon").map((p) => <option key={p.id} value={p.id}>{p.name} — {formatMoney(p.priceCents)}/mo</option>)}</select>
+                    <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="…">Stripe checkout link</SubmitButton>
+                  </div>
+                  {plans.filter((p) => p.kind === "addon").map((a) => (
+                    <label key={a.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="addOn" value={a.id} /> Add {a.name} (+{formatMoney(a.priceCents)}/mo)</label>
+                  ))}
                 </form>
                 <details className="text-sm">
                   <summary className="cursor-pointer text-slate-600">Record manual billing (ACH / invoice)</summary>

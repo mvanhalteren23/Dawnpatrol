@@ -31,7 +31,7 @@ export function formatMoney(currency: Currency, amount: number): string {
 }
 
 /** The Follow-Up Agent add-on's monthly price in each currency; null shows "ask us" until it's set. */
-export const FOLLOWUP_ADDON_PRICE: Record<Currency, number> | null = null;
+export const FOLLOWUP_ADDON_PRICE: Record<Currency, number> | null = { CAD: 59, USD: 45 };
 
 /** What the Follow-Up Agent does for each trade: a website form, then a call within minutes. */
 export const FOLLOWUP_EXAMPLES: Record<TradeKey, { form: string; call: string; booked: string }> = {

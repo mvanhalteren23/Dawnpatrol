@@ -74,11 +74,12 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function PlanForm({ plan }: { plan?: { id: string; name: string; priceCents: number; setupFeeCents: number; includedMinutes: number; minimumMonths: number; features: string; stripePriceId: string | null; stripePriceIdUsd: string | null } }) {
+function PlanForm({ plan }: { plan?: { id: string; name: string; priceCents: number; setupFeeCents: number; includedMinutes: number; minimumMonths: number; features: string; stripePriceId: string | null; stripePriceIdUsd: string | null; kind: string } }) {
   return (
     <form action={savePlan} className="mt-3 grid grid-cols-2 gap-2">
       {plan ? <input type="hidden" name="id" value={plan.id} /> : null}
       <Field label="Name"><input name="name" defaultValue={plan?.name} className="input" required /></Field>
+      <Field label="Type"><select name="kind" defaultValue={plan?.kind ?? "plan"} className="input"><option value="plan">Plan</option><option value="addon">Add-on (ticked onto a plan at checkout)</option></select></Field>
       <Field label="Monthly price ($)"><input name="price" defaultValue={plan ? plan.priceCents / 100 : ""} className="input" required /></Field>
       <Field label="Setup fee ($)"><input name="setupFee" defaultValue={plan ? plan.setupFeeCents / 100 : ""} className="input" /></Field>
       <Field label="Included minutes"><input name="includedMinutes" type="number" defaultValue={plan?.includedMinutes} className="input" /></Field>

@@ -49,7 +49,7 @@ async function ensureCustomer(accountId: string): Promise<string> {
 }
 
 /** Hosted Stripe Checkout for a plan — send the link to the client or open it from the portal. */
-export async function createCheckout(accountId: string, planId: string, returnPath: string): Promise<string> {
+export async function createCheckout(accountId: string, planId: string, returnPath: string, addOnIds: string[] = []): Promise<string> {
   const plan = await db.plan.findUniqueOrThrow({ where: { id: planId } });
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { state: true } });
   // US clients pay in USD; everyone else in CAD.
@@ -57,13 +57,20 @@ export async function createCheckout(accountId: string, planId: string, returnPa
   const priceId = currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId;
   if (!priceId) throw new Error(`Plan "${plan.name}" has no Stripe ${currency} price id (CRM → Billing → the plan)`);
   const taxRate = await taxRateId(salesTaxFor(account.state));
+  // Add-ons (e.g. the Follow-Up Agent) ride on the same subscription, in the same currency.
+  const addOns = addOnIds.length ? await db.plan.findMany({ where: { id: { in: addOnIds }, kind: "addon", isActive: true } }) : [];
+  const addOnPrices = addOns.map((a) => {
+    const id = currency === "USD" ? a.stripePriceIdUsd : a.stripePriceId;
+    if (!id) throw new Error(`Add-on "${a.name}" has no Stripe ${currency} price id (CRM → Billing)`);
+    return id;
+  });
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
   const app = appUrl();
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
     customer,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }, ...addOnPrices.map((price) => ({ price, quantity: 1 }))],
     client_reference_id: accountId,
     subscription_data: { metadata: { accountId, planId }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
     success_url: `${app}${returnPath}?billing=success`,
@@ -185,14 +192,20 @@ async function syncSubscription(sub: Stripe.Subscription) {
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   const accountId = await accountIdForCustomer(customerId, sub.metadata?.accountId);
   if (!accountId) return;
-  const item = sub.items.data[0];
-  const unit = item?.price?.unit_amount ?? 0;
-  const interval = item?.price?.recurring?.interval;
-  const count = item?.price?.recurring?.interval_count ?? 1;
-  const monthly = interval === "year" ? unit / (12 * count) : interval === "week" ? (unit * 52) / (12 * count) : unit / count;
-  const mrrCents = Math.round(monthly * (item?.quantity ?? 1));
+  // Monthly revenue counts every item (the plan and any add-ons).
+  const monthlyOf = (it: Stripe.SubscriptionItem) => {
+    const unit = it.price?.unit_amount ?? 0;
+    const interval = it.price?.recurring?.interval;
+    const count = it.price?.recurring?.interval_count ?? 1;
+    const monthly = interval === "year" ? unit / (12 * count) : interval === "week" ? (unit * 52) / (12 * count) : unit / count;
+    return monthly * (it.quantity ?? 1);
+  };
+  const mrrCents = Math.round(sub.items.data.reduce((sum, it) => sum + monthlyOf(it), 0));
   const status = STATUS_MAP[sub.status] ?? "INCOMPLETE";
-  const plan = item?.price?.id ? await db.plan.findFirst({ where: { stripePriceId: item.price.id } }) : null;
+  // The plan is the item whose price belongs to a plan (not an add-on), in either currency.
+  const priceIds = sub.items.data.map((it) => it.price?.id).filter(Boolean) as string[];
+  const plan = priceIds.length ? await db.plan.findFirst({ where: { kind: "plan", OR: [{ stripePriceId: { in: priceIds } }, { stripePriceIdUsd: { in: priceIds } }] } }) : null;
+  const item = sub.items.data.find((it) => it.price?.id && (it.price.id === plan?.stripePriceId || it.price.id === plan?.stripePriceIdUsd)) ?? sub.items.data[0];
 
   await db.subscription.upsert({
     where: { accountId },

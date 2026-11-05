@@ -1007,6 +1007,7 @@ export async function savePlan(form: FormData) {
     features: str(form, "features"),
     stripePriceId: optStr(form, "stripePriceId"),
     stripePriceIdUsd: optStr(form, "stripePriceIdUsd"),
+    kind: str(form, "kind") === "addon" ? "addon" : "plan",
   };
   if (id) await db.plan.update({ where: { id }, data });
   else await db.plan.create({ data });
@@ -1026,7 +1027,7 @@ export async function checkoutLink(accountId: string, form: FormData) {
   await requireAdmin();
   let url: string;
   try {
-    url = await createCheckout(accountId, str(form, "planId"), "/portal/billing");
+    url = await createCheckout(accountId, str(form, "planId"), "/portal/billing", form.getAll("addOn").map(String));
   } catch (err) {
     back(`/crm/accounts/${accountId}`, { error: errMsg(err) });
   }

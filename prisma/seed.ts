@@ -39,6 +39,12 @@ async function main() {
     },
   ];
   for (const p of plans) await db.plan.upsert({ where: { name: p.name }, create: p, update: {} });
+  // The Follow-Up Agent add-on: CA$59 / US$45 a month, ticked onto a plan at checkout.
+  await db.plan.upsert({
+    where: { name: "Follow-Up Agent" },
+    create: { name: "Follow-Up Agent", kind: "addon", priceCents: 5900, setupFeeCents: 0, includedMinutes: 0, minimumMonths: 0, features: "Calls every website lead back within minutes\nAsks your questions and books the next step\nTries again, then texts" },
+    update: { kind: "addon" },
+  });
   // Earlier plans stop being offered; any client already on one keeps it.
   await db.plan.updateMany({ where: { name: { in: ["Starter", "Growth", "Pro"] }, subscriptions: { none: {} } }, data: { isActive: false } });
 
