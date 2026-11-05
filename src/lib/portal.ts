@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { requirePortalAccount } from "./auth";
+import { pickPortalReceptionist } from "./agent-lifecycle-rules";
 
 export async function loadPortal(searchParams: Promise<{ account?: string }>) {
   const sp = await searchParams;
@@ -10,7 +11,8 @@ export async function loadPortal(searchParams: Promise<{ account?: string }>) {
     session,
     account,
     // The inbound receptionist drives calls, reports and setup; a follow-up agent has its own Leads page.
-    receptionist: account.receptionists.find((r) => r.agentType !== "followup") ?? account.receptionists[0] ?? null,
+    // Prefer the production agent: after Promote to production the account also has its (older) demo.
+    receptionist: pickPortalReceptionist(account.receptionists),
     followupAgent: account.receptionists.find((r) => r.agentType === "followup") ?? null,
     adminAccountId: session.role !== "CLIENT" ? accountId : undefined,
     q: session.role !== "CLIENT" ? `?account=${accountId}` : "",

@@ -6,7 +6,10 @@ import { canAccessReceptionist } from "./access";
 
 /** RAG endpoints accept the receptionist's bearer token (ElevenLabs tools, scripts) or a logged-in session. */
 export async function authorizeRag(req: Request, receptionistId: string) {
-  const r = await db.receptionist.findUnique({ where: { id: receptionistId }, include: { knowledge: true } });
+  // Knowledge is only needed by the RAG search and export routes; booking and tool calls skip it.
+  const path = new URL(req.url).pathname;
+  const withKnowledge = path.includes("/api/rag/");
+  const r = await db.receptionist.findUnique({ where: { id: receptionistId }, include: { knowledge: withKnowledge } });
   if (!r) return null;
   const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (bearer) {

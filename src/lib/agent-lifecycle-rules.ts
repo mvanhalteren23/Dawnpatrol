@@ -37,3 +37,11 @@ export const PROMOTE_FIELDS = [
 export function promotedSettings<T extends Record<(typeof PROMOTE_FIELDS)[number], unknown>>(demo: T): Pick<T, (typeof PROMOTE_FIELDS)[number]> {
   return Object.fromEntries(PROMOTE_FIELDS.map((f) => [f, demo[f]])) as Pick<T, (typeof PROMOTE_FIELDS)[number]>;
 }
+
+export type PortalAgent = { agentType: string; lifecycle: string };
+
+/** The receptionist a client's portal shows: their production inbound agent, else any inbound one. */
+export function pickPortalReceptionist<T extends PortalAgent>(rs: T[]): T | null {
+  const inbound = rs.filter((r) => r.agentType === "inbound");
+  return inbound.find((r) => r.lifecycle === "production") ?? inbound.find((r) => r.lifecycle === "demo") ?? inbound[0] ?? rs.find((r) => r.agentType !== "followup" && r.agentType !== "builder") ?? null;
+}

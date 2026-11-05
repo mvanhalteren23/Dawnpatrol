@@ -34,3 +34,15 @@ describe("demo lifecycle", () => {
     expect(promotedSettings({ ...demo, demoExtension: "101" } as typeof demo)).toEqual(demo);
   });
 });
+
+describe("client portal agent", () => {
+  it("shows the production agent, not the older demo it was promoted from", async () => {
+    const { pickPortalReceptionist } = await import("@/lib/agent-lifecycle-rules");
+    const demo = { id: "d", agentType: "inbound", lifecycle: "demo" };
+    const prod = { id: "p", agentType: "inbound", lifecycle: "production" };
+    const followup = { id: "f", agentType: "followup", lifecycle: "production" };
+    expect(pickPortalReceptionist([demo, followup, prod])?.id).toBe("p");
+    expect(pickPortalReceptionist([followup, demo])?.id).toBe("d");
+    expect(pickPortalReceptionist([followup])).toBeNull();
+  });
+});

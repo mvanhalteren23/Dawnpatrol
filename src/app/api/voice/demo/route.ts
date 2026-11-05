@@ -6,7 +6,7 @@ import { recordActivity } from "@/lib/outreach";
 import { cleanDigits, gatherExtension, samePhone, say, twiml } from "@/lib/twilio";
 import { appUrl } from "@/lib/app-url";
 import { twilioSignatureOk } from "@/lib/twilio-request";
-import { builderAgent, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
+import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
 
 // Demo line directory. Twilio's Voice webhook for the demo number points here:
@@ -65,6 +65,8 @@ export async function POST(req: Request) {
     const [session, builder] = await Promise.all([getBuilderSession(digits), builderAgent()]);
     const account = session ? await db.account.findUnique({ where: { id: session.accountId }, select: { name: true } }) : null;
     if (!session || !account || !builder?.elevenLabsAgentId) return xml(twiml("<Hangup/>"));
+    // One use per code: only our own builder leg, dialled once (caller ID alone can be spoofed).
+    if (!(await claimBuilderCode(session.code))) return xml(twiml("<Hangup/>"));
     try {
       return xml(await registerTwilioCall(builder.elevenLabsAgentId, from, to, { dynamicVariables: { session_code: session.code, prospect_business: account.name, prospect_first_name: session.prospectName, rep_name: session.repName } }));
     } catch (err) {

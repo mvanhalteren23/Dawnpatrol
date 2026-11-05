@@ -5,6 +5,7 @@ import { runScheduledReports } from "@/lib/client-reports";
 import { processDueLeads } from "@/lib/followup";
 import { processAudits } from "@/lib/call-audit";
 import { expireIdleDemos } from "@/lib/agent-lifecycle";
+import { cleanupBuilderKeys } from "@/lib/live-builder";
 
 export const maxDuration = 300;
 
@@ -21,5 +22,6 @@ export async function GET(req: Request) {
   const audits = await processAudits().catch((err: Error) => err.message);
   // Demo agents idle for 30 days come out of ElevenLabs (kept in the CRM, can be revived).
   const demos = await expireIdleDemos().catch((err: Error) => err.message);
-  return NextResponse.json({ ...sync, reports, followUpCalls, audits, demos });
+  const cleaned = await cleanupBuilderKeys().catch((err: Error) => err.message);
+  return NextResponse.json({ ...sync, reports, followUpCalls, audits, demos, cleaned });
 }

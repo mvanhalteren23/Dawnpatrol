@@ -13,6 +13,8 @@ const OVERLAP_SECS = 6 * 60 * 60; // re-check recent hours in case a call was st
  * the post-call webhook: if the webhook is missing, misconfigured or a delivery fails, the next sync
  * still picks the call up. Safe to run repeatedly (CallLog.externalId is unique).
  */
+const SYNC_CONCURRENCY = 4;
+
 export async function syncCalls(opts: { receptionistId?: string } = {}): Promise<{ checked: number; added: number; errors: string[] }> {
   const result = { checked: 0, added: 0, errors: [] as string[] };
   if (!elevenLabsConfigured()) return result;
@@ -22,7 +24,9 @@ export async function syncCalls(opts: { receptionistId?: string } = {}): Promise
     select: { id: true, demoExtension: true, elevenLabsAgentId: true },
   });
 
-  for (const r of receptionists) {
+  // A few receptionists at a time: one by one doesn't fit the daily job's time limit at scale,
+  // and all at once would hit ElevenLabs' rate limits.
+  const syncOne = async (r: (typeof receptionists)[number]) => {
     try {
       const latest = await db.callLog.findFirst({ where: { receptionistId: r.id }, orderBy: { startedAt: "desc" }, select: { startedAt: true } });
       const after = latest
@@ -31,7 +35,7 @@ export async function syncCalls(opts: { receptionistId?: string } = {}): Promise
       const convs = await listConversations(r.elevenLabsAgentId!, after);
       const ids = convs.filter((c) => !c.status || c.status === "done").map((c) => c.conversation_id);
       result.checked += ids.length;
-      if (!ids.length) continue;
+      if (!ids.length) return;
 
       const known = new Set(
         (await db.callLog.findMany({ where: { externalId: { in: ids } }, select: { externalId: true } })).map((c) => c.externalId),
@@ -46,7 +50,12 @@ export async function syncCalls(opts: { receptionistId?: string } = {}): Promise
       console.warn("call sync failed", r.id, err);
       result.errors.push(`${r.id}: ${(err as Error).message.slice(0, 200)}`);
     }
-  }
+  };
+  const queue = [...receptionists];
+  await Promise.all(Array.from({ length: Math.min(SYNC_CONCURRENCY, queue.length) }, async () => {
+    for (let r = queue.shift(); r; r = queue.shift()) await syncOne(r);
+  }));
+
   return result;
 }
 

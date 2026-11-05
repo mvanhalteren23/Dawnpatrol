@@ -69,14 +69,16 @@ export async function saveKbItem(receptionistId: string, returnTo: string, form:
   if (id && (!existing || existing.receptionistId !== receptionistId)) throw new Error("Not found");
   const data = {
     category,
-    title: str(form, "title"),
-    content: str(form, "content"),
+    title: str(form, "title").trim().slice(0, 200),
+    content: str(form, "content").trim().slice(0, 8000),
     // Clients don't see tags: keep whatever the team set.
     tags: client ? (existing?.tags ?? "") : str(form, "tags").replace(/\bclaude-draft\b,?/, "").trim(),
     isActive: form.get("isActive") === "on",
     updatedBy: session.email,
   };
   if (!data.title || !data.content) done(returnTo, "Title and content are required", "error");
+  // A client can't grow the knowledge base without limit (it's sent to the agent on every sync).
+  if (!existing && (await db.knowledgeItem.count({ where: { receptionistId } })) >= 300) done(returnTo, "This knowledge base has reached 300 entries. Combine or remove some, or ask the team.", "error");
   await db.$transaction(async (tx) => {
     if (existing) {
       await tx.knowledgeItem.update({ where: { id: existing.id }, data });

@@ -57,6 +57,26 @@ async function updateSession(code: string, patch: Partial<BuilderSession>): Prom
   return next;
 }
 
+/** Daily: drop finished builder sessions and old one-per-call markers from the Setting table. */
+export async function cleanupBuilderKeys(now = new Date()): Promise<number> {
+  const day = new Date(now.getTime() - 86400_000);
+  const twoMonths = new Date(now.getTime() - 60 * 86400_000);
+  const res = await db.setting.deleteMany({
+    where: {
+      OR: [
+        { key: { startsWith: "builder." }, updatedAt: { lt: day } },
+        { key: { startsWith: "demo.fromCall." }, updatedAt: { lt: twoMonths } },
+      ],
+    },
+  });
+  return res.count;
+}
+
+/** The builder's dial-in uses its code once; any later call with the same code is refused. */
+export async function claimBuilderCode(code: string): Promise<boolean> {
+  return db.setting.create({ data: { key: `builder.used.${code}`, value: new Date().toISOString() } }).then(() => true).catch(() => false);
+}
+
 /** The session a rep's dialer call is in, if they added the builder to it. */
 export async function sessionForParent(parentSid: string): Promise<BuilderSession | null> {
   const code = await getSetting(parentKey(parentSid));
