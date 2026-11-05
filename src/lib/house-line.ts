@@ -124,11 +124,15 @@ export async function setupGrace(o: { name: string; voiceId: string }): Promise<
   }
   notes.push(`${o.name} calls back the website's "Book a demo" form within about 2 minutes, 8am-8pm`);
 
-  const checkin = await db.receptionist.findFirst({ where: { agentType: "checkin" } });
-  if (checkin) await db.receptionist.update({ where: { id: checkin.id }, data: { name: o.name, voiceId: o.voiceId, syncStatus: "DIRTY" } });
+  // The owner check-in agent: created now (not on the first check-in), so all three are visible.
+  let checkin = await db.receptionist.findFirst({ where: { agentType: "checkin" } });
+  const checkinData = { name: o.name, voiceId: o.voiceId, businessName: company, timezone: house.timezone, syncStatus: "DIRTY" };
+  checkin = checkin
+    ? await db.receptionist.update({ where: { id: checkin.id }, data: checkinData })
+    : await db.receptionist.create({ data: { ...checkinData, accountId: house.accountId, agentType: "checkin", persona: "Friendly, quick and respectful of the owner's time.", ragToken: randomBytes(24).toString("base64url") } });
   await setSetting("checkin.name", o.name);
   await setSetting("checkin.voiceId", o.voiceId);
   notes.push(`${o.name} makes the weekly owner check-in calls`);
 
-  return { ids: [house.id, followup.id, ...(checkin ? [checkin.id] : [])], notes };
+  return { ids: [house.id, followup.id, checkin.id], notes };
 }
