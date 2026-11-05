@@ -82,7 +82,7 @@ export function Progress({ pct }: { pct: number }) {
 
 export function NavLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="block rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/10 hover:text-white hover:no-underline">
+    <Link href={href} className="block rounded-[10px] px-3 py-2 text-sm font-medium text-dawn-100 hover:bg-white/10 hover:text-dawn-400 hover:no-underline">
       {children}
     </Link>
   );

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { companyName } from "@/lib/brand";
 import { db } from "@/lib/db";
 import { supportAddress } from "@/lib/google";
+import { BrandMark } from "@/components/site/BrandLogo";
 
 export async function PortalShell({ accountId, accountName, adminAccountId, email, children }: { accountId: string; accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
   const q = adminAccountId ? `?account=${adminAccountId}` : "";
@@ -12,13 +13,16 @@ export async function PortalShell({ accountId, accountName, adminAccountId, emai
       {adminAccountId ? (
         <div className="bg-amber-100 px-4 py-1 text-center text-xs text-amber-900">Admin preview of {accountName}&apos;s portal · <Link href={`/crm/accounts/${adminAccountId}`}>back to CRM</Link></div>
       ) : null}
-      <header className="border-b border-slate-200 bg-white">
+      <header className="border-b-4 border-dawn-700 bg-dawn-600 text-dawn-100">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <div className="font-semibold">🌅 {accountName}</div>
-            <div className="text-xs text-slate-500">AI receptionist by {company}</div>
+          <div className="flex items-center gap-3">
+            <BrandMark size={40} />
+            <div>
+              <div className="font-condensed text-xl font-extrabold leading-tight text-dawn-100">{accountName}</div>
+              <div className="font-condensed text-xs font-bold uppercase tracking-[0.18em] text-dawn-400">AI receptionist by {company}</div>
+            </div>
           </div>
-          <nav className="flex flex-wrap gap-4 text-sm">
+          <nav className="flex flex-wrap gap-4 text-sm [&_a]:font-semibold [&_a]:text-dawn-100 [&_a:hover]:text-dawn-400">
             <Link href={`/portal${q}`}>Overview</Link>
             <Link href={`/portal/knowledge${q}`}>What it knows</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
@@ -28,7 +32,7 @@ export async function PortalShell({ accountId, accountName, adminAccountId, emai
             <Link href={`/portal/billing${q}`}>Billing</Link>
             <Link href={`/portal/settings${q}`}>Your setup</Link>
           </nav>
-          <form action="/api/auth/logout" method="post" className="text-xs text-slate-500">{email} · <button className="underline">Sign out</button></form>
+          <form action="/api/auth/logout" method="post" className="text-xs text-dawn-100/80">{email} · <button className="underline">Sign out</button></form>
         </div>
       </header>
       <main className="mx-auto max-w-6xl p-4 md:p-8">{children}</main>
