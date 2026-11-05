@@ -1,6 +1,7 @@
 "use server";
 // Customer texts, bookings and open questions: shared by the CRM and the client portal. Clients
 // manage their own receptionist's; the team any it can access.
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
@@ -44,6 +45,20 @@ export async function saveCustomerTextSettings(receptionistId: string, returnTo:
     },
   });
   done(returnTo, "Saved");
+}
+
+/** The client picks their receptionist's voice from the curated list; it's live within a minute. */
+export async function chooseVoice(receptionistId: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const voiceId = str(form, "voiceId").trim();
+  const { isCurated } = await import("@/lib/voices");
+  if (!(await isCurated(voiceId))) done(returnTo, "Pick one of the voices listed", "error");
+  const r = await db.receptionist.update({ where: { id: receptionistId }, data: { voiceId } });
+  if (r.elevenLabsAgentId) {
+    const { syncReceptionist } = await import("@/lib/elevenlabs");
+    after(() => syncReceptionist(receptionistId).then(() => undefined).catch((e) => console.error("voice sync", e)));
+  }
+  done(returnTo, "Voice saved. Your receptionist will use it within a minute.");
 }
 
 export async function markBookingNoShow(receptionistId: string, bookingId: string, returnTo: string) {

@@ -21,6 +21,9 @@ const RING: Record<string, string> = { always: "always", hours: "during your hou
 // Managed service: the team sets up and tunes the receptionist. Clients see how it's set up,
 // choose their own notifications (lead texts, reports), and request any other change.
 import { CustomerTextSettings } from "@/components/CustomerCare";
+import { VoiceOptions } from "@/components/VoicePicker";
+import { curatedVoices } from "@/lib/voices";
+import { chooseVoice } from "@/app/customer-actions";
 import { bookingLink } from "@/lib/customer-texts";
 
 export default async function PortalSettings({ searchParams }: { searchParams: Promise<{ account?: string; notice?: string; error?: string }> }) {
@@ -34,6 +37,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const r = receptionist;
   const days = r ? hoursByDay(r.bookingHours) : {};
   const link = r ? await bookingLink(r).catch(() => null) : null;
+  const voices = await curatedVoices();
 
   return (
     <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
@@ -71,6 +75,14 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
           </div>
 
           <div className="space-y-6 lg:col-span-2">
+            {voices.length ? (
+              <form action={chooseVoice.bind(null, r.id, returnTo)} className="card space-y-3 text-sm">
+                <h2>{r.name}&apos;s voice</h2>
+                <p className="text-xs text-slate-500">Press play to hear each one. Your receptionist switches within a minute of saving.</p>
+                <VoiceOptions voices={voices} current={r.voiceId} />
+                <button className="btn-secondary">Save voice</button>
+              </form>
+            ) : null}
             <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>

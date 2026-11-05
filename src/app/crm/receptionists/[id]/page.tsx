@@ -25,6 +25,8 @@ import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
 import { applyTemplateAction, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 import { demoExpiry } from "@/lib/agent-lifecycle";
+import { VoiceOptions } from "@/components/VoicePicker";
+import { curatedVoices } from "@/lib/voices";
 import { AGENT_TEMPLATES, TEMPLATE_KEYS, templateFor } from "@/lib/agent-templates";
 import { BookingsList, CustomerTextSettings, OpenQuestions } from "@/components/CustomerCare";
 import { bookingLink, textsCustomers } from "@/lib/customer-texts";
@@ -59,6 +61,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const promotedFrom = r.promotedFromId ? await db.receptionist.findUnique({ where: { id: r.promotedFromId }, select: { id: true, name: true } }) : null;
   const canPromote = isAdmin && r.lifecycle !== "production" && r.agentType === "inbound" && !promotedTo;
   const customerCare = textsCustomers(r);
+  const voiceList = await curatedVoices();
   const [careLink, openQs, recentBookings] = customerCare
     ? await Promise.all([
         bookingLink(r).catch(() => null),
@@ -118,7 +121,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <Field label="Transfer / escalation phone"><input name="escalationPhone" defaultValue={r.escalationPhone ?? ""} className="input" /></Field>
             <Field label="Escalation rules" className="col-span-2"><textarea name="escalationRules" rows={2} defaultValue={r.escalationRules} className="input" /></Field>
             <Field label="Extra instructions" className="col-span-2"><textarea name="extraInstructions" rows={3} defaultValue={r.extraInstructions} className="input" /></Field>
-            <Field label="ElevenLabs voice id"><input name="voiceId" defaultValue={r.voiceId ?? ""} className="input" /></Field>
+            <Field label="Voice" className="col-span-2"><VoiceOptions voices={voiceList} current={r.voiceId} allowCustom /></Field>
             {isAdmin ? <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field> : null}
             {followup ? null : <Field label="Demo line extension" className="col-span-2"><input name="demoExtension" defaultValue={r.demoExtension ?? ""} placeholder="e.g. 101 — leave blank if this isn't a demo" className="input" inputMode="numeric" /></Field>}
             <div className="col-span-2"><SubmitButton pendingText="Saving…">Save settings</SubmitButton></div>

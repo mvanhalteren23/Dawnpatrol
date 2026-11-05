@@ -21,6 +21,8 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
+import { saveCuratedVoicesAction } from "../actions";
+import { curatedVoices, MAX_CURATED_VOICES } from "@/lib/voices";
 import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabsAgents, makeSampleCalls, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +32,7 @@ function Status({ ok, label }: { ok: boolean; label?: string }) {
 }
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
+  const voiceList = await curatedVoices();
   const session = await requireStaff();
   const [me, myRow] = await Promise.all([googleConnection(session.sub), db.googleAccount.findUnique({ where: { userId: session.sub }, select: { lastSyncAt: true, lastError: true } })]);
   const myGoogleCard = (
@@ -239,6 +242,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <Status ok={Boolean(process.env.OUTREACH_WEBHOOK_SECRET)} />
         </div>
       </div>
+
+      <form action={saveCuratedVoicesAction} className="card mb-6 space-y-3 text-sm">
+        <h2>Voices clients can choose</h2>
+        <p className="text-xs text-slate-500">Up to {MAX_CURATED_VOICES} ElevenLabs voices (copy the ID from the voice&apos;s menu in ElevenLabs; it must be in your account under My Voices). Clients pick one under Your setup; your team picks on each agent&apos;s page.</p>
+        {Array.from({ length: MAX_CURATED_VOICES }, (_, i) => voiceList[i]).map((v, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <input name={`voice_${i}`} defaultValue={v?.id ?? ""} placeholder="Voice ID" className="input w-64" />
+            <input name={`label_${i}`} defaultValue={v?.label ?? ""} placeholder="Label clients see (e.g. Warm, female)" className="input w-64" />
+            {v?.previewUrl ? <audio controls preload="none" src={v.previewUrl} className="h-8" /> : null}
+          </div>
+        ))}
+        <button className="btn-secondary">Save voices</button>
+      </form>
 
       <div className="card text-sm">
         <h2 className="mb-2">Starter prompts</h2>

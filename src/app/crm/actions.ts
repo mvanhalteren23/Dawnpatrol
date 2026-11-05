@@ -840,7 +840,8 @@ export async function updateReceptionist(id: string, form: FormData) {
       businessName: str(form, "businessName"),
       greeting: str(form, "greeting"),
       persona: str(form, "persona"),
-      voiceId: optStr(form, "voiceId"),
+      // The voice picker: a curated voice, or (team only) any other voice ID; blank = default.
+      voiceId: str(form, "voiceId") === "__custom" ? optStr(form, "voiceIdCustom") : optStr(form, "voiceId"),
       language: str(form, "language") || "en",
       timezone: str(form, "timezone") || "America/New_York",
       businessHours: str(form, "businessHours"),
@@ -1302,6 +1303,15 @@ export async function setupGraceAction(form: FormData) {
   });
   if (firstError) back("/crm/demo-line", { error: `${name} was set up but didn't sync: ${firstError.slice(0, 300)}` });
   back("/crm/demo-line", { notice: `${res.notes.join(". ")}. The follow-up and check-in agents are syncing now; refresh in a minute.` });
+}
+
+/** The curated voices clients and the team can pick (up to 5, by ElevenLabs voice ID). */
+export async function saveCuratedVoicesAction(form: FormData) {
+  await requireAdmin();
+  const { MAX_CURATED_VOICES, saveCuratedVoices } = await import("@/lib/voices");
+  const rows = Array.from({ length: MAX_CURATED_VOICES }, (_, i) => ({ id: str(form, `voice_${i}`), label: str(form, `label_${i}`) }));
+  const res = await saveCuratedVoices(rows);
+  back("/crm/settings", res.problems.length ? { error: `Saved ${res.saved}. ${res.problems.join("; ")}` } : { notice: `${res.saved} voice${res.saved === 1 ? "" : "s"} saved. Clients can pick from ${res.saved === 1 ? "it" : "them"} under Your setup.` });
 }
 
 /** The keypad code that opens the demo menu on the company line (checked by the app, never told to the agent). */
