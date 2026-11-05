@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { AGENT_TEMPLATES, isCanadian, missingStarters, TEMPLATE_KEYS, templateFor, templateGaps, templateSettings } from "@/lib/agent-templates";
 
 describe("agent templates", () => {
-  it("every template has the recording notice and the platform-wide policies", () => {
+  it("every template has a greeting without a recording notice, and the platform-wide policies", () => {
     for (const k of TEMPLATE_KEYS) {
       const t = AGENT_TEMPLATES[k];
-      expect(t.settings.greeting({ businessName: "Acme", name: "Ava" })).toContain("calls are recorded");
+      expect(t.settings.greeting({ businessName: "Acme", name: "Ava" })).toBe("Thanks for calling Acme, this is Ava. How can I help you today?");
       const titles = t.knowledge.map((x) => x.title);
       for (const must of ["Payment details over the phone", "Call recording", "Emergencies"]) expect(titles).toContain(must);
       // Fill-in entries never go live with placeholder text.

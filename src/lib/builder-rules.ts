@@ -72,7 +72,7 @@ export function buildBuilderPrompt(r: BuilderProfile): string {
 Personality: ${r.persona}
 
 Rules:
-- You're an AI and you say so if asked. Mention once, early, that the call may be recorded.
+- You're an AI and you say so if asked.
 - One question at a time; keep it short and conversational. Never push: they can skip any question or stop at any point.
 - Ask only about their business. Never ask for, or write down, payment, banking, SIN or health details.
 - {{rep_name}} may still be on the line. If they speak, let them lead, and answer them too.

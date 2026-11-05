@@ -1,6 +1,6 @@
 // Starting templates for new agents (pure; unit tested). Every agent the app creates (CRM
 // "+ Receptionist", demo agents from every path, follow-up agents) starts from one, so the
-// best-practice setup is always there: a greeting that says calls are recorded, a persona,
+// best-practice setup is always there: a greeting, a persona,
 // escalation rules, booking defaults, customer texts and check-ins, and starter knowledge.
 // Safety rules aren't here: they're generated into every prompt on sync (safety-rules.ts) and
 // can't be edited per agent.
@@ -36,8 +36,8 @@ export type AgentTemplate = {
   knowledge: KbStarter[];
 };
 
-const recorded = (o: { businessName: string; name: string }, ask = "How can I help you today?") =>
-  `Thanks for calling ${o.businessName}, this is ${o.name}. Just so you know, calls are recorded. ${ask}`;
+const greet = (o: { businessName: string; name: string }, ask = "How can I help you today?") =>
+  `Thanks for calling ${o.businessName}, this is ${o.name}. ${ask}`;
 
 /** Facts that are true for every client on our platform, so every agent knows them from day one. */
 const PLATFORM_FACTS: KbStarter[] = [
@@ -61,7 +61,7 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
     label: "Auto repair / mechanic",
     settings: {
       persona: "Friendly, practical and quick, like an experienced service advisor. Plain words, no jargon, one question at a time.",
-      greeting: (o) => recorded(o),
+      greeting: (o) => greet(o),
       escalationRules: "If a caller is stranded, unsafe to drive, upset, or asks for a person, offer to transfer or take an urgent message. Parts suppliers and other shops go to the parts desk or a message for the owner.",
       bookingTitle: "Vehicle drop-off",
       bookingSlotMinutes: 30,
@@ -91,7 +91,7 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
     label: "Contractor / home services",
     settings: {
       persona: "Warm, clear and efficient, like a seasoned dispatcher. Plain words, one question at a time.",
-      greeting: (o) => recorded(o),
+      greeting: (o) => greet(o),
       escalationRules: "If it's an emergency (flooding, no heat in winter, sparking, a gas smell, anything unsafe), or the caller is upset or asks for a person, offer to transfer or take an urgent message. Suppliers and sub-trades get a message for the owner.",
       bookingTitle: "Estimate visit",
       bookingSlotMinutes: 60,
@@ -121,7 +121,7 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
     label: "Retail / storefront",
     settings: {
       persona: "Friendly and upbeat, like a helpful person at the front counter. Short answers, one question at a time.",
-      greeting: (o) => recorded(o),
+      greeting: (o) => greet(o),
       escalationRules: "If a caller is upset, has a problem with an order, or asks for a person, offer to transfer or take a message. Deliveries and suppliers go to a message for the owner.",
       bookingTitle: "Appointment",
       bookingSlotMinutes: 30,
@@ -151,7 +151,7 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
     label: "Other service business",
     settings: {
       persona: "Warm, concise and professional. Plain words, one question at a time.",
-      greeting: (o) => recorded(o),
+      greeting: (o) => greet(o),
       escalationRules: "If the caller is upset, has an urgent problem, or asks for a person, offer to transfer or take an urgent message.",
       bookingTitle: "Appointment",
       bookingSlotMinutes: 30,
@@ -175,7 +175,7 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
     label: "Follow-Up Agent (calls website leads)",
     settings: {
       persona: "Warm, upbeat and to the point. Sounds like a helpful person from the office, never pushy.",
-      greeting: (o) => recorded(o),
+      greeting: (o) => greet(o),
       escalationRules: "If the person is upset, asks for a person, or the request is urgent, offer to have the owner call them back right away.",
       bookingTitle: "Appointment",
       bookingSlotMinutes: 30,
