@@ -43,7 +43,7 @@ export default async function Home() {
               <DemoButton>Book a demo</DemoButton>
               <a href="#dispatch-simulator" className="inline-flex h-[48px] items-center rounded-[12px] border-2 border-[#EFE6D4] px-6 text-sm font-semibold text-[#EFE6D4] hover:no-underline">Hear a sample call</a>
             </div>
-            {demo ? <p className="text-sm text-[#EFE6D4]/85">Or call our own AI receptionist: <a href={`tel:${demo.tel}`} className="font-semibold text-[#D8B47A]">{demo.label}</a></p> : null}
+            {demo ? <p className="text-sm text-[#EFE6D4]/85">Or call our reception to hear how our AI receptionists handle calls: <a href={`tel:${demo.tel}`} className="font-semibold text-[#D8B47A]">{demo.label}</a></p> : null}
             <div className="grid max-w-xl grid-cols-3 gap-4 border-t border-[#173022] pt-4">
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">24/7</div><div className="text-xs text-[#EFE6D4]">Every call picked up, no voicemail</div></div>
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]"><Price kind="monthly" /> / MO</div><div className="text-xs text-[#EFE6D4]">{PRICING.includedMinutes} call minutes included</div></div>

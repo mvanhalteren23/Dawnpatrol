@@ -26,7 +26,7 @@ export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: 
             <div className="flex flex-wrap items-center gap-4 pt-3">
               <DemoButton trade={trade}>{ind.primaryCta}</DemoButton>
               {demo ? (
-                <a href={`tel:${demo.tel}`} className="inline-flex h-[48px] items-center rounded-[12px] border-2 border-[#EFE6D4] px-6 text-sm font-semibold text-[#EFE6D4] hover:no-underline">Call our AI receptionist demo: {demo.label}</a>
+                <a href={`tel:${demo.tel}`} className="inline-flex min-h-[48px] items-center rounded-[12px] border-2 border-[#EFE6D4] px-6 py-2 text-left text-sm font-semibold text-[#EFE6D4] hover:no-underline">Call our reception to hear how our AI receptionists handle calls: {demo.label}</a>
               ) : null}
               <a href="#dispatch-simulator" className="text-sm font-semibold text-[#D8B47A] underline-offset-4 hover:underline">Hear a sample call</a>
             </div>
