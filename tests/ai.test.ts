@@ -17,7 +17,7 @@ describe("AI router types", () => {
   });
 
   it("marks the web research jobs", () => {
-    expect(TASK_KEYS.filter((t) => TASKS[t].web)).toEqual(["research", "prospecting", "kb_draft"]);
+    expect(TASK_KEYS.filter((t) => TASKS[t].web)).toEqual(["research", "prospecting", "kb_draft", "demo_research"]);
   });
 });
 

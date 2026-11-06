@@ -633,6 +633,29 @@ export async function runResearch(accountId: string, form: FormData) {
   back(`/crm/research/${runId}`);
 }
 
+/**
+ * Demo agent research: deep research on the prospect (whole website, Google profile and reviews,
+ * nearby competitors) that builds their demo agent, or refreshes the chosen one.
+ */
+export async function runDemoResearch(accountId: string, form: FormData) {
+  const session = await requireStaff();
+  await guard(session, accountId);
+  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { stage: true } });
+  const target = str(form, "target");
+  if (target === "new" && isClientStage(account.stage) && session.role !== "ADMIN") back(`/crm/accounts/${accountId}`, { error: "This account is a client: an administrator sets up its agents" });
+  const mine = await googleConnection(session.sub);
+  let runId: string;
+  try {
+    const { startDemoResearch } = await import("@/lib/demo-research");
+    runId = await startDemoResearch(accountId, { receptionistId: target === "new" ? null : target, createdById: session.sub, googleUserId: mine.connected ? session.sub : null, bookingEnabled: mine.calendar, agentName: str(form, "name").trim() || "Ava" });
+  } catch (err) {
+    unstable_rethrow(err);
+    back(`/crm/accounts/${accountId}`, { error: errMsg(err) });
+  }
+  after(async () => (await import("@/lib/demo-research")).executeDemoResearch(runId));
+  back(`/crm/research/${runId}`);
+}
+
 export async function applyResearch(runId: string) {
   const session = await requireStaff();
   const run = await db.researchRun.findUniqueOrThrow({ where: { id: runId } });

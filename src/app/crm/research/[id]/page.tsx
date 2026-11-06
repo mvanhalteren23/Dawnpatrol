@@ -17,12 +17,13 @@ export default async function ResearchRunPage({ params, searchParams }: { params
   const run = await db.researchRun.findUnique({ where: { id }, include: { account: true, prompt: true } });
   if (!run) notFound();
   const summary = run.kind === "RESEARCH" ? safeJson<ResearchSummary | null>(run.resultJson, null) : null;
+  const demoAgentId = run.kind === "DEMO_RESEARCH" ? safeJson<{ receptionistId?: string }>(run.resultJson, {}).receptionistId ?? null : null;
 
   return (
     <div className="max-w-4xl">
       <AutoRefresh active={run.status === "RUNNING"} />
       <PageHeader
-        title={run.prompt?.name ?? (run.kind === "KB_DRAFT" ? "Knowledge base draft" : "Research")}
+        title={run.prompt?.name ?? (run.kind === "KB_DRAFT" ? "Knowledge base draft" : run.kind === "DEMO_RESEARCH" ? "Demo agent research" : "Research")}
         subtitle={<span className="flex items-center gap-2"><StatusBadge status={run.status} />{run.account ? <Link href={`/crm/accounts/${run.account.id}`}>{run.account.name}</Link> : null}<span className="text-xs text-slate-400">{formatDate(run.createdAt, true)}{run.model ? ` · ${run.model}` : ""}{run.tokensOut ? ` · ${run.tokensIn}/${run.tokensOut} tokens` : ""}</span></span>}
         actions={run.status === "DONE" && run.kind === "RESEARCH" ? <>
           {run.driveFileUrl ? <a href={run.driveFileUrl} target="_blank" rel="noreferrer" className="btn-secondary">Open Google Doc</a> : <form action={saveRunToDrive.bind(null, run.id)}><SubmitButton className="btn-secondary">Save to Drive</SubmitButton></form>}
@@ -32,6 +33,7 @@ export default async function ResearchRunPage({ params, searchParams }: { params
       <Flash params={await searchParams} />
       {run.status === "RUNNING" ? <Notice>Claude is searching the web and reading sites. This usually takes 1–4 minutes; the page refreshes itself.</Notice> : null}
       {run.status === "FAILED" ? <Notice kind="error">{run.error}</Notice> : null}
+      {run.kind === "DEMO_RESEARCH" && demoAgentId ? <Notice>Loaded into the demo agent. <Link href={`/crm/receptionists/${demoAgentId}`}>Open the agent</Link> to review the knowledge (entries marked &ldquo;(assumed)&rdquo; are typical answers for their trade: confirm them with the owner).</Notice> : null}
 
       {summary ? (
         <div className="card mb-6 grid gap-4 sm:grid-cols-3">

@@ -30,6 +30,7 @@ import {
   inviteClientUser,
   logActivity,
   runResearch,
+  runDemoResearch,
   saveManualBilling,
   sendEmail,
   updateAccount,
@@ -69,7 +70,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
     include: {
       contacts: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
       activities: { orderBy: { occurredAt: "desc" }, take: 100, include: { contact: true } },
-      research: { where: { kind: { in: ["RESEARCH", "KB_DRAFT"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { prompt: true } },
+      research: { where: { kind: { in: ["RESEARCH", "KB_DRAFT", "DEMO_RESEARCH"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { prompt: true } },
       subscription: { include: { plan: true } },
       invoices: { orderBy: { createdAt: "desc" }, take: 12 },
       receptionists: { include: { _count: { select: { knowledge: true, calls: true } } } },
@@ -123,6 +124,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const sentEmails = account.activities.filter((a) => a.type === "EMAIL" && a.direction === "OUTBOUND");
   const replyRate = sentEmails.length ? Math.round((sentEmails.filter((a) => a.repliedAt).length / sentEmails.length) * 100) : null;
   const isClient = isClientStage(account.stage);
+  const demoAgents = account.receptionists.filter((r) => r.lifecycle === "demo" && r.demoExtension);
 
   return (
     <div>
@@ -424,11 +426,23 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <textarea name="customPrompt" rows={4} className="input mt-2" placeholder="Leave empty to use the selected saved prompt" />
               </details>
             </form>
+            <form action={runDemoResearch.bind(null, account.id)} className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+              <div className="label">Demo agent research</div>
+              <p className="text-xs text-slate-500">Reads their whole website, Google profile and reviews, and 2–3 nearby competitors, then builds the demo agent from it: services, published prices, hours, booking, policies, team and caller FAQs. Gaps get typical answers for their trade, marked &ldquo;assumed&rdquo;, and become the questions asked after they book a demo. Takes 1–4 minutes.</p>
+              <div className="flex gap-2">
+                <select name="target" className="input" defaultValue={demoAgents[0]?.id ?? "new"}>
+                  {demoAgents.map((r) => <option key={r.id} value={r.id}>Update {r.name} (ext. {r.demoExtension})</option>)}
+                  {!demoAgents.length && (!isClient || session.role === "ADMIN") ? <option value="new">New demo agent</option> : null}
+                </select>
+                {!demoAgents.length ? <input name="name" placeholder="Agent name (Ava)" className="input w-40" /> : null}
+                <SubmitButton className="btn whitespace-nowrap" pendingText="Starting…">Research &amp; build</SubmitButton>
+              </div>
+            </form>
             {account.research.length ? (
               <ul className="mt-4 divide-y divide-slate-100 text-sm">
                 {account.research.map((r) => (
                   <li key={r.id} className="flex items-center justify-between py-2">
-                    <Link href={`/crm/research/${r.id}`}>{r.kind === "KB_DRAFT" ? "Knowledge base draft" : r.prompt?.name ?? "Custom research"}</Link>
+                    <Link href={`/crm/research/${r.id}`}>{r.kind === "KB_DRAFT" ? "Knowledge base draft" : r.kind === "DEMO_RESEARCH" ? "Demo agent research" : r.prompt?.name ?? "Custom research"}</Link>
                     <span className="flex items-center gap-2 text-xs text-slate-500">{r.driveFileUrl ? <a href={r.driveFileUrl} target="_blank" rel="noreferrer">Doc</a> : null}<StatusBadge status={r.status} />{formatDate(r.createdAt, true)}</span>
                   </li>
                 ))}

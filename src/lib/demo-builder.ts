@@ -26,7 +26,7 @@ async function freeExtension(): Promise<string> {
  * Create a prospect's demo receptionist (its own demo-line extension). Returns the KB-draft run
  * to finish with finishDemoAgent, or null when the account has no website to draft from.
  */
-export async function createDemoAgent(accountId: string, opts: { name?: string; createdById: string | null; googleUserId: string | null; bookingEnabled: boolean }) {
+export async function createDemoAgent(accountId: string, opts: { name?: string; createdById: string | null; googleUserId: string | null; bookingEnabled: boolean; skipKbDraft?: boolean }) {
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId } });
   const r = await db.receptionist.create({
     data: {
@@ -46,7 +46,7 @@ export async function createDemoAgent(accountId: string, opts: { name?: string; 
   // The trade's template: best-practice settings and starter knowledge, before the website draft.
   const { applyTemplateToNew } = await import("./agent-template-apply");
   await applyTemplateToNew(r.id);
-  const runId = account.website || account.domain ? await startKbDraft(r.id) : null;
+  const runId = !opts.skipKbDraft && (account.website || account.domain) ? await startKbDraft(r.id) : null;
   return { receptionist: r, runId };
 }
 

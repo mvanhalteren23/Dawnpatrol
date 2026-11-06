@@ -1,5 +1,6 @@
 import "server-only";
 import { looksLikeInstructions, safetyRules } from "../safety-rules";
+import { DemoProfileSchema, type DemoProfile } from "../demo-research-rules";
 import { z } from "zod";
 import { companyName } from "../brand";
 import * as claude from "./anthropic";
@@ -126,6 +127,48 @@ Additional notes from the client: ${notes || "none"}`,
   );
   const ex = await structured("extraction", KbDraftSchema, "Split this knowledge base into individual entries. Each entry: a category, a short title (for FAQs, the caller's question), and the content to say. Keep facts exactly as written.", report.text);
   return { ...combine(report, ex), items: ex.data.items };
+}
+
+// --- Demo agent research ----------------------------------------------------
+
+/**
+ * Everything a receptionist for this business would need, from their whole website, their Google
+ * Business profile and reviews, and two or three nearby competitors; then the structured profile.
+ */
+export async function researchForDemoAgent(o: { businessName: string; website: string | null; location: string; industry: string; notes: string }): Promise<AiResult & { profile: DemoProfile }> {
+  const report = await webResearch(
+    "demo_research",
+    `Research ${o.businessName}${o.website ? ` (${o.website})` : ""}, a ${o.industry || "local"} business in ${o.location || "an unknown location"}, to build an AI phone receptionist that answers exactly as their own front desk would.
+
+1. Their website, thoroughly: fetch the home page, then every page about services, pricing, FAQ, about/team, contact, locations/service area, booking, warranties/guarantees, financing and policies (follow the site's own menu). Capture the details, not summaries.
+2. Their Google Business profile and reviews: hours (and holiday hours), categories, address, phone, rating and review count. From the reviews: what customers praise, what they complain about, and what they say they called or asked about.
+3. Two or three nearby competitors in the same trade: their services, any published prices and hours, and how ${o.businessName} compares.
+
+Collect:
+- What they do, for whom, how long they've been in business, licences/insurance
+- Every service, with prices ONLY as published; say where each price came from (their own site or Google profile vs. somewhere else)
+- Hours, holiday closures, after-hours and emergency service
+- Service area; address and parking if they have a location
+- How customers book (online link, phone, walk-in, quotes, site visits) and typical lead times
+- Payment methods, deposits, financing, warranties, guarantees, cancellations, returns
+- Named staff a caller might ask for (owner, manager, office) and their roles
+- The questions callers ask, with the business's own answers
+- Why customers choose them, and the tone they use with customers
+- Anything a caller would likely ask that you could NOT find (list it as a gap)
+
+Make sure it's the right business (name plus address, phone or website). Never invent prices, names or contact details; never mix in a similarly named business.
+Notes we already have: ${o.notes || "none"}`,
+    { maxSearches: 8, maxFetches: 15 },
+  );
+  const ex = await structured(
+    "extraction",
+    DemoProfileSchema,
+    `Turn this research into a structured profile for building the business's AI receptionist. Keep facts as written. A price's priceSource is own_website only when the business itself publishes it (its site or Google profile).
+For "assumed": list only things a caller would likely ask that the research did NOT find (e.g. hours, service area, booking, payment methods, warranty, emergencies), each with a typical answer for this trade that promises nothing specific and never includes a price. Leave it empty for anything the research found.
+For "ownerQuestions": every assumption to confirm, plus the most important remaining gaps (up to 8, one plain sentence each).`,
+    report.text,
+  );
+  return { ...combine(report, ex), text: report.text, profile: ex.data };
 }
 
 // --- Outreach drafting -------------------------------------------------------
