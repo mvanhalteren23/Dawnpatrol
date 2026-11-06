@@ -26,7 +26,7 @@ import { curatedVoices } from "@/lib/voices";
 import { chooseVoice, saveMyMobile, undoOwnerChange } from "@/app/customer-actions";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
-import { calendarFor, replyToAddress } from "@/lib/booking-calendar";
+import { calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { appUrl } from "@/lib/app-url";
 import { bookingLink } from "@/lib/customer-texts";
 
@@ -48,7 +48,8 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   ]);
   const me = portalUsers.find((u) => u.id === session.sub);
   const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
-  const bookingCal = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
+  const bookingCal: { mode: "client" | "google" | "crm"; email: string | null; fallbackFrom?: string | null } = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
+  const calendarLive = await calendarConnectLive();
   const callerReplyTo = r ? await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null) : null;
   const portalPhones = portalUsers.map((u) => u.phone).filter((p): p is string => Boolean(p));
 
@@ -118,7 +119,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 </div>
               ) : null}
             </div>
-            <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={appUrl()} returnTo={returnTo} canConnect={r.agentType === "inbound" && !r.bookingAddsToCrm} staff={false} />
+            <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={appUrl()} returnTo={returnTo} canConnect={calendarLive && r.agentType === "inbound" && !r.bookingAddsToCrm} staff={false} live={calendarLive} fallbackFrom={bookingCal.fallbackFrom ?? null} />
             <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
             <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />

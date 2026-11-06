@@ -3,7 +3,7 @@ import { db } from "./db";
 import { recordKbChange } from "./kb-history";
 import { recordActivity } from "./outreach";
 import { cleanQuestions } from "./discovery-rules";
-import { DEMO_RESEARCH_TAG, profileReport, profileToKnowledge, profileToSettings, type DemoProfile } from "./demo-research-rules";
+import { DEMO_RESEARCH_TAG, profileReport, profileToBranding, profileToKnowledge, profileToSettings, type DemoProfile } from "./demo-research-rules";
 
 // Demo agent research (Research card on an account): deep research on the prospect that builds
 // their demo agent, or refreshes an existing one. Rules live in demo-research-rules.ts.
@@ -82,15 +82,16 @@ async function buildAgent(accountId: string, o: Input, profile: DemoProfile): Pr
     }
   });
   await db.receptionist.update({ where: { id: r.id }, data: { ...profileToSettings(profile, { agentName: r.name }), businessName: profile.match === "confirmed" ? profile.business.name : r.businessName, syncStatus: "DIRTY" } });
-  // Their logo and colour for branded emails, from their website (if not set already).
-  if (!r.brandLogoUrl || !r.brandColor) {
+  // Branded emails: logo, colour, sign-off and reply-to, from their website and the research
+  // (only what's still blank, so nothing the client set is overwritten).
+  {
     const acct = await db.account.findUnique({ where: { id: accountId }, select: { website: true, domain: true } });
-    const site = acct?.website ?? acct?.domain;
-    if (site) {
-      const { fetchBrand } = await import("./brand-fetch");
-      const found = await fetchBrand(site).catch(() => ({ logoUrl: null, color: null }));
-      await db.receptionist.update({ where: { id: r.id }, data: { ...(!r.brandLogoUrl && found.logoUrl ? { brandLogoUrl: found.logoUrl } : {}), ...(!r.brandColor && found.color ? { brandColor: found.color } : {}) } });
-    }
+    const site = acct?.website ?? acct?.domain ?? profile.business.website;
+    const { fetchBrand } = await import("./brand-fetch");
+    const found = site ? await fetchBrand(site).catch(() => ({ logoUrl: null, color: null })) : { logoUrl: null, color: null };
+    const fresh = await db.receptionist.findUniqueOrThrow({ where: { id: r.id }, select: { brandLogoUrl: true, brandColor: true, emailSignOff: true, emailReplyTo: true } });
+    const branding = profileToBranding(profile, found, fresh);
+    if (Object.keys(branding).length) await db.receptionist.update({ where: { id: r.id }, data: branding });
   }
   // The owner questions become the questions asked on the phone after they book a demo.
   const questions = cleanQuestions(profile.ownerQuestions);

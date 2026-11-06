@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DemoProfileSchema, profileReport, profileToKnowledge, profileToSettings, type DemoProfile } from "@/lib/demo-research-rules";
+import { DemoProfileSchema, profileReport, profileToBranding, profileToKnowledge, profileToSettings, type DemoProfile } from "@/lib/demo-research-rules";
 
 const base: DemoProfile = {
   match: "confirmed",
-  business: { name: "Coast Plumbing", description: "Residential plumbing in Victoria.", trade: "plumbing", phone: "250-555-0100", email: null, address: "12 Fort St, Victoria", yearsInBusiness: "Since 2009", licensing: null },
+  business: { name: "Coast Plumbing", description: "Residential plumbing in Victoria.", trade: "plumbing", phone: "250-555-0100", email: null, address: "12 Fort St, Victoria", yearsInBusiness: "Since 2009", licensing: null, website: "https://coastplumbing.example", logoUrl: "https://coastplumbing.example/logo.png", brandColor: "#0A5A8A", ownerName: "Dana Smith" },
   serviceArea: "Greater Victoria",
   services: [
     { name: "Drain cleaning", description: "Clogged drains cleared.", price: "from $149", priceSource: "own_website" },
@@ -67,5 +67,17 @@ describe("demo agent research", () => {
     expect(r).toContain("Check this is the right business");
     expect(r).toContain("seen elsewhere: not quoted");
     expect(r).toContain("Questions for the owner");
+  });
+
+  it("fills the email branding from the website and the research, never over what's set", () => {
+    const blank = { brandLogoUrl: null, brandColor: null, emailSignOff: "", emailReplyTo: null };
+    const fromSite = profileToBranding(base, { logoUrl: "https://coastplumbing.example/header-logo.png", color: "#112233" }, blank);
+    expect(fromSite).toEqual({ brandLogoUrl: "https://coastplumbing.example/header-logo.png", brandColor: "#112233", emailSignOff: "Dana Smith, Coast Plumbing\n250-555-0100 · coastplumbing.example" });
+    const fromResearch = profileToBranding({ ...base, business: { ...base.business, email: "Hello@CoastPlumbing.example" } }, { logoUrl: null, color: null }, blank);
+    expect(fromResearch.brandLogoUrl).toBe("https://coastplumbing.example/logo.png");
+    expect(fromResearch.brandColor).toBe("#0A5A8A");
+    expect(fromResearch.emailReplyTo).toBe("hello@coastplumbing.example");
+    expect(profileToBranding({ ...base, business: { ...base.business, logoUrl: "https://x.example/logo.svg" } }, { logoUrl: null, color: null }, blank).brandLogoUrl).toBeUndefined();
+    expect(profileToBranding(base, { logoUrl: "https://a.example/l.png", color: "#123" }, { brandLogoUrl: "https://mine.example/l.png", brandColor: "#000", emailSignOff: "Mine", emailReplyTo: "me@mine.example" })).toEqual({});
   });
 });

@@ -19,7 +19,7 @@ import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
-import { calendarFor, replyToAddress } from "@/lib/booking-calendar";
+import { calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { googleConnection } from "@/lib/google";
 import { AvailabilityFields, FollowUpFields, LeadAlertFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
@@ -213,7 +213,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           {isAdmin && !r.demoExtension && !followup ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
           {!r.demoExtension && !followup ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
 
-          <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={app} returnTo={returnTo} canConnect={clientLine} staff />
+          <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={app} returnTo={returnTo} canConnect={clientLine} staff live={await calendarConnectLive()} fallbackFrom={"fallbackFrom" in bookingCal ? bookingCal.fallbackFrom ?? null : null} />
 
           <div className="card space-y-3 text-sm">
             <h2>Client review link</h2>

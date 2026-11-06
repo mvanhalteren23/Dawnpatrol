@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Receptionist } from "@prisma/client";
 import { db } from "./db";
-import { busyFor, calendarFor, placeBooking, removeBookingEvent, replyToAddress, type BookingCalendar } from "./booking-calendar";
+import { BUILT_IN, busyFor, calendarFor, markClientCalendarBroken, placeBooking, removeBookingEvent, replyToAddress, type BookingCalendar } from "./booking-calendar";
 import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
@@ -36,8 +36,18 @@ async function ready(r: Receptionist): Promise<string | null> {
 
 async function openSlots(r: Receptionist, now: Date, cal?: BookingCalendar) {
   const rules = slotRules(r);
-  const calendar = cal ?? (await calendarFor(r));
-  const busy = await busyFor(r, calendar, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000));
+  let calendar = cal ?? (await calendarFor(r));
+  const until = new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000);
+  let busy;
+  try {
+    busy = await busyFor(r, calendar, now, until);
+  } catch (err) {
+    // The client's own calendar failed (disconnected at Google, expired): the built-in calendar takes over.
+    if (calendar.mode !== "client") throw err;
+    await markClientCalendarBroken(r.id, err);
+    calendar = BUILT_IN;
+    busy = await busyFor(r, calendar, now, until);
+  }
   return { rules, slots: freeSlots(rules, now, busy), calendar };
 }
 
@@ -109,7 +119,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const start = new Date(input.start_iso ?? "");
   if (Number.isNaN(start.getTime())) return { booked: false, message: "start_iso is missing or invalid. Call get_available_times and use one of its start_iso values." };
   if (!input.caller_name?.trim() || !input.caller_phone?.trim()) return { booked: false, message: "Ask for the caller's name and best phone number before booking." };
-  const cal = await calendarFor(r);
+  let cal = await calendarFor(r);
   // A Google Meet needs a Google calendar; the CRM's own calendar books phone calls.
   const meetingType = cal.mode === "crm" ? "phone" : meetingTypeFor(r.bookingMeetingType, input.meeting_type);
   const email = input.caller_email?.includes("@") ? input.caller_email.trim() : null;
@@ -118,7 +128,9 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const channel = followUpEnabled(r, "booking") ? pickChannel(r.followUpChannel, preference, input.caller_phone.trim(), email) : null;
 
   // The slot must still be a valid opening (rules + calendar), so a stale or invented time can't book.
-  const { rules, slots } = await openSlots(r, now, cal);
+  const opened = await openSlots(r, now, cal);
+  const { rules, slots } = opened;
+  cal = opened.calendar;
   if (!slots.some((s) => s.getTime() === start.getTime())) {
     // Only on a miss: work out whether it was never a valid slot or was just taken.
     const valid = candidateSlots(rules, now).some((s) => s.getTime() === start.getTime());
@@ -147,7 +159,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     meetingType === "phone" ? `\nCall them at ${input.caller_phone.trim()}.` : "\nGoogle Meet (link in the invite).",
   ].filter(Boolean).join("\n");
 
-  const event = await placeBooking(cal, {
+  const placeOn = async (c: BookingCalendar) => placeBooking(c, {
     start,
     end,
     timezone: r.timezone,
@@ -157,6 +169,15 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     googleMeet: meetingType === "google_meet",
     requestId: randomUUID(),
   });
+  let event;
+  try {
+    event = await placeOn(cal);
+  } catch (err) {
+    if (cal.mode !== "client") throw err;
+    await markClientCalendarBroken(r.id, err);
+    cal = BUILT_IN;
+    event = await placeOn(cal);
+  }
 
   // Every booking is recorded: reminders, no-show rebooking and review requests run from it.
   const bookingRow = await db.booking.create({

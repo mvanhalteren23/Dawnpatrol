@@ -46,4 +46,10 @@ describe("branded booking emails", () => {
     expect(brandFromHtml(`<link rel="apple-touch-icon" href="/a.png">`, "https://c.example").logoUrl).toBe("https://c.example/a.png");
     expect(brandFromHtml(`<meta name="theme-color" content="blue">`, "https://c.example")).toEqual({ logoUrl: null, color: null });
   });
+
+  it("finds a logo in structured data and a colour in CSS variables, skipping SVG", () => {
+    const html = `<style>:root{--color-primary:#C2410C;--bg:#fff}</style><img class="logo" src="/logo.svg"><script type="application/ld+json">{"@type":"Organization","logo":{"@type":"ImageObject","url":"https://cdn.example/logo.png"}}</script>`;
+    expect(brandFromHtml(html, "https://c.example/")).toEqual({ logoUrl: "https://cdn.example/logo.png", color: "#C2410C" });
+    expect(brandFromHtml(`<meta name="theme-color" content="#ffffff">`, "https://c.example").color).toBeNull();
+  });
 });

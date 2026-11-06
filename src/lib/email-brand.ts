@@ -128,12 +128,18 @@ export function brandFromHtml(html: string, pageUrl: string): { logoUrl: string 
   const metas = tags(/<meta\b[^>]*>/gi);
   const imgs = tags(/<img\b[^>]*>/gi);
 
-  const logoImg = imgs.find((t) => /logo/i.test(`${attr(t, "class") ?? ""} ${attr(t, "id") ?? ""} ${attr(t, "alt") ?? ""} ${attr(t, "src") ?? ""}`) && !/\.svg(\?|$)/i.test(attr(t, "src") ?? ""));
+  const notSvg = (u: string | null) => (u && !/\.svg(\?|#|$)/i.test(u) ? u : null);
+  const logoImg = imgs.find((t) => /logo/i.test(`${attr(t, "class") ?? ""} ${attr(t, "id") ?? ""} ${attr(t, "alt") ?? ""} ${attr(t, "src") ?? ""}`) && notSvg(attr(t, "src") ?? null));
+  // schema.org data many sites carry: "logo": "https://…" or "logo": { "url": "https://…" }
+  const ldLogo = /"logo"\s*:\s*(?:"([^"]+)"|\{[^}]*?"url"\s*:\s*"([^"]+)")/i.exec(html);
   const touch = links.find((t) => /apple-touch-icon/i.test(attr(t, "rel") ?? ""));
   const og = metas.find((t) => /og:image$/i.test(attr(t, "property") ?? attr(t, "name") ?? ""));
-  const logoUrl = abs(attr(logoImg ?? "", "src")) ?? abs(attr(touch ?? "", "href")) ?? abs(attr(og ?? "", "content"));
+  const logoUrl = notSvg(abs(attr(logoImg ?? "", "src"))) ?? notSvg(abs(ldLogo?.[1] ?? ldLogo?.[2])) ?? notSvg(abs(attr(touch ?? "", "href"))) ?? notSvg(abs(attr(og ?? "", "content")));
 
+  const hex = (c: string | null | undefined) => (c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim()) ? c.trim() : null);
   const theme = metas.find((t) => /^(theme-color|msapplication-TileColor)$/i.test(attr(t, "name") ?? ""));
-  const color = attr(theme ?? "", "content")?.trim() ?? null;
-  return { logoUrl, color: color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : null };
+  // Or the site's own brand colour variable (--primary, --brand, --color-primary, --accent…).
+  const cssVar = /--(?:[a-z-]*?)(?:primary|brand|accent|main)(?:[a-z-]*?)\s*:\s*(#[0-9a-f]{6}|#[0-9a-f]{3})\b/i.exec(head);
+  const color = hex(attr(theme ?? "", "content")) ?? hex(cssVar?.[1]);
+  return { logoUrl, color: color && !/^#(fff|ffffff|000|000000)$/i.test(color) ? color : null };
 }

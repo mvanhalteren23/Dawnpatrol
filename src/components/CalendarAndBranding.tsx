@@ -8,7 +8,7 @@ type R = { id: string; name: string; businessName: string; brandLogoUrl: string 
  * The booking calendar (built-in, or the client's own Google Calendar), the phone calendar link,
  * and how emails to callers look. Shown in the client portal and on the CRM agent page.
  */
-export function CalendarAndBranding({ r, mode, calendarEmail, replyTo, appUrl, returnTo, canConnect, staff }: { r: R; mode: CalendarMode; calendarEmail: string | null; replyTo: string | null; appUrl: string; returnTo: string; canConnect: boolean; staff: boolean }) {
+export function CalendarAndBranding({ r, mode, calendarEmail, replyTo, appUrl, returnTo, canConnect, staff, live = false, fallbackFrom = null }: { r: R; mode: CalendarMode; calendarEmail: string | null; replyTo: string | null; appUrl: string; returnTo: string; canConnect: boolean; staff: boolean; live?: boolean; fallbackFrom?: string | null }) {
   const feed = r.calendarFeedToken ? `${appUrl}/api/calendar/feed/${r.calendarFeedToken}.ics` : null;
   const sample = brandedHtml(
     { businessName: r.businessName, logoUrl: r.brandLogoUrl, color: r.brandColor, signOff: r.emailSignOff },
@@ -26,13 +26,18 @@ export function CalendarAndBranding({ r, mode, calendarEmail, replyTo, appUrl, r
         ) : mode === "google" ? (
           <p>{r.name} books into the Google calendar {calendarEmail ? <b>{calendarEmail}</b> : "connected in the CRM"}.</p>
         ) : (
-          <p>{r.name} uses the <b>built-in calendar</b>: nothing to set up. Bookings follow your business hours, never overlap, and each customer gets a branded confirmation with an &ldquo;add to calendar&rdquo; invite.</p>
+          <p>{r.name} uses the <b>built-in calendar</b>: nothing to set up. Bookings follow {staff ? "their" : "your"} business hours, never overlap, and each customer gets a branded confirmation with an &ldquo;add to calendar&rdquo; invite.</p>
         )}
+        {fallbackFrom ? (
+          <div className="rounded-[10px] border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            The connection to {fallbackFrom}&apos;s Google Calendar stopped working (it may have been removed in Google). Bookings are safely using the built-in calendar meanwhile. Reconnect to go back to {staff ? "their" : "your"} Google Calendar.
+          </div>
+        ) : null}
         {canConnect && mode !== "client" ? (
           <div className="rounded-[10px] bg-dawn-50 p-3">
-            <p className="mb-2 text-xs text-slate-600">Use Google Calendar? Connect it so your own appointments block bookings and invites come from your calendar. It takes about 30 seconds.</p>
-            <a href={`/api/google/calendar/connect?r=${r.id}`} className="btn-secondary inline-flex">Connect Google Calendar</a>
-            {staff ? <p className="mt-2 text-xs text-slate-500">Best done by the client in their portal (Your setup), signed in with their own Google account.</p> : null}
+            <p className="mb-2 text-xs text-slate-600">{live ? <><b>Recommended:</b> connect {staff ? "their" : "your"} Google Calendar so {staff ? "their" : "your"} own appointments block bookings and invites come from {staff ? "their" : "your"} calendar. About 30 seconds.</> : "Use Google Calendar? Connect it so your own appointments block bookings and invites come from your calendar. About 30 seconds."}</p>
+            <a href={`/api/google/calendar/connect?r=${r.id}`} className="btn-secondary inline-flex">{fallbackFrom ? "Reconnect Google Calendar" : "Connect Google Calendar"}</a>
+            {staff ? <p className="mt-2 text-xs text-slate-500">{live ? "Best done by the client in their portal (Your setup), signed in with their own Google account." : "Clients don't see this yet: it's switched on for them in Settings once Google approves the calendar app. Until then the built-in calendar is the default."}</p> : null}
           </div>
         ) : null}
       </div>

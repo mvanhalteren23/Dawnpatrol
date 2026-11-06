@@ -156,6 +156,7 @@ Collect:
 - The questions callers ask, with the business's own answers
 - Why customers choose them, and the tone they use with customers
 - Anything a caller would likely ask that you could NOT find (list it as a gap)
+- For their branded emails: the full address of their logo image (PNG or JPG), their main brand colour as a hex code, the owner's or manager's name, and the email address they publish
 
 Make sure it's the right business (name plus address, phone or website). Never invent prices, names or contact details; never mix in a similarly named business.
 Notes we already have: ${o.notes || "none"}`,

@@ -14,13 +14,42 @@ import type { Interval } from "./booking";
 //   existing bookings and blocked time, and confirmations carry an "add to calendar" file.
 
 export type CalendarMode = "client" | "google" | "crm";
-export type BookingCalendar = { mode: CalendarMode; as: GoogleAs; calendarId: string; email: string | null };
+export type BookingCalendar = { mode: CalendarMode; as: GoogleAs; calendarId: string; email: string | null; fallbackFrom?: string | null };
+
+const LIVE_KEY = "calendar.connectLive";
+
+/**
+ * Whether clients are offered "Connect Google Calendar" (Level 3). Off until Google approves the
+ * calendar app (CRM → Settings); until then every client line uses the built-in calendar (Level 0).
+ */
+export async function calendarConnectLive(): Promise<boolean> {
+  const { getSetting } = await import("./settings");
+  return (await getSetting(LIVE_KEY).catch(() => null)) === "on";
+}
+
+export async function setCalendarConnectLive(on: boolean) {
+  const { setSetting } = await import("./settings");
+  await setSetting(LIVE_KEY, on ? "on" : "");
+}
+
+/** The client's calendar stopped working: note it, so bookings fall back to the built-in calendar. */
+export async function markClientCalendarBroken(receptionistId: string, err: unknown) {
+  const marked = await db.clientCalendar.updateMany({ where: { receptionistId, lastError: null }, data: { lastError: String((err as Error)?.message ?? err).slice(0, 300) } }).catch(() => ({ count: 0 }));
+  if (!marked.count) return;
+  // Once: a note on the account, so the team can ask the client to reconnect.
+  const r = await db.receptionist.findUnique({ where: { id: receptionistId }, select: { accountId: true, name: true } });
+  if (r) {
+    const { recordActivity } = await import("./outreach");
+    await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: "Google Calendar connection stopped working", body: `${r.name} couldn't reach the client's Google Calendar, so bookings are using the built-in calendar until they reconnect it (portal → Your setup → Connect Google Calendar).` }).catch(() => undefined);
+  }
+}
 
 type R = Pick<Receptionist, "id" | "googleUserId" | "bookingCalendarId" | "lifecycle" | "bookingAddsToCrm" | "agentType">;
 
 export async function calendarFor(r: R): Promise<BookingCalendar> {
   const client = await db.clientCalendar.findUnique({ where: { receptionistId: r.id } });
-  if (client) return { mode: "client", as: `cal:${r.id}`, calendarId: client.calendarId, email: client.email };
+  // A connection that stopped working falls back to the built-in calendar until it's reconnected.
+  if (client && !client.lastError) return { mode: "client", as: `cal:${r.id}`, calendarId: client.calendarId, email: client.email };
   // Our own lines and demos book into the company or rep's Google calendar, as before; so does a
   // client whose own calendar was shared with the company account.
   const ours = r.bookingAddsToCrm || r.lifecycle === "demo" || r.agentType !== "inbound" || Boolean(r.googleUserId) || r.bookingCalendarId !== "primary";
@@ -28,8 +57,10 @@ export async function calendarFor(r: R): Promise<BookingCalendar> {
     const g = await googleConnection(r.googleUserId);
     if (g.connected && g.calendar) return { mode: "google", as: r.googleUserId, calendarId: r.bookingCalendarId, email: g.email };
   }
-  return { mode: "crm", as: null, calendarId: "crm", email: null };
+  return { mode: "crm", as: null, calendarId: "crm", email: null, fallbackFrom: client?.lastError ? client.email : null };
 }
+
+export const BUILT_IN: BookingCalendar = { mode: "crm", as: null, calendarId: "crm", email: null };
 
 /** Busy time between `from` and `to`: from Google, or the CRM's own bookings and blocks. */
 export async function busyFor(r: R, cal: BookingCalendar, from: Date, to: Date): Promise<Interval[]> {

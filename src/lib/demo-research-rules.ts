@@ -27,6 +27,10 @@ export const DemoProfileSchema = z.object({
     address: nullableText,
     yearsInBusiness: nullableText,
     licensing: nullableText.describe("Licences, certifications, insurance or bonding they state"),
+    website: nullableText.describe("Their own website address"),
+    logoUrl: nullableText.describe("Full https address of their logo image (PNG or JPG, not SVG), if seen"),
+    brandColor: nullableText.describe("Their main brand colour as a hex code like #1F3B2D, if clear from the site"),
+    ownerName: nullableText.describe("The owner's or manager's name, if published"),
   }),
   serviceArea: nullableText.describe("Towns, neighbourhoods or radius they serve"),
   services: z.array(z.object({
@@ -123,6 +127,33 @@ export function profileToSettings(p: DemoProfile, o: { agentName: string }): { g
   if (has(p.tone) && !looksLikeInstructions(p.tone!)) out.persona = `Warm, concise and professional; matches the business's own tone: ${clean(p.tone)}.`;
   if (has(p.hours)) out.businessHours = clean(p.hours);
   if (has(p.bookingUrl) && /^https:\/\//i.test(clean(p.bookingUrl))) out.bookingUrl = clean(p.bookingUrl);
+  return out;
+}
+
+/**
+ * Email branding from the research and the website itself: logo and colour (the page's own markup
+ * first, then what the research saw), a sign-off with their contact details, and their own email
+ * for replies. Only fills what's still blank.
+ */
+export function profileToBranding(
+  p: DemoProfile,
+  site: { logoUrl: string | null; color: string | null },
+  current: { brandLogoUrl: string | null; brandColor: string | null; emailSignOff: string; emailReplyTo: string | null },
+): { brandLogoUrl?: string; brandColor?: string; emailSignOff?: string; emailReplyTo?: string } {
+  const out: { brandLogoUrl?: string; brandColor?: string; emailSignOff?: string; emailReplyTo?: string } = {};
+  const httpsImage = (u: string | null | undefined) => (u && /^https:\/\/\S+$/i.test(u.trim()) && !/\.svg(\?|#|$)/i.test(u) ? u.trim() : null);
+  const hex = (c: string | null | undefined) => (c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim()) ? c.trim() : null);
+  const logo = httpsImage(site.logoUrl) ?? httpsImage(p.business.logoUrl);
+  const color = hex(site.color) ?? hex(p.business.brandColor);
+  if (!current.brandLogoUrl && logo) out.brandLogoUrl = logo;
+  if (!current.brandColor && color) out.brandColor = color;
+  if (!current.emailSignOff.trim()) {
+    const host = (p.business.website ?? "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    const contact = [has(p.business.phone) ? clean(p.business.phone) : "", host].filter(Boolean).join(" · ");
+    out.emailSignOff = [has(p.business.ownerName) ? `${clean(p.business.ownerName)}, ${p.business.name}` : `The ${p.business.name} team`, contact].filter(Boolean).join("\n");
+  }
+  const email = clean(p.business.email);
+  if (!current.emailReplyTo && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) out.emailReplyTo = email.toLowerCase();
   return out;
 }
 
