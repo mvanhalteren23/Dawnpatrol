@@ -1530,3 +1530,41 @@ export async function revokeKbReviewLink(receptionistId: string, linkId: string)
   await db.kbReviewLink.updateMany({ where: { id: linkId, receptionistId }, data: { revokedAt: new Date() } });
   back(`/crm/receptionists/${receptionistId}`, { notice: "Link turned off" });
 }
+
+
+/** Bulk actions on the Receptionists list: sync or delete the ticked agents. */
+export async function bulkReceptionists(form: FormData) {
+  const session = await requireAdmin();
+  const ids = [...new Set(form.getAll("ids").map(String))].slice(0, 200);
+  const action = str(form, "bulk");
+  if (!ids.length) back("/crm/receptionists", { error: "Tick at least one receptionist first" });
+  const list = await db.receptionist.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, businessName: true, lifecycle: true, agentType: true, bookingAddsToCrm: true, businessNumber: true } });
+  if (action === "sync") {
+    const syncable = list.filter((r) => r.lifecycle !== "expired");
+    const skipped = list.length - syncable.length;
+    // One after another, after the response (each sync takes a few seconds); results show in the list.
+    after(async () => {
+      for (const r of syncable) await syncReceptionist(r.id).catch((e) => console.error("bulk sync", r.id, e));
+    });
+    back("/crm/receptionists", { notice: `Syncing ${syncable.length} receptionist${syncable.length === 1 ? "" : "s"} now: refresh in a minute to see the results.${skipped ? ` ${skipped} expired demo${skipped === 1 ? " was" : "s were"} skipped (revive ${skipped === 1 ? "it" : "them"} first).` : ""}` });
+  }
+  if (action === "delete") {
+    if (str(form, "confirm").trim() !== "DELETE") back("/crm/receptionists", { error: "Type DELETE (in capitals) to confirm deleting the selected receptionists" });
+    const { deleteAgent } = await import("@/lib/agent-lifecycle");
+    const deleted: string[] = [];
+    const kept: string[] = [];
+    for (const r of list) {
+      try {
+        await deleteAgent(r.id, session.email);
+        deleted.push(`${r.name} (${r.businessName})`);
+      } catch (err) {
+        unstable_rethrow(err);
+        kept.push(`${r.name} (${r.businessName}): ${errMsg(err).split(":")[0]}`);
+      }
+    }
+    const parts = [deleted.length ? `Deleted ${deleted.length}: ${deleted.join(", ")}.` : "Nothing was deleted."];
+    if (kept.length) parts.push(`Kept ${kept.length}: ${kept.join("; ")}.`);
+    back("/crm/receptionists", { [deleted.length ? "notice" : "error"]: parts.join(" ") });
+  }
+  back("/crm/receptionists", { error: "Pick Sync or Delete" });
+}

@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { Empty, PageHeader, StatusBadge } from "@/components/ui";
 import { Flash } from "@/components/Flash";
-import { deleteReceptionist } from "../actions";
+import { bulkReceptionists, deleteReceptionist } from "../actions";
+import { SelectAllBox, SelectedCount } from "@/components/BulkSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,26 @@ export default async function Receptionists({ searchParams }: { searchParams: Pr
       <PageHeader title="Receptionists & RAG" subtitle="Each client's AI receptionist, its knowledge base and ElevenLabs sync state. Create one from an account page." />
       <Flash params={await searchParams} />
       {list.length ? (
+        <>
+        <form id="bulk" action={bulkReceptionists} className="card mb-3 flex flex-wrap items-center gap-3 py-3 text-sm">
+          <SelectedCount form="bulk" />
+          <button name="bulk" value="sync" className="btn-secondary py-1">Sync selected</button>
+          <details className="relative">
+            <summary className="cursor-pointer text-sm font-semibold text-[#A8401F]">Delete selected…</summary>
+            <div className="absolute z-10 mt-2 w-72 space-y-2 rounded-[10px] border border-slate-200 bg-white p-3 shadow-sm">
+              <p className="text-xs text-slate-600">Deletes the ticked receptionists for good: from ElevenLabs, and their knowledge, call logs, leads and bookings. The company line and any agent with a business line are skipped.</p>
+              <input name="confirm" placeholder="Type DELETE to confirm" className="input py-1 text-xs" autoComplete="off" aria-label="Type DELETE to confirm" />
+              <button name="bulk" value="delete" className="btn-danger w-full py-1 text-xs">Delete selected permanently</button>
+            </div>
+          </details>
+          <span className="text-xs text-slate-500">Tick receptionists in the list, or the box in the header for all.</span>
+        </form>
         <div className="card overflow-x-auto p-0">
           <table className="table">
-            <thead><tr><th>Receptionist</th><th>Client</th><th>KB items</th><th>Calls (7d / all)</th><th>ElevenLabs</th><th>Last sync</th><th></th></tr></thead>
+            <thead><tr><th className="w-8"><SelectAllBox form="bulk" name="ids" /></th><th>Receptionist</th><th>Client</th><th>KB items</th><th>Calls (7d / all)</th><th>ElevenLabs</th><th>Last sync</th><th></th></tr></thead>
             <tbody>{list.map((r) => (
               <tr key={r.id}>
+                <td><input type="checkbox" name="ids" value={r.id} form="bulk" aria-label={`Select ${r.name} (${r.account.name})`} /></td>
                 <td><Link href={`/crm/receptionists/${r.id}`} className="font-medium">{r.name}</Link><div className="text-xs text-slate-500">{r.agentType === "inbound" ? (r.bookingAddsToCrm ? "company line" : r.lifecycle) : r.agentType}</div></td>
                 <td><Link href={`/crm/accounts/${r.accountId}`}>{r.account.name}</Link></td>
                 <td>{r._count.knowledge}</td>
@@ -49,6 +65,7 @@ export default async function Receptionists({ searchParams }: { searchParams: Pr
             ))}</tbody>
           </table>
         </div>
+        </>
       ) : <Empty>No receptionists yet.</Empty>}
     </div>
   );
