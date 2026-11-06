@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "ccr-*": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/outreach-sync",
