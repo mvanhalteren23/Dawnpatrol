@@ -23,7 +23,7 @@ import { syncCallsThrottled } from "@/lib/call-sync";
 import { FollowupSettingsCard, WebsiteFormCard } from "@/components/FollowupCards";
 import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
-import { applyTemplateAction, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { applyTemplateAction, resetCallGuard, saveCallGuard, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 import { demoExpiry } from "@/lib/agent-lifecycle";
 import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
@@ -197,6 +197,24 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           {isAdmin && !r.demoExtension && !followup ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
           {!r.demoExtension && !followup ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
 
+          <form action={saveCallGuard.bind(null, r.id)} className="card space-y-3 text-sm">
+            <div className="flex items-center justify-between"><h2>Call protection</h2>{r.guardTrippedAt ? <Badge className="bg-red-100 text-red-800">paused: voicemail</Badge> : <Badge className="bg-emerald-100 text-emerald-800">normal</Badge>}</div>
+            {r.guardTrippedAt ? <Notice kind="error">Since {formatDate(r.guardTrippedAt, true)}, new calls go to a 2-minute voicemail: {r.guardReason}. Check the calls below, block any abusive numbers, then reset.</Notice> : null}
+            <p className="text-xs text-slate-500">Stops anyone burning minutes. Callers over their limit hear a short message; past the daily line limit (or 3x a usual day) calls go to voicemail and the team is alerted.{r.demoExtension || r.bookingAddsToCrm ? " The demo line also caps each caller at 3 calls and 2 calls at once." : ""}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Max call length (minutes)"><input name="maxCallMinutes" type="number" min={2} max={60} defaultValue={r.maxCallMinutes} className="input" /></Field>
+              <Field label="Hang up after silence (seconds)"><input name="silenceHangupSeconds" type="number" min={10} max={120} defaultValue={r.silenceHangupSeconds} className="input" /></Field>
+              <Field label="Calls per caller per day"><input name="callerDailyCalls" type="number" min={1} max={50} defaultValue={r.callerDailyCalls} className="input" /></Field>
+              <Field label="Minutes per caller per day"><input name="callerDailyMinutes" type="number" min={5} max={240} defaultValue={r.callerDailyMinutes} className="input" /></Field>
+              <Field label="Line minutes per day"><input name="lineDailyMinutes" type="number" min={20} max={3000} defaultValue={r.lineDailyMinutes} className="input" /></Field>
+              <Field label="Calls at the same time"><input name="maxConcurrentCalls" type="number" min={1} max={20} defaultValue={r.maxConcurrentCalls} className="input" /></Field>
+            </div>
+            <div className="flex gap-2">
+              <SubmitButton className="btn-secondary">Save protection</SubmitButton>
+              {r.guardTrippedAt ? <button formAction={resetCallGuard.bind(null, r.id)} className="btn">Reset: back to normal</button> : null}
+            </div>
+          </form>
+
           <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 
           {isAdmin ? <div className="card space-y-3 text-sm">
@@ -216,7 +234,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           <KnowledgeBaseEditor receptionistId={r.id} items={r.knowledge} returnTo={returnTo} />
           <KbHistory receptionistId={r.id} revisions={await kbHistory(r.id)} returnTo={returnTo} teamName="Team" />
           {customerCare ? <BookingsList r={r} bookings={recentBookings} returnTo={returnTo} timezone={r.timezone} /> : null}
-          <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} />
+          <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} canBlock />
         </div>
       </div>
     </div>

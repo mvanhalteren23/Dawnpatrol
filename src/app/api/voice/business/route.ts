@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { shouldRingFirst, toAgent } from "@/lib/business-line";
 import { ringFirst } from "@/lib/twilio";
 import { ownerCaller } from "@/lib/owner-mode";
+import { screenCall } from "@/lib/call-guard";
 import { appBase, twilioParams, xml } from "@/lib/twilio-request";
 
 // Voice webhook for every business line: ring the owner's cell first (with screening), or go
@@ -15,7 +16,12 @@ export async function POST(req: Request) {
   if (!r) return xml(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`);
 
   // The owner calling their own line goes straight to the agent (owner mode), never to their own cell.
-  if (!shouldRingFirst(r) || (await ownerCaller(r, from).catch(() => null))) return xml(await toAgent(r, from, to, params.CallSid ?? ""));
+  const owner = await ownerCaller(r, from).catch(() => null);
+  if (owner) return xml(await toAgent(r, from, to, params.CallSid ?? ""));
+  // Call protections: block list, the line's daily cutoff, calls at once, per-caller limits.
+  const screened = await screenCall({ line: to, from, callSid: params.CallSid ?? "", limits: r, r }).catch(() => null);
+  if (screened) return xml(screened);
+  if (!shouldRingFirst(r)) return xml(await toAgent(r, from, to, params.CallSid ?? ""));
   return xml(
     ringFirst({
       cell: r.ringFirstNumber!,

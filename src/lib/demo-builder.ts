@@ -41,6 +41,7 @@ export async function createDemoAgent(accountId: string, opts: { name?: string; 
       bookingTitle: `Demo booking (${account.name})`,
       bookingAddsToCrm: false, // demo bookings are pretend customers, not leads
       lifecycle: "demo",
+      maxCallMinutes: 15, // demo conversations run longer
     },
   });
   // The trade's template: best-practice settings and starter knowledge, before the website draft.

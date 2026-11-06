@@ -1402,3 +1402,70 @@ export async function saveDemoLineSettings(form: FormData) {
   else await deleteSetting("demo.fallbackReceptionistId");
   back("/crm/demo-line", { notice: "Demo line settings saved" });
 }
+
+
+// --- Call protections (src/lib/call-guard.ts) ------------------------------------------
+
+/** Per-line limits; call length and silence go to ElevenLabs straight away. */
+export async function saveCallGuard(receptionistId: string, form: FormData) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId } });
+  await guard(session, r.accountId, `/crm/receptionists/${receptionistId}`);
+  const { clampGuard } = await import("@/lib/call-guard-rules");
+  const n = (k: "maxCallMinutes" | "silenceHangupSeconds" | "callerDailyCalls" | "callerDailyMinutes" | "lineDailyMinutes" | "maxConcurrentCalls") => clampGuard(k, Number(str(form, k)), r[k]);
+  const data = { maxCallMinutes: n("maxCallMinutes"), silenceHangupSeconds: n("silenceHangupSeconds"), callerDailyCalls: n("callerDailyCalls"), callerDailyMinutes: n("callerDailyMinutes"), lineDailyMinutes: n("lineDailyMinutes"), maxConcurrentCalls: n("maxConcurrentCalls") };
+  await db.receptionist.update({ where: { id: receptionistId }, data });
+  if ((data.maxCallMinutes !== r.maxCallMinutes || data.silenceHangupSeconds !== r.silenceHangupSeconds) && r.elevenLabsAgentId) {
+    after(() => syncReceptionist(receptionistId).then(() => undefined).catch((e) => console.error("guard sync", e)));
+  }
+  back(`/crm/receptionists/${receptionistId}`, { notice: "Call protection saved" });
+}
+
+export async function resetCallGuard(receptionistId: string) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { accountId: true } });
+  await guard(session, r.accountId, `/crm/receptionists/${receptionistId}`);
+  const { resetGuard } = await import("@/lib/call-guard");
+  await resetGuard(receptionistId);
+  back(`/crm/receptionists/${receptionistId}`, { notice: "Line back to normal: calls reach the receptionist again" });
+}
+
+/** Block a caller from the call log (every line: calls rejected, texts ignored). */
+export async function blockCaller(receptionistId: string, callId: string, returnTo: string) {
+  const session = await requireStaff();
+  const call = await db.callLog.findFirstOrThrow({ where: { id: callId, receptionistId }, include: { receptionist: { select: { accountId: true } } } });
+  await guard(session, call.receptionist.accountId, returnTo.startsWith("/crm/") ? returnTo : "/crm");
+  if (!call.callerNumber) back(returnTo.startsWith("/crm/") ? returnTo : "/crm", { error: "That call has no number to block" });
+  const { blockNumber } = await import("@/lib/call-guard");
+  const key = await blockNumber(call.callerNumber!, `Blocked from a call on ${call.startedAt.toISOString().slice(0, 10)}`, session.email);
+  back(returnTo.startsWith("/crm/") ? returnTo : "/crm", { notice: `${key} is blocked on every line` });
+}
+
+export async function unblockNumber(id: string) {
+  await requireAdmin();
+  await db.blockedNumber.delete({ where: { id } }).catch(() => undefined);
+  back("/crm/settings", { notice: "Unblocked" });
+}
+
+export async function blockNumberManually(form: FormData) {
+  const session = await requireAdmin();
+  const raw = str(form, "phone").trim();
+  if (!raw) back("/crm/settings", { error: "Enter a number to block" });
+  const { blockNumber } = await import("@/lib/call-guard");
+  const key = await blockNumber(raw, str(form, "reason"), session.email);
+  back("/crm/settings", { notice: `${key} is blocked on every line` });
+}
+
+/** Twilio texts and emails the team when a day's Twilio spend passes this many US dollars. */
+export async function saveSpendAlert(form: FormData) {
+  await requireAdmin();
+  const amount = Math.max(0, Math.min(10000, Math.round(Number(str(form, "amount")) || 0)));
+  try {
+    const { setSpendAlert } = await import("@/lib/call-guard");
+    await setSpendAlert(amount);
+  } catch (err) {
+    unstable_rethrow(err);
+    back("/crm/settings", { error: `Twilio didn't accept the alert: ${errMsg(err)}` });
+  }
+  back("/crm/settings", { notice: amount ? `Twilio will alert you when a day's spend passes US$${amount}` : "Spending alert turned off" });
+}

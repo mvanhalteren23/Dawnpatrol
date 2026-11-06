@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { handleCustomerText, receptionistForSharedText, textsCustomers } from "@/lib/customer-texts";
 import { handleOwnerText, ownerCaller } from "@/lib/owner-mode";
 import { isClientInbound } from "@/lib/elevenlabs";
+import { isBlocked } from "@/lib/call-guard";
 
 // Texts to a business line:
 // - STOP / START from anyone: recorded so the line never texts that number again (Twilio also
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
   const body = params.Body ?? "";
   const from = toE164(params.From ?? "");
   if (!r || !body || !from) return xml(twiml(""));
+  if (await isBlocked(from)) return xml(twiml(""));
 
   if (isOptOut(body)) {
     await db.smsOptOut.upsert({ where: { receptionistId_phone: { receptionistId: r.id, phone: from } }, create: { receptionistId: r.id, phone: from }, update: {} });

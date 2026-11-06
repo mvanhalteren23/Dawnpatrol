@@ -9,6 +9,9 @@ import { twilioSignatureOk } from "@/lib/twilio-request";
 import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
 import { callerContext, houseReceptionist } from "@/lib/house-line";
+import { screenCall } from "@/lib/call-guard";
+import { demoLineLimits } from "@/lib/call-guard-rules";
+import { teamMemberByPhone } from "@/lib/owner-mode";
 import { defaultGreeting } from "@/lib/safety-rules";
 import { matchDemoByName } from "@/lib/house-line-rules";
 import { escapeXml } from "@/lib/twilio";
@@ -82,6 +85,10 @@ export async function POST(req: Request) {
   if (step !== "ext") {
     if (internal) return xml(silentGatherTwiml(action(1)));
     const grace = await houseReceptionist();
+    if (grace && !(await teamMemberByPhone(from).catch(() => null))) {
+      const screened = await screenCall({ line: to, from, callSid: params.CallSid ?? "", limits: demoLineLimits(grace), r: grace }).catch(() => null);
+      if (screened) return xml(screened);
+    }
     if (grace?.elevenLabsAgentId) {
       try {
         return xml(await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await callerContext(from, grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }))), call_sid: params.CallSid ?? "" } }));

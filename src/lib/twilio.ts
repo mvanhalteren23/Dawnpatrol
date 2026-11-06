@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isCanadaOrUs } from "./call-guard-rules";
 
 // Twilio helpers: webhook signing and TwiML (pure; unit tested), plus outbound SMS.
 
@@ -156,6 +157,8 @@ export function voiceAccessToken(o: { accountSid: string; apiKeySid: string; api
 export function dialableNumber(input: string): string | null {
   const e164 = toE164(input);
   if (!/^\+1[2-9]\d{2}[2-9]\d{6}$/.test(e164)) return null;
+  // Canada and the US only: Caribbean and Pacific +1 numbers are billed internationally (toll fraud).
+  if (!isCanadaOrUs(e164)) return null;
   const area = e164.slice(2, 5);
   if (["900", "976"].includes(area) || e164.slice(5, 8) === "976") return null;
   return e164;

@@ -361,6 +361,15 @@ model Receptionist {
   checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
   checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
   ownerUpdates          OwnerUpdate[]
+  // Call protections (src/lib/call-guard.ts): limits per line, editable in the CRM.
+  maxCallMinutes        Int            @default(10) // ElevenLabs ends the call at this length
+  silenceHangupSeconds  Int            @default(30) // ends the call after this long with nobody speaking
+  callerDailyCalls      Int            @default(5) // per caller, rolling 24 hours
+  callerDailyMinutes    Int            @default(20)
+  lineDailyMinutes      Int            @default(150) // over this (or 3x the usual day) the line switches to voicemail
+  maxConcurrentCalls    Int            @default(3)
+  guardTrippedAt        DateTime? // set when the daily cutoff trips; calls go to a 2-minute voicemail until reset
+  guardReason           String         @default("")
   bookingAddsToCrm      Boolean        @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String         @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus            String         @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
@@ -817,4 +826,13 @@ model OwnerUpdate {
   createdAt      DateTime     @default(now())
 
   @@index([receptionistId, createdAt])
+}
+
+// Numbers blocked from every line (calls rejected, texts ignored). Added from the call log.
+model BlockedNumber {
+  id        String   @id @default(cuid())
+  phone     String   @unique // E.164, or "anonymous"
+  reason    String   @default("")
+  createdBy String?
+  createdAt DateTime @default(now())
 }

@@ -1,3 +1,4 @@
+import { conversationLimits } from "./call-guard-rules";
 import "server-only";
 import { BUILDER_DYNAMIC_DEFAULTS, buildBuilderPrompt, builderOpening } from "./builder-rules";
 import { buildCheckinPrompt, CHECKIN_DYNAMIC_DEFAULTS, checkinOpening } from "./customer-text-rules";
@@ -417,6 +418,8 @@ export function agentConfig(
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
+      // Call protections: maximum call length and hang-up on silence (call-guard-rules.ts).
+      ...conversationLimits(r as { maxCallMinutes?: number; silenceHangupSeconds?: number }),
       agent: {
         first_message: house ? "{{opening}}" : greeting,
         language: r.language,
@@ -479,7 +482,16 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
     } catch (err) {
       if (!/ (400|422) /.test(String(err))) throw err;
       console.warn("ElevenLabs rejected the security settings; synced without them", r.id, (err as Error).message.slice(0, 300));
-      agentId = await send({ ...config, platform_settings: { data_collection: platform.data_collection } });
+      const basic = { ...config, platform_settings: { data_collection: platform.data_collection } };
+      try {
+        agentId = await send(basic);
+      } catch (err2) {
+        if (!/ (400|422) /.test(String(err2))) throw err2;
+        // The call-length / silence settings (call protection) rejected: keep the agent in sync without them.
+        console.warn("ElevenLabs rejected the call limits; synced without them", r.id, (err2 as Error).message.slice(0, 300));
+        const { conversation: _c, turn: _t, ...rest } = basic.conversation_config as Record<string, unknown>;
+        agentId = await send({ ...basic, conversation_config: rest });
+      }
     }
 
     await db.receptionist.update({

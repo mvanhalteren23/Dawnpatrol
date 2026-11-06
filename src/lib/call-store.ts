@@ -47,6 +47,10 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
   // The owner calling their own line (owner mode) isn't a customer: no texts, alerts or open questions.
   const { ownerCaller } = await import("./owner-mode");
   const ownerCall = full && full.agentType !== "followup" && call.callerNumber ? await ownerCaller(full, call.callerNumber).catch(() => null) : null;
+  if (full) {
+    const { checkLineVolume } = await import("./call-guard");
+    await checkLineVolume(full).catch((e) => console.error("line volume check failed", e));
+  }
   if (full && !ownerCall) {
     if (full.agentType === "followup") await linkLeadToCall(data, outcome).catch((e) => console.error("lead update failed", e));
     await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));

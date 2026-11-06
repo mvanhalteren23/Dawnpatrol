@@ -1,5 +1,6 @@
 import { formatDate } from "@/lib/utils";
 import { markCallFollowedUp, refreshCalls } from "@/app/kb-actions";
+import { blockCaller } from "@/app/crm/actions";
 import { Empty, StatusBadge } from "./ui";
 import { SubmitButton } from "./SubmitButton";
 
@@ -30,7 +31,7 @@ function Transcript({ text }: { text: string }) {
   );
 }
 
-export function CallList({ receptionistId, calls, returnTo }: { receptionistId: string; calls: Call[]; returnTo: string }) {
+export function CallList({ receptionistId, calls, returnTo, canBlock = false }: { receptionistId: string; calls: Call[]; returnTo: string; canBlock?: boolean }) {
   return (
     <div className="card">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -53,6 +54,7 @@ export function CallList({ receptionistId, calls, returnTo }: { receptionistId: 
                 </span>
               </div>
               {c.callerNumber && c.callerName ? <div className="text-xs text-slate-500">{c.callerNumber}</div> : null}
+              {canBlock && c.callerNumber ? <form action={blockCaller.bind(null, receptionistId, c.id, returnTo)}><button className="text-xs text-red-700 underline">Block this number on every line</button></form> : null}
               {c.summary ? <p className="mt-1 text-slate-700">{c.summary}</p> : null}
               <details className="mt-2">
                 <summary className="cursor-pointer text-xs font-medium text-indigo-700">Recording &amp; transcript</summary>

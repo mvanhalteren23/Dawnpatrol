@@ -8,7 +8,7 @@ import { leadAlertNumbers, sendFollowUp } from "./follow-up";
 import { leadRequestText, leadStatusFromOutcome, mapLeadFields, missedLeadText, nextCallTime, type LeadStatus } from "./followup-rules";
 import { formatPhone } from "./demo-line";
 import { getSetting, setSetting } from "./settings";
-import { dialableNumber, escapeXml, twilioApi, twiml } from "./twilio";
+import { dialableNumber, escapeXml, toE164, twilioApi, twiml } from "./twilio";
 import { appBase } from "./twilio-request";
 
 // Follow-up agent (speed to lead): a website form arrives → within minutes the agent calls the
@@ -110,6 +110,11 @@ export async function startFollowupCall(leadId: string): Promise<void> {
     await setStatus(lead.id, "SKIPPED", { statusNote: "This person asked not to be contacted" });
     return;
   }
+  const refused = await outboundRefusal(r.id, lead.phone);
+  if (refused) {
+    await setStatus(lead.id, "SKIPPED", { statusNote: refused });
+    return;
+  }
   // Claim the attempt so two triggers (delay timer + queue sweep) can't both dial.
   const claimed = await db.lead.updateMany({ where: { id: lead.id, status: lead.status, attempts: lead.attempts }, data: { status: "CALLING", attempts: { increment: 1 }, calledAt: new Date(), nextAttemptAt: null } });
   if (!claimed.count) return;
@@ -124,12 +129,55 @@ export async function startFollowupCall(leadId: string): Promise<void> {
         MachineDetection: "DetectMessageEnd",
         MachineDetectionTimeout: "20",
         Timeout: "25",
+        // Hard stop a minute after the agent's own limit, whatever happens on the call.
+        TimeLimit: String(Math.max(2, r.maxCallMinutes) * 60 + 60),
       },
     });
     await db.lead.update({ where: { id: lead.id }, data: { lastCallSid: call.sid } });
   } catch (err) {
     console.error("follow-up call failed to start", lead.id, err);
     await setStatus(lead.id, "FAILED", { statusNote: `Call couldn't be placed: ${(err as Error).message.slice(0, 200)}` });
+  }
+}
+
+/**
+ * Why a follow-up call shouldn't be placed: not a real Canadian/US number, a line type we don't
+ * call (premium, shared-cost and the like, via Twilio Lookup when it answers), or the daily caps.
+ */
+async function outboundRefusal(receptionistId: string, phone: string): Promise<string | null> {
+  const { callableLineType, FOLLOWUP_CALLS_PER_AGENT_PER_DAY, FOLLOWUP_CALLS_PER_DAY, isCanadaOrUs } = await import("./call-guard-rules");
+  if (!isCanadaOrUs(toE164(phone))) return "Not a Canadian or US number, so it wasn't called";
+  const lineType = await lookupLineType(phone);
+  if (!callableLineType(lineType)) return `Not called: Twilio Lookup says this is a ${lineType} number`;
+  const since = new Date(Date.now() - 24 * 3600_000);
+  const [mine, all] = await Promise.all([
+    db.lead.count({ where: { receptionistId, calledAt: { gte: since } } }),
+    db.lead.count({ where: { calledAt: { gte: since } } }),
+  ]);
+  if (mine >= FOLLOWUP_CALLS_PER_AGENT_PER_DAY || all >= FOLLOWUP_CALLS_PER_DAY) {
+    const { alertTeam } = await import("./call-guard");
+    const key = "guard.followupCapAlert";
+    if (Date.now() - Number((await getSetting(key)) ?? 0) > 6 * 3600_000) {
+      await setSetting(key, String(Date.now()));
+      await alertTeam("Follow-up calls paused", `The daily cap on follow-up calls was reached (${mine} for this agent, ${all} in total in 24 hours). New website leads are saved but not called; check for a flood of fake form submissions.`);
+    }
+    return "Daily follow-up call limit reached: call this lead yourself";
+  }
+  return null;
+}
+
+/** Twilio Lookup line type (mobile, landline, fixedVoip, premium...), or null if unavailable. */
+async function lookupLineType(phone: string): Promise<string | null> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return null;
+  try {
+    const res = await fetch(`https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(toE164(phone))}?Fields=line_type_intelligence`, { headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { line_type_intelligence?: { type?: string | null } | null };
+    return data.line_type_intelligence?.type ?? null;
+  } catch {
+    return null;
   }
 }
 

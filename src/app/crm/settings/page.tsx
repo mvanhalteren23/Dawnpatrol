@@ -21,7 +21,9 @@ import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
-import { saveCuratedVoicesAction } from "../actions";
+import { blockNumberManually, saveCuratedVoicesAction, saveSpendAlert, unblockNumber } from "../actions";
+import { spendAlertAmount } from "@/lib/call-guard";
+import { SubmitButton } from "@/components/SubmitButton";
 import { curatedVoices, MAX_CURATED_VOICES } from "@/lib/voices";
 import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabsAgents, makeSampleCalls, rebuildDriveFolders, saveCompanyName, saveGoal, saveSendAs, seedDefaultPrompts } from "../actions";
 
@@ -91,6 +93,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
   const company = await companyName();
   const dialer = await dialerStatus();
+  const [blocked, spendAlert] = await Promise.all([db.blockedNumber.findMany({ orderBy: { createdAt: "desc" }, take: 50 }), spendAlertAmount().catch(() => null)]);
   const [previousGoogle, sendAs, migrationRaw] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs"), getSetting("elevenlabs.migration")]);
   const [sampleRows, sampleRunRaw] = await Promise.all([db.sampleAudio.findMany({ select: { key: true, createdAt: true } }), getSetting("samples.lastRun")]);
   const sampleRun = safeJson<{ at: string; results: { key: string; ok: boolean; note: string }[] } | null>(sampleRunRaw, null);
@@ -240,6 +243,34 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div className="flex items-start justify-between gap-4">
           <div><div className="font-medium">Outreach webhook</div><div className="text-xs text-slate-500">For Instantly / Lemlist / Smartlead / Zapier: <code>POST {app}/api/webhooks/outreach</code> with header <code>x-webhook-secret</code>.</div></div>
           <Status ok={Boolean(process.env.OUTREACH_WEBHOOK_SECRET)} />
+        </div>
+      </div>
+
+      <div className="card mb-6 space-y-4 text-sm">
+        <h2>Call protection</h2>
+        <p className="text-xs text-slate-500">Each line&apos;s limits (call length, silence, per-caller and daily limits, calls at once) are on its receptionist page. Here: a Twilio spending alert and numbers blocked on every line.</p>
+        <form action={saveSpendAlert} className="flex flex-wrap items-end gap-2">
+          <Field label="Text and email me when a day's Twilio spend passes (US$, 0 = off)"><input name="amount" type="number" min={0} max={10000} defaultValue={spendAlert ?? 25} className="input w-32" /></Field>
+          <SubmitButton className="btn-secondary">{spendAlert ? "Update alert" : "Turn on alert"}</SubmitButton>
+          <span className="text-xs text-slate-500">{spendAlert ? `On: US$${spendAlert} a day.` : "Off."} Alerts go to administrators&apos; mobiles (CRM → Users) and the support email.</span>
+        </form>
+        <div>
+          <div className="label">Blocked numbers</div>
+          {blocked.length ? (
+            <ul className="divide-y divide-slate-100">
+              {blocked.map((b) => (
+                <li key={b.id} className="flex items-center justify-between py-1.5">
+                  <span>{b.phone} <span className="text-xs text-slate-500">{b.reason}{b.createdBy ? ` · ${b.createdBy}` : ""} · {formatDate(b.createdAt)}</span></span>
+                  <form action={unblockNumber.bind(null, b.id)}><button className="text-xs underline">Unblock</button></form>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-xs text-slate-500">None. Block a caller from any call log, or add a number here.</p>}
+          <form action={blockNumberManually} className="mt-2 flex flex-wrap gap-2">
+            <input name="phone" placeholder="Number, or 'anonymous'" className="input w-48" aria-label="Number to block" />
+            <input name="reason" placeholder="Reason (optional)" className="input w-56" aria-label="Reason" />
+            <button className="btn-secondary">Block</button>
+          </form>
         </div>
       </div>
 

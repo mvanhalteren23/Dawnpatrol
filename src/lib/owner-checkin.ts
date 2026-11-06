@@ -121,7 +121,7 @@ async function placeCall(r: R, checkinId: string, to: string) {
   if (!from) throw new Error("No number to call the owner from");
   const q = `c=${encodeURIComponent(checkinId)}`;
   const call = await twilioApi<{ sid: string }>("/Calls.json", {
-    form: { To: to, From: from, Url: `${appBase()}/api/voice/checkin?${q}`, StatusCallback: `${appBase()}/api/voice/checkin/status?${q}`, MachineDetection: "Enable", Timeout: "25" },
+    form: { To: to, From: from, Url: `${appBase()}/api/voice/checkin?${q}`, StatusCallback: `${appBase()}/api/voice/checkin/status?${q}`, MachineDetection: "Enable", Timeout: "25", TimeLimit: "960" },
   });
   await db.ownerCheckin.update({ where: { id: checkinId }, data: { callSid: call.sid } });
 }
