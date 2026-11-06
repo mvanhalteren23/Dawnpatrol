@@ -37,13 +37,16 @@ jobs:
           ls -la db.dump
       - name: Test the restore
         run: |
-          docker run --rm --network host -v "$PWD:/out" -e PGPASSWORD=restoretest postgres:18 sh -c '
-            pg_restore --clean --if-exists --no-owner --no-privileges -h localhost -U postgres -d postgres /out/db.dump || true
-            psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres -tA -c "
-              select ''accounts='' || (select count(*) from \"Account\")
-                || '' users='' || (select count(*) from \"User\")
-                || '' calls='' || (select count(*) from \"CallLog\")
-                || '' knowledge='' || (select count(*) from \"KnowledgeItem\")"'
+          # The check lives in its own file, so no shell quoting touches the SQL.
+          cat > restore-check.sql <<'SQL'
+          select 'accounts=' || (select count(*) from "Account")
+            || ' users=' || (select count(*) from "User")
+            || ' calls=' || (select count(*) from "CallLog")
+            || ' knowledge=' || (select count(*) from "KnowledgeItem");
+          SQL
+          docker run --rm --network host -v "$PWD:/out" -e PGPASSWORD=restoretest postgres:18 sh -c \
+            'pg_restore --clean --if-exists --no-owner --no-privileges -h localhost -U postgres -d postgres /out/db.dump || true; psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres -tA -f /out/restore-check.sql'
+          rm restore-check.sql
       - name: Encrypt
         run: |
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in db.dump -out "headabove-db-$(date -u +%Y-%m-%d).dump.enc" -pass env:BACKUP_PASSPHRASE
