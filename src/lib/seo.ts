@@ -134,6 +134,7 @@ export function sitemapEntries(now = new Date()): { url: string; lastModified: D
     for (const t of TOWNS) out.push({ url: `${SITE_URL}${townPage(k, t).path}`, lastModified: now, changeFrequency: "monthly", priority: 0.7 });
   }
   out.push({ url: `${SITE_URL}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.6 });
+  for (const path of ["/privacy", "/terms", "/google-calendar"]) out.push({ url: `${SITE_URL}${path}`, lastModified: now, changeFrequency: "monthly", priority: 0.3 });
   for (const g of GUIDES) out.push({ url: `${SITE_URL}/guides/${g.slug}`, lastModified: new Date(g.updated), changeFrequency: "monthly", priority: 0.6 });
   return out;
 }

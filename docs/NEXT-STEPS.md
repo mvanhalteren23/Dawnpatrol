@@ -13,17 +13,19 @@ asks for Gmail read/send, which are "restricted" (paid security assessment), so 
 connections must use a **separate, calendar-only Google app**.
 
 ### Build (Claude)
-- [ ] Privacy policy page (incl. Google API Services User Data Policy "Limited Use" statement) and
-      terms of service page on headabovedigital.com, linked from the homepage footer. Owner to review.
+- [x] Privacy policy (/privacy, with the Google user data section and Limited Use statement), terms of
+      service (/terms) and a Google Calendar connection page (/google-calendar), linked in the footer.
+      Owner to review the wording.
 - [x] Calendar-only connection (scopes `calendar.events`, `calendar.freebusy`, plus openid/email), using
       its own OAuth client when `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` are set
       (falls back to the main Google client until then). Redirect URI: `<APP_URL>/api/google/calendar/callback`.
 - [x] Portal and CRM agent page: "Connect Google Calendar" and "Disconnect calendar"; bookings and
       availability use it (src/lib/booking-calendar.ts).
 - [x] Revoke the Google token when a calendar is disconnected (or replaced).
-- [ ] Submission guide: per-scope justifications, consent-screen settings, demo video script.
+- [x] Submission guide: docs/google-calendar-verification.md (Cloud setup, scope justifications, demo
+      video script, test plan, draft replies to Google).
 
-### Owner (Matt)
+### Owner (Matt): follow docs/google-calendar-verification.md
 - [ ] Verify headabovedigital.com in Google Search Console (DNS TXT record in Vercel).
 - [ ] Create the second Google Cloud project/app (~10 minutes, with the guide).
 - [ ] Record a ~2-minute demo video (unlisted YouTube): connect flow, consent screen with app name and

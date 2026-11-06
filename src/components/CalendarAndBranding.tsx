@@ -37,6 +37,7 @@ export function CalendarAndBranding({ r, mode, calendarEmail, replyTo, appUrl, r
           <div className="rounded-[10px] bg-dawn-50 p-3">
             <p className="mb-2 text-xs text-slate-600">{live ? <><b>Recommended:</b> connect {staff ? "their" : "your"} Google Calendar so {staff ? "their" : "your"} own appointments block bookings and invites come from {staff ? "their" : "your"} calendar. About 30 seconds.</> : "Use Google Calendar? Connect it so your own appointments block bookings and invites come from your calendar. About 30 seconds."}</p>
             <a href={`/api/google/calendar/connect?r=${r.id}`} className="btn-secondary inline-flex">{fallbackFrom ? "Reconnect Google Calendar" : "Connect Google Calendar"}</a>
+            <p className="mt-2 text-xs text-slate-500">We only check when you&apos;re busy and add the appointments we book; you can disconnect any time. <a href="/google-calendar" target="_blank" rel="noreferrer">How it works</a> · <a href="/privacy" target="_blank" rel="noreferrer">Privacy</a></p>
             {staff ? <p className="mt-2 text-xs text-slate-500">{live ? "Best done by the client in their portal (Your setup), signed in with their own Google account." : "Clients don't see this yet: it's switched on for them in Settings once Google approves the calendar app. Until then the built-in calendar is the default."}</p> : null}
           </div>
         ) : null}
