@@ -1469,3 +1469,20 @@ export async function saveSpendAlert(form: FormData) {
   }
   back("/crm/settings", { notice: amount ? `Twilio will alert you when a day's spend passes US$${amount}` : "Spending alert turned off" });
 }
+
+
+/** Delete an agent for good (Receptionists list). The admin types its name to confirm. */
+export async function deleteReceptionist(receptionistId: string, form: FormData) {
+  const session = await requireAdmin();
+  const r = await db.receptionist.findUnique({ where: { id: receptionistId }, select: { name: true } });
+  if (!r) back("/crm/receptionists", { error: "That receptionist was already deleted" });
+  if (str(form, "confirm").trim().toLowerCase() !== r!.name.trim().toLowerCase()) back("/crm/receptionists", { error: `Type the agent's name (${r!.name}) to confirm` });
+  try {
+    const { deleteAgent } = await import("@/lib/agent-lifecycle");
+    const done = await deleteAgent(receptionistId, session.email);
+    back("/crm/receptionists", { notice: `${done.name} deleted, and removed from ElevenLabs` });
+  } catch (err) {
+    unstable_rethrow(err);
+    back("/crm/receptionists", { error: errMsg(err) });
+  }
+}

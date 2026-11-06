@@ -31,15 +31,35 @@ export async function demoExpiry(demos: DemoRow[]): Promise<Map<string, Date | n
   return new Map(demos.map((d) => [d.id, acts.has(d.id) ? demoExpiresAt(acts.get(d.id)!) : null]));
 }
 
-/** Delete the demo's agent, tools and knowledge docs in ElevenLabs; keep its settings and knowledge here. */
-export async function expireDemo(id: string, reason: string) {
-  const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
+/** Remove an agent's ElevenLabs agent, tools and knowledge docs (already gone counts as done). */
+async function removeFromElevenLabs(r: { id: string; elevenLabsAgentId: string | null; elevenLabsToolIds: string; elevenLabsKbDocs: string }) {
   const gone = (e: unknown) => {
-    if (!String(e).includes(" 404 ")) console.warn("demo cleanup", id, (e as Error).message);
+    if (!String(e).includes(" 404 ")) console.warn("ElevenLabs cleanup", r.id, (e as Error).message);
   };
   if (r.elevenLabsAgentId) await el(`/agents/${r.elevenLabsAgentId}`, { method: "DELETE" }).catch(gone);
   for (const toolId of Object.values(safeJson<Record<string, string>>(r.elevenLabsToolIds, {}))) await el(`/tools/${toolId}`, { method: "DELETE" }).catch(gone);
   for (const doc of safeJson<{ docId: string }[]>(r.elevenLabsKbDocs, [])) await el(`/knowledge-base/${doc.docId}`, { method: "DELETE" }).catch(gone);
+}
+
+/**
+ * Delete an agent for good: from ElevenLabs, then from the CRM with its knowledge, call logs,
+ * leads and bookings. Not for the company receptionist (it answers the demo line), and not while
+ * it has a business line (remove the line first, so the number isn't left pointing at nothing).
+ */
+export async function deleteAgent(id: string, by: string | null): Promise<{ name: string; accountId: string }> {
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
+  if (r.bookingAddsToCrm && r.agentType === "inbound") throw new Error(`${r.name} is your company receptionist and answers the demo line, so it can't be deleted here`);
+  if (r.businessNumber) throw new Error(`${r.name} still has the business line ${r.businessNumber}. Remove the line on the agent's page first (keep or release the number there), then delete.`);
+  await removeFromElevenLabs(r);
+  await db.receptionist.delete({ where: { id } });
+  await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: `Receptionist deleted (${r.name})`, body: `${r.name} (${r.businessName}) was deleted${by ? ` by ${by}` : ""}, with its knowledge, call logs and bookings, and removed from ElevenLabs.` });
+  return { name: r.name, accountId: r.accountId };
+}
+
+/** Delete the demo's agent, tools and knowledge docs in ElevenLabs; keep its settings and knowledge here. */
+export async function expireDemo(id: string, reason: string) {
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id } });
+  await removeFromElevenLabs(r);
   await db.receptionist.update({
     where: { id },
     data: { lifecycle: "expired", expiredAt: new Date(), demoExtension: null, elevenLabsAgentId: null, elevenLabsKbDocs: "[]", elevenLabsToolIds: "{}", syncStatus: "NEVER", syncError: null },
