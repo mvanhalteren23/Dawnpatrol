@@ -106,3 +106,31 @@ export async function dismissOpenQuestion(receptionistId: string, questionId: st
   await db.openQuestion.updateMany({ where: { id: questionId, receptionistId }, data: { status: "DISMISSED" } });
   done(returnTo, "Dismissed. If callers keep asking it, it will come back.");
 }
+
+
+// --- Trusted numbers (call protection): never limited on this line -------------------------
+
+export async function addTrustedNumber(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await guard(receptionistId);
+  const { dialableNumber } = await import("@/lib/twilio");
+  const phone = dialableNumber(str(form, "phone").trim());
+  if (!phone) done(returnTo, "Enter a 10-digit Canadian or US number", "error");
+  const { trustNumber } = await import("@/lib/call-guard");
+  await trustNumber(receptionistId, phone!, str(form, "label").trim(), session.email);
+  done(returnTo, `${phone} is trusted: never limited on this line`);
+}
+
+export async function trustCaller(receptionistId: string, callId: string, returnTo: string) {
+  const session = await guard(receptionistId);
+  const call = await db.callLog.findFirst({ where: { id: callId, receptionistId }, select: { callerNumber: true, callerName: true } });
+  if (!call?.callerNumber) done(returnTo, "That call has no number to trust", "error");
+  const { trustNumber } = await import("@/lib/call-guard");
+  const phone = await trustNumber(receptionistId, call!.callerNumber!, call!.callerName ?? "", session.email);
+  done(returnTo, `${phone} is trusted: never limited on this line`);
+}
+
+export async function removeTrustedNumber(receptionistId: string, id: string, returnTo: string) {
+  await guard(receptionistId);
+  await db.trustedNumber.deleteMany({ where: { id, receptionistId } });
+  done(returnTo, "Removed from trusted numbers");
+}

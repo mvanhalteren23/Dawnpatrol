@@ -24,6 +24,7 @@ import { CustomerTextSettings } from "@/components/CustomerCare";
 import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
 import { chooseVoice, saveMyMobile, undoOwnerChange } from "@/app/customer-actions";
+import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { bookingLink } from "@/lib/customer-texts";
 
 export default async function PortalSettings({ searchParams }: { searchParams: Promise<{ account?: string; notice?: string; error?: string }> }) {
@@ -43,6 +44,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
     r ? db.ownerUpdate.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 5 }) : [],
   ]);
   const me = portalUsers.find((u) => u.id === session.sub);
+  const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
   const portalPhones = portalUsers.map((u) => u.phone).filter((p): p is string => Boolean(p));
 
   return (
@@ -111,6 +113,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 </div>
               ) : null}
             </div>
+            <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
             <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>

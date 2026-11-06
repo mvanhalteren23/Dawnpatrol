@@ -27,10 +27,10 @@ describe("call protections", () => {
     expect(callerOverLimit(three, { thisSid: "x", limits, anonymous: false, now })).toBeNull();
   });
 
-  it("uses the stricter limits on the demo line", () => {
-    expect(demoLineLimits({ maxConcurrentCalls: 3, callerDailyCalls: 5, callerDailyMinutes: 20 })).toEqual({ maxConcurrentCalls: 2, callerDailyCalls: 3, callerDailyMinutes: 20 });
-    expect(demoLineLimits({ maxConcurrentCalls: 1, callerDailyCalls: 2, callerDailyMinutes: 10 })).toEqual({ maxConcurrentCalls: 1, callerDailyCalls: 2, callerDailyMinutes: 10 });
-    expect(demoLineLimits(null).callerDailyCalls).toBe(3);
+  it("runs the demo line on the company receptionist's own limits (6 calls a day by default)", () => {
+    expect(demoLineLimits({ maxConcurrentCalls: 2, callerDailyCalls: 6, callerDailyMinutes: 20 })).toEqual({ maxConcurrentCalls: 2, callerDailyCalls: 6, callerDailyMinutes: 20 });
+    expect(demoLineLimits({ maxConcurrentCalls: 4, callerDailyCalls: 10, callerDailyMinutes: 30 })).toEqual({ maxConcurrentCalls: 4, callerDailyCalls: 10, callerDailyMinutes: 30 });
+    expect(demoLineLimits(null)).toEqual({ maxConcurrentCalls: 2, callerDailyCalls: 6, callerDailyMinutes: 20 });
   });
 
   it("trips the daily cutoff past the limit or 3x a usual day", () => {

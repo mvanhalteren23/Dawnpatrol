@@ -11,8 +11,10 @@
 
 export type LineLimits = { maxConcurrentCalls: number; callerDailyCalls: number; callerDailyMinutes: number };
 
-/** The demo line is on our website, so it's the easiest target: tighter limits. */
-export const DEMO_LINE_LIMITS: LineLimits = { maxConcurrentCalls: 2, callerDailyCalls: 3, callerDailyMinutes: 20 };
+/** The demo line's defaults (set on the company receptionist; editable on its page). */
+export const DEMO_LINE_LIMITS: LineLimits = { maxConcurrentCalls: 2, callerDailyCalls: 6, callerDailyMinutes: 20 };
+/** Callers who booked with the line in this many days skip the per-caller limits. */
+export const TRUST_BOOKERS_DAYS = 90;
 /** Withheld/anonymous callers share one allowance per line. */
 export const ANONYMOUS_DAILY_CALLS = 3;
 export const VOICEMAIL_SECONDS = 120;
@@ -36,12 +38,12 @@ export function clampGuard(field: GuardField, value: number, fallback: number): 
   return Math.min(hi, Math.max(lo, Math.round(value)));
 }
 
-/** The demo line uses the stricter of its own settings and the demo defaults. */
+/** The demo line uses the company receptionist's own settings (the demo defaults if there's none). */
 export function demoLineLimits(own: Partial<LineLimits> | null): LineLimits {
   return {
-    maxConcurrentCalls: Math.min(own?.maxConcurrentCalls ?? Infinity, DEMO_LINE_LIMITS.maxConcurrentCalls),
-    callerDailyCalls: Math.min(own?.callerDailyCalls ?? Infinity, DEMO_LINE_LIMITS.callerDailyCalls),
-    callerDailyMinutes: Math.min(own?.callerDailyMinutes ?? Infinity, DEMO_LINE_LIMITS.callerDailyMinutes),
+    maxConcurrentCalls: own?.maxConcurrentCalls ?? DEMO_LINE_LIMITS.maxConcurrentCalls,
+    callerDailyCalls: own?.callerDailyCalls ?? DEMO_LINE_LIMITS.callerDailyCalls,
+    callerDailyMinutes: own?.callerDailyMinutes ?? DEMO_LINE_LIMITS.callerDailyMinutes,
   };
 }
 

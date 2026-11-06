@@ -121,7 +121,7 @@ export async function setupGrace(o: { name: string; voiceId: string }): Promise<
   const notes: string[] = [];
   await db.receptionist.update({
     where: { id: house.id },
-    data: { name: o.name, voiceId: o.voiceId, greeting: `Thanks for calling ${company}, this is ${o.name}. How can I help you today?`, demoExtension: null, lifecycle: "production", maxCallMinutes: Math.max(house.maxCallMinutes, 15), syncStatus: "DIRTY" },
+    data: { name: o.name, voiceId: o.voiceId, greeting: `Thanks for calling ${company}, this is ${o.name}. How can I help you today?`, demoExtension: null, lifecycle: "production", maxCallMinutes: Math.max(house.maxCallMinutes, 15), ...(house.callerDailyCalls === 5 && house.maxConcurrentCalls === 3 ? { callerDailyCalls: 6, maxConcurrentCalls: 2 } : {}), syncStatus: "DIRTY" },
   });
   notes.push(`${o.name} answers the demo number as ${company}'s receptionist`);
 

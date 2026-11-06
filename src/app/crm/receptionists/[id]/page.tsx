@@ -17,6 +17,7 @@ import { KbHistory } from "@/components/KbHistory";
 import { kbHistory } from "@/lib/kb-history";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
+import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { googleConnection } from "@/lib/google";
 import { AvailabilityFields, FollowUpFields, LeadAlertFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
@@ -54,6 +55,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
     db.contact.findFirst({ where: { accountId: r.accountId, email: { not: null } }, orderBy: { isPrimary: "desc" }, select: { email: true } }),
   ]);
   const reviewEmail = reviewContact?.email ?? null;
+  const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
   const returnTo = `/crm/receptionists/${r.id}`;
   // The Google account this receptionist books into: a person's own, or the company account.
   const google = await googleConnection(r.googleUserId);
@@ -231,7 +233,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           <form action={saveCallGuard.bind(null, r.id)} className="card space-y-3 text-sm">
             <div className="flex items-center justify-between"><h2>Call protection</h2>{r.guardTrippedAt ? <Badge className="bg-red-100 text-red-800">paused: voicemail</Badge> : <Badge className="bg-emerald-100 text-emerald-800">normal</Badge>}</div>
             {r.guardTrippedAt ? <Notice kind="error">Since {formatDate(r.guardTrippedAt, true)}, new calls go to a 2-minute voicemail: {r.guardReason}. Check the calls below, block any abusive numbers, then reset.</Notice> : null}
-            <p className="text-xs text-slate-500">Stops anyone burning minutes. Callers over their limit hear a short message; past the daily line limit (or 3x a usual day) calls go to voicemail and the team is alerted.{r.demoExtension || r.bookingAddsToCrm ? " The demo line also caps each caller at 3 calls and 2 calls at once." : ""}</p>
+            <p className="text-xs text-slate-500">Stops anyone burning minutes. Callers over their limit can leave a 2-minute voicemail instead of reaching the agent; past the daily line limit (or 3x a usual day) every call goes to voicemail and the team is alerted.{r.bookingAddsToCrm ? " These limits also cover the demo line and its demo extensions." : ""}</p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Max call length (minutes)"><input name="maxCallMinutes" type="number" min={2} max={60} defaultValue={r.maxCallMinutes} className="input" /></Field>
               <Field label="Hang up after silence (seconds)"><input name="silenceHangupSeconds" type="number" min={10} max={120} defaultValue={r.silenceHangupSeconds} className="input" /></Field>
@@ -245,6 +247,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               {r.guardTrippedAt ? <button formAction={resetCallGuard.bind(null, r.id)} className="btn">Reset: back to normal</button> : null}
             </div>
           </form>
+          <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
 
           <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 
@@ -265,7 +268,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           <KnowledgeBaseEditor receptionistId={r.id} items={r.knowledge} returnTo={returnTo} />
           <KbHistory receptionistId={r.id} revisions={await kbHistory(r.id)} returnTo={returnTo} teamName="Team" />
           {customerCare ? <BookingsList r={r} bookings={recentBookings} returnTo={returnTo} timezone={r.timezone} /> : null}
-          <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} canBlock />
+          <CallList receptionistId={r.id} calls={r.calls} returnTo={returnTo} canBlock canTrust />
         </div>
       </div>
     </div>

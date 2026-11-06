@@ -5,7 +5,7 @@ import { getSetting, setSetting } from "./settings";
 import { escapeXml, say, sendSms, toE164, twiml, twilioApi } from "./twilio";
 import { appBase } from "./twilio-request";
 import {
-  callerKey, callerOverLimit, isAnonymous, isCanadaOrUs, lineTripReason, MESSAGES, VOICEMAIL_SECONDS, type LineLimits, type RecentCall,
+  callerKey, callerOverLimit, isAnonymous, isCanadaOrUs, lineTripReason, MESSAGES, TRUST_BOOKERS_DAYS, VOICEMAIL_SECONDS, type LineLimits, type RecentCall,
 } from "./call-guard-rules";
 
 // Call protections (rules in call-guard-rules.ts). Every check fails open: if Twilio or the
@@ -30,9 +30,9 @@ export async function blockNumber(phone: string, reason: string, by: string | nu
   return key;
 }
 
-/** 2-minute voicemail while a line's daily cutoff is tripped. */
-export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">): string {
-  const base = `${appBase()}/api/voice/guard?r=${encodeURIComponent(r.id)}`;
+/** 2-minute voicemail: while a line's daily cutoff is tripped, or for a caller over their limit. */
+export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why: "paused" | "limit" = "paused"): string {
+  const base = `${appBase()}/api/voice/guard?r=${encodeURIComponent(r.id)}&why=${why}`;
   return twiml(`${say(MESSAGES.voicemail(r.businessName))}<Record maxLength="${VOICEMAIL_SECONDS}" playBeep="true" timeout="8" transcribe="true" transcribeCallback="${escapeXml(`${base}&step=transcript`)}" action="${escapeXml(`${base}&step=done`)}" method="POST"/><Hangup/>`);
 }
 
@@ -45,10 +45,11 @@ export async function screenCall(o: { line: string; from: string; callSid: strin
   if (o.r.guardTrippedAt) return voicemailTwiml(o.r);
   try {
     const anonymous = isAnonymous(o.from);
+    const trusted = !anonymous && (await isTrusted(o.r.id, o.from));
     const since = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
     const [inProgress, history] = await Promise.all([
       listCalls({ To: o.line, Status: "in-progress" }),
-      anonymous ? listCalls({ To: o.line, "StartTime>": since }) : listCalls({ To: o.line, From: o.from, "StartTime>": since }),
+      trusted ? Promise.resolve([] as TwilioCall[]) : anonymous ? listCalls({ To: o.line, "StartTime>": since }) : listCalls({ To: o.line, From: o.from, "StartTime>": since }),
     ]);
     // 5. Calls at the same time on this line.
     const live = inProgress.filter((c) => c.sid !== o.callSid);
@@ -59,15 +60,41 @@ export async function screenCall(o: { line: string; from: string; callSid: strin
     // 3. This caller over their allowance in the last 24 hours.
     const theirs = anonymous ? history.filter((c) => isAnonymous(c.from)) : history;
     const recent: RecentCall[] = theirs.map((c) => ({ sid: c.sid, startTime: c.start_time ? new Date(c.start_time) : null, durationSec: Number(c.duration ?? 0) || 0 }));
-    const over = callerOverLimit(recent, { thisSid: o.callSid, limits: o.limits, anonymous });
+    const over = trusted ? null : callerOverLimit(recent, { thisSid: o.callSid, limits: o.limits, anonymous });
     if (over) {
+      // A real customer never hits a dead end: they can leave a voicemail (cheap; no agent minutes).
       console.warn("call guard: caller over limit", { line: o.line, caller: callerKey(o.from), over });
-      return twiml(`${say(MESSAGES.overLimit(o.r.businessName))}<Hangup/>`);
+      return voicemailTwiml(o.r, "limit");
     }
   } catch (err) {
     console.warn("call guard check failed; letting the call through", err);
   }
   return null;
+}
+
+/**
+ * Never limited: numbers on the line's trusted list (suppliers, staff, regulars), and anyone who
+ * booked with this line in the last 90 days.
+ */
+export async function isTrusted(receptionistId: string, from: string): Promise<boolean> {
+  const phone = toE164(from);
+  const since = new Date(Date.now() - TRUST_BOOKERS_DAYS * 86400_000);
+  const [listed, booked, bookedCall] = await Promise.all([
+    db.trustedNumber.findUnique({ where: { receptionistId_phone: { receptionistId, phone } } }),
+    db.booking.findFirst({ where: { receptionistId, customerPhone: phone, start: { gte: since } }, select: { id: true } }),
+    db.callLog.findFirst({ where: { receptionistId, callerNumber: phone, outcome: "BOOKED", startedAt: { gte: since } }, select: { id: true } }),
+  ]);
+  return Boolean(listed || booked || bookedCall);
+}
+
+export async function trustNumber(receptionistId: string, phone: string, label: string, by: string | null): Promise<string> {
+  const e164 = toE164(phone);
+  await db.trustedNumber.upsert({
+    where: { receptionistId_phone: { receptionistId, phone: e164 } },
+    create: { receptionistId, phone: e164, label: label.slice(0, 80), createdBy: by },
+    update: { label: label.slice(0, 80) || undefined },
+  });
+  return e164;
 }
 
 /** One "sorry we missed you" text per caller per line per day, to real Canadian/US numbers only. */
