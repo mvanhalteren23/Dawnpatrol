@@ -7,7 +7,9 @@ import { Eyebrow, liveDemo } from "./Sections";
 import { CallScene } from "./CallScene";
 import { Reveal } from "./Reveal";
 
-export async function IndustryPage({ trade }: { trade: TradeKey }) {
+export type LocalCopy = { h1: string; townName: string; region: string; areaCodes: string; intro: string; local: string; faq: { q: string; a: string }[] };
+
+export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: LocalCopy }) {
   const ind = INDUSTRIES[trade];
   const demo = await liveDemo();
   return (
@@ -16,8 +18,8 @@ export async function IndustryPage({ trade }: { trade: TradeKey }) {
         <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-12 lg:px-8">
           <div className="space-y-6 lg:col-span-7">
             <Eyebrow dark>{ind.eyebrow}</Eyebrow>
-            <h1 style={{ lineHeight: 0.92 }} className="font-condensed-800 text-5xl text-[#EFE6D4] sm:text-6xl lg:text-[72px]">{ind.heroTitle}</h1>
-            <p className="max-w-3xl text-lg font-medium leading-[28px] text-[#EFE6D4] sm:text-[18px]">{ind.heroSub}</p>
+            <h1 style={{ lineHeight: 0.92 }} className="font-condensed-800 text-5xl text-[#EFE6D4] sm:text-6xl lg:text-[72px]">{local?.h1 ?? ind.heroTitle}</h1>
+            <p className="max-w-3xl text-lg font-medium leading-[28px] text-[#EFE6D4] sm:text-[18px]">{local ? `${local.intro} ${ind.heroSub}` : ind.heroSub}</p>
             <ul className="flex flex-wrap gap-2 pt-1">
               {ind.trustBadges.map((b) => <li key={b} className="rounded-[6px] border border-[#6B5A43] bg-[#173022] px-3 py-1.5 text-xs font-semibold text-[#EFE6D4]">✓ {b}</li>)}
             </ul>
@@ -50,6 +52,27 @@ export async function IndustryPage({ trade }: { trade: TradeKey }) {
           ))}
         </div>
       </section>
+
+      {local ? (
+        <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
+          <div className="grid gap-8 rounded-[12px] border-2 border-[#1F3B2D] bg-[#F7F2E8] p-6 sm:p-10 lg:grid-cols-2">
+            <div className="space-y-3">
+              <Eyebrow>Serving {local.region}</Eyebrow>
+              <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-3xl text-[#1F3B2D] sm:text-[40px]">Local to {local.townName}.</h2>
+              <p className="text-base leading-7 text-[#6B5A43]">{local.local}</p>
+              <p className="text-sm text-[#6B5A43]">Works with your existing {local.areaCodes} number, or a new local one.</p>
+            </div>
+            <dl className="space-y-5">
+              {local.faq.map((f) => (
+                <div key={f.q}>
+                  <dt className="font-condensed-700 text-xl text-[#1F3B2D]">{f.q}</dt>
+                  <dd className="mt-1 text-base leading-6 text-[#6B5A43]">{f.a}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
+      ) : null}
 
       <section className="border-y-2 border-[#1F3B2D] bg-[#173022] py-16 text-[#EFE6D4]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
