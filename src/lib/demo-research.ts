@@ -82,6 +82,16 @@ async function buildAgent(accountId: string, o: Input, profile: DemoProfile): Pr
     }
   });
   await db.receptionist.update({ where: { id: r.id }, data: { ...profileToSettings(profile, { agentName: r.name }), businessName: profile.match === "confirmed" ? profile.business.name : r.businessName, syncStatus: "DIRTY" } });
+  // Their logo and colour for branded emails, from their website (if not set already).
+  if (!r.brandLogoUrl || !r.brandColor) {
+    const acct = await db.account.findUnique({ where: { id: accountId }, select: { website: true, domain: true } });
+    const site = acct?.website ?? acct?.domain;
+    if (site) {
+      const { fetchBrand } = await import("./brand-fetch");
+      const found = await fetchBrand(site).catch(() => ({ logoUrl: null, color: null }));
+      await db.receptionist.update({ where: { id: r.id }, data: { ...(!r.brandLogoUrl && found.logoUrl ? { brandLogoUrl: found.logoUrl } : {}), ...(!r.brandColor && found.color ? { brandColor: found.color } : {}) } });
+    }
+  }
   // The owner questions become the questions asked on the phone after they book a demo.
   const questions = cleanQuestions(profile.ownerQuestions);
   if (questions.length) await db.account.update({ where: { id: accountId }, data: { discoveryQuestions: JSON.stringify(questions) } });

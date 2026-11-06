@@ -26,7 +26,70 @@ export const GOOGLE_SCOPES = [
 /** A person's own connection: no Drive (files stay in the company Drive). */
 export const PERSONAL_SCOPES = GOOGLE_SCOPES.filter((s) => !s.includes("/drive"));
 
-export type GoogleAs = string | null | undefined; // user id, or company
+export type GoogleAs = string | null | undefined; // user id, "cal:<receptionistId>" (a client's own calendar), or company
+
+// A client's own Google Calendar (portal → "Connect Google Calendar"): a separate, calendar-only
+// Google app, so its consent screen and Google's review cover only these two permissions.
+export const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events", // book appointments into their calendar
+  "https://www.googleapis.com/auth/calendar.freebusy", // see when they're busy (no event details)
+  "openid",
+  "email",
+];
+
+const calendarClientId = () => process.env.GOOGLE_CALENDAR_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+const calendarClientSecret = () => process.env.GOOGLE_CALENDAR_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+
+export function calendarConnectConfigured(): boolean {
+  return Boolean(calendarClientId() && calendarClientSecret());
+}
+
+export function calendarOauthClient(): OAuth2Client {
+  if (!calendarConnectConfigured()) throw new Error("Google calendar connection isn't configured (GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET)");
+  return new OAuth2Client({ clientId: calendarClientId(), clientSecret: calendarClientSecret(), redirectUri: `${appUrl()}/api/google/calendar/callback` });
+}
+
+export function calendarAuthUrl(state: string, loginHint?: string | null): string {
+  return calendarOauthClient().generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent select_account",
+    scope: CALENDAR_SCOPES,
+    state,
+    include_granted_scopes: false,
+    ...(loginHint ? { login_hint: loginHint } : {}),
+  });
+}
+
+/** Finish a client's calendar connection; returns the Google account's email. */
+export async function completeCalendarOAuth(code: string, receptionistId: string, by: string | null): Promise<string> {
+  const client = calendarOauthClient();
+  const { tokens } = await client.getToken(code);
+  if (!tokens.refresh_token) throw new Error("Google didn't grant ongoing access. Try again and press Allow.");
+  if (!(tokens.scope ?? "").includes("calendar.events")) throw new Error("Calendar access wasn't allowed. Try again and tick the calendar boxes on Google's screen.");
+  let email: string | null = null;
+  if (tokens.id_token) {
+    const ticket = await client.verifyIdToken({ idToken: tokens.id_token, audience: calendarClientId() });
+    email = ticket.getPayload()?.email?.toLowerCase() ?? null;
+  }
+  if (!email) throw new Error("Google didn't share the account's email address");
+  const old = await db.clientCalendar.findUnique({ where: { receptionistId } });
+  const data = { email, refreshToken: seal(tokens.refresh_token), scopes: tokens.scope ?? "", connectedBy: by, connectedAt: new Date(), lastError: null, calendarId: "primary" };
+  await db.clientCalendar.upsert({ where: { receptionistId }, create: { receptionistId, ...data }, update: data });
+  if (old) await revokeToken(open(old.refreshToken)).catch(() => undefined); // the previous account's access
+  return email;
+}
+
+/** Tell Google we no longer have access (Google's policy on disconnecting). */
+async function revokeToken(token: string) {
+  await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+}
+
+export async function disconnectClientCalendar(receptionistId: string) {
+  const c = await db.clientCalendar.findUnique({ where: { receptionistId } });
+  if (!c) return;
+  await revokeToken(open(c.refreshToken)).catch((e) => console.warn("calendar revoke", e));
+  await db.clientCalendar.delete({ where: { receptionistId } });
+}
 
 const REFRESH_KEY = "google.refresh_token";
 const EMAIL_KEY = "google.email";
@@ -87,7 +150,7 @@ export async function completeOAuth(code: string, target: { kind: "company" } | 
   return email;
 }
 
-type Creds = { refresh: string; email: string | null; scopes: string; personal: boolean };
+type Creds = { refresh: string; email: string | null; scopes: string; personal: boolean; calendarOf?: string };
 
 async function companyCreds(): Promise<Creds | null> {
   const [stored, email, scopes] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY), getSetting(SCOPES_KEY)]);
@@ -108,7 +171,13 @@ async function personalCreds(userId: string): Promise<Creds | null> {
   return company && user && company.email && user.email.toLowerCase() === company.email.toLowerCase() ? company : null;
 }
 
+async function clientCalendarCreds(receptionistId: string): Promise<Creds | null> {
+  const c = await db.clientCalendar.findUnique({ where: { receptionistId } });
+  return c ? { refresh: open(c.refreshToken), email: c.email, scopes: c.scopes, personal: false, calendarOf: receptionistId } : null;
+}
+
 async function creds(as: GoogleAs): Promise<Creds | null> {
+  if (as?.startsWith("cal:")) return clientCalendarCreds(as.slice(4));
   return as ? personalCreds(as) : companyCreds();
 }
 
@@ -131,9 +200,13 @@ export class GoogleApiError extends Error {
 export async function googleFetch<T = unknown>(url: string, init: RequestInit = {}, as?: GoogleAs): Promise<T> {
   const c = await creds(as);
   if (!c) throw new Error(as ? "Connect your Gmail & Calendar first (CRM → Settings)." : "Google is not connected. Connect it in CRM → Settings.");
-  const client = oauthClient();
+  const client = c.calendarOf ? calendarOauthClient() : oauthClient();
   client.setCredentials({ refresh_token: c.refresh });
   const { token } = await client.getAccessToken().catch((err: Error) => {
+    if (c.calendarOf) {
+      void db.clientCalendar.updateMany({ where: { receptionistId: c.calendarOf }, data: { lastError: `Google sign-in expired: ${err.message}` } });
+      throw new Error(`The calendar connection for ${c.email ?? "this business"} has expired or was removed. Reconnect it in the portal (Your setup → Your calendar).`);
+    }
     if (c.personal && as) void db.googleAccount.updateMany({ where: { userId: as }, data: { lastError: `Google sign-in expired: ${err.message}` } });
     throw new Error(`Google sign-in for ${c.email ?? "this account"} has expired or was revoked. Reconnect it in CRM → Settings.`);
   });

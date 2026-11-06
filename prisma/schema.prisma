@@ -363,6 +363,15 @@ model Receptionist {
   ownerUpdates          OwnerUpdate[]
   reviewLinks           KbReviewLink[]
   trustedNumbers        TrustedNumber[]
+  calendarBlocks        CalendarBlock[]
+  clientCalendar        ClientCalendar?
+  // Branded emails to callers (booking confirmations, call summaries): the client's logo, colour,
+  // sign-off and reply-to address. Logo and colour are pulled from their website when blank.
+  brandLogoUrl          String?
+  brandColor            String?
+  emailSignOff          String         @default("")
+  emailReplyTo          String?
+  calendarFeedToken     String?        @unique // private link: the owner's phone calendar subscribes to bookings
   // Call protections (src/lib/call-guard.ts): limits per line, editable in the CRM.
   maxCallMinutes        Int            @default(10) // ElevenLabs ends the call at this length
   silenceHangupSeconds  Int            @default(30) // ends the call after this long with nobody speaking
@@ -871,4 +880,34 @@ model TrustedNumber {
   createdAt      DateTime     @default(now())
 
   @@unique([receptionistId, phone])
+}
+
+// Time blocked on a receptionist's own (CRM) booking calendar, e.g. the owner texting "block
+// Thursday 2-4". Used when the client hasn't connected a Google Calendar.
+model CalendarBlock {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  start          DateTime
+  end            DateTime
+  title          String       @default("Blocked")
+  source         String       @default("owner")
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, start])
+}
+
+// A client's own Google Calendar, connected in their portal (calendar-only Google app): the
+// receptionist books into it and checks it for busy times; invites come from the client.
+model ClientCalendar {
+  id             String       @id @default(cuid())
+  receptionistId String       @unique
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  email          String
+  refreshToken   String // encrypted (secret-box)
+  scopes         String       @default("")
+  calendarId     String       @default("primary")
+  connectedBy    String?
+  connectedAt    DateTime     @default(now())
+  lastError      String?
 }

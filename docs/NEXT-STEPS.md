@@ -1,4 +1,4 @@
-# Next steps (saved, not started)
+# Next steps
 
 ## Clients' own Google Calendar: invites from the client's calendar (option 2)
 
@@ -15,10 +15,12 @@ connections must use a **separate, calendar-only Google app**.
 ### Build (Claude)
 - [ ] Privacy policy page (incl. Google API Services User Data Policy "Limited Use" statement) and
       terms of service page on headabovedigital.com, linked from the homepage footer. Owner to review.
-- [ ] Separate OAuth client for client calendar connections, scopes only
-      `calendar.events` and `calendar.freebusy`.
-- [ ] Portal: "Connect your calendar" and "Disconnect calendar"; bookings and availability use it.
-- [ ] Revoke the Google token when a calendar is disconnected.
+- [x] Calendar-only connection (scopes `calendar.events`, `calendar.freebusy`, plus openid/email), using
+      its own OAuth client when `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` are set
+      (falls back to the main Google client until then). Redirect URI: `<APP_URL>/api/google/calendar/callback`.
+- [x] Portal and CRM agent page: "Connect Google Calendar" and "Disconnect calendar"; bookings and
+      availability use it (src/lib/booking-calendar.ts).
+- [x] Revoke the Google token when a calendar is disconnected (or replaced).
 - [ ] Submission guide: per-scope justifications, consent-screen settings, demo video script.
 
 ### Owner (Matt)

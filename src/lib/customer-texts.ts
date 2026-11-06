@@ -34,9 +34,9 @@ export async function ensureBookingKey(r: Pick<R, "id" | "bookingKey">): Promise
   return key;
 }
 
-/** The public booking link, when this receptionist can book (calendar connected). */
+/** The public booking link, when this receptionist books (its own Google calendar, ours, or the CRM's). */
 export async function bookingLink(r: R, replaces?: string | null): Promise<string | null> {
-  if (!r.bookingEnabled || !(await googleConnection(r.googleUserId)).calendar) return null;
+  if (!r.bookingEnabled) return null;
   return bookingLinkUrl(appUrl(), await ensureBookingKey(r), replaces);
 }
 

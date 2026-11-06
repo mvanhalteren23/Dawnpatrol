@@ -1,3 +1,5 @@
+import { brandedHtml, icsFile, type IcsEvent } from "./email-brand";
+import { replyToAddress } from "./booking-calendar";
 import "server-only";
 import type { CallLog, Receptionist } from "@prisma/client";
 import { db } from "./db";
@@ -17,8 +19,8 @@ import { followUpEnabled, pickChannel, type Channel } from "./follow-up-rules";
 export { followUpEnabled, pickChannel, type Channel };
 
 export async function sendFollowUp(
-  r: Pick<Receptionist, "id" | "businessName" | "businessNumber" | "googleUserId">,
-  msg: { kind: "booking" | "call" | "owner_alert"; channel: Channel; to: string; subject: string; body: string; conversationId?: string | null },
+  r: Pick<Receptionist, "id" | "businessName" | "businessNumber" | "googleUserId"> & Partial<Pick<Receptionist, "accountId" | "brandLogoUrl" | "brandColor" | "emailSignOff" | "emailReplyTo" | "bookingAddsToCrm" | "lifecycle">>,
+  msg: { kind: "booking" | "call" | "owner_alert"; channel: Channel; to: string; subject: string; body: string; conversationId?: string | null; invite?: IcsEvent | null },
 ): Promise<boolean> {
   let error: string | null = null;
   // Callers who texted STOP to this line are never texted again (owners can't opt out of their own alerts).
@@ -28,7 +30,15 @@ export async function sendFollowUp(
   }
   try {
     if (msg.channel === "sms") await sendSms(msg.to, msg.body, r.businessNumber); // from the client's own line when they have one
-    else await sendPlainEmail({ to: msg.to, subject: msg.subject, body: msg.body, fromName: r.businessName, as: r.googleUserId });
+    else {
+      // To the client's callers: in the client's brand, replies to the client. Owner alerts stay plain.
+      const branded = msg.kind !== "owner_alert" && r.accountId;
+      const full = branded ? await db.receptionist.findUnique({ where: { id: r.id } }) : null;
+      const replyTo = full ? await replyToAddress(full).catch(() => null) : null;
+      const html = full ? brandedHtml({ businessName: full.businessName, logoUrl: full.brandLogoUrl, color: full.brandColor, signOff: full.emailSignOff }, msg.body) : null;
+      const attachments = msg.invite ? [{ filename: "invite.ics", contentType: "text/calendar; charset=UTF-8; method=PUBLISH", content: icsFile([msg.invite], { name: r.businessName }) }] : undefined;
+      await sendPlainEmail({ to: msg.to, subject: msg.subject, body: msg.body, fromName: r.businessName, as: r.googleUserId, replyTo, html, attachments });
+    }
   } catch (e) {
     error = (e as Error).message.slice(0, 500);
     console.error(`follow-up ${msg.channel} failed`, e);

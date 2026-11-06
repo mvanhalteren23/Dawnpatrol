@@ -7,8 +7,7 @@ import { recordKbChange } from "./kb-history";
 import { recordActivity } from "./outreach";
 import { sendSms, toE164, twilioApi } from "./twilio";
 import { formatSlot, isoDate, localDate, zonedTime } from "./booking";
-import { googleConnection } from "./google";
-import { createEvent, deleteEvent } from "./calendar";
+import { deleteEvent } from "./calendar";
 import {
   addClosedDates, confirmationText, datesBetween, expiredNote, isOwnerNumber, isUndo, minutesOf, noteTags, OWNER_TAG, ownerNumbers, planProblems, removeClosedDates, type OwnerPlan,
 } from "./owner-mode-rules";
@@ -55,7 +54,7 @@ async function plan(r: R, request: string): Promise<OwnerPlan> {
   return planOwnerRequest({ businessName: r.businessName, today: t.date, weekday: t.weekday, timezone: r.timezone, currentHours: r.businessHours || r.bookingHours, request });
 }
 
-type Undo = { closedDates?: string[]; itemId?: string; businessHours?: string; event?: { id: string; calendarId: string; as: string | null } };
+type Undo = { closedDates?: string[]; itemId?: string; businessHours?: string; event?: { id: string; calendarId: string; as: string | null }; blockId?: string };
 
 const pretty = (date: string, tz: string) => formatSlot(zonedTime(+date.slice(0, 4), +date.slice(5, 7), +date.slice(8, 10), 12 * 60, tz), tz).replace(/ at .*$/, "");
 
@@ -88,25 +87,18 @@ async function applyPlan(r: R, p: OwnerPlan, ctx: { channel: "call" | "text"; by
     summary = `Regular hours updated to: ${p.content} (online booking hours are unchanged: adjust them in your portal if they should match)`;
   } else if (p.action === "block") {
     const allDay = !p.startTime || !p.endTime;
-    const google = r.bookingEnabled ? await googleConnection(r.googleUserId) : { connected: false };
-    if (google.connected) {
-      const [y, m, d] = [+p.startDate!.slice(0, 4), +p.startDate!.slice(5, 7), +p.startDate!.slice(8, 10)];
-      const end = p.endDate || p.startDate!;
-      const start = zonedTime(y, m, d, allDay ? 0 : minutesOf(p.startTime!), r.timezone);
-      const finish = allDay
-        ? zonedTime(+end.slice(0, 4), +end.slice(5, 7), +end.slice(8, 10) + 1, 0, r.timezone)
-        : zonedTime(y, m, d, minutesOf(p.endTime!), r.timezone);
-      const ev = await createEvent({ calendarId: r.bookingCalendarId, start, end: finish, timezone: r.timezone, summary: `Blocked: ${p.title}`, description: `Blocked by the owner (${ctx.channel}): "${ctx.request.slice(0, 300)}". No appointments are booked in this time.`, requestId: `owner-${Date.now()}`, as: r.googleUserId });
-      undo.event = { id: ev.id, calendarId: r.bookingCalendarId, as: r.googleUserId };
-      summary = `Calendar blocked ${allDay ? range : `${range}, ${p.startTime} to ${p.endTime}`}: nothing will be booked then`;
-    } else if (allDay) {
-      const { value, added } = addClosedDates(r.bookingClosedDates, datesBetween(p.startDate!, p.endDate));
-      await db.receptionist.update({ where: { id: r.id }, data: { bookingClosedDates: value } });
-      undo.closedDates = added;
-      summary = `No bookings ${range}`;
-    } else {
-      throw new Error("Blocking part of a day needs the booking calendar connected. Your team can connect it, or I can block the whole day instead.");
-    }
+    const [y, m, d] = [+p.startDate!.slice(0, 4), +p.startDate!.slice(5, 7), +p.startDate!.slice(8, 10)];
+    const end = p.endDate || p.startDate!;
+    const start = zonedTime(y, m, d, allDay ? 0 : minutesOf(p.startTime!), r.timezone);
+    const finish = allDay
+      ? zonedTime(+end.slice(0, 4), +end.slice(5, 7), +end.slice(8, 10) + 1, 0, r.timezone)
+      : zonedTime(y, m, d, minutesOf(p.endTime!), r.timezone);
+    // Their own Google Calendar, ours, or the CRM's built-in calendar: blocked either way.
+    const { blockTime, calendarFor } = await import("./booking-calendar");
+    const done = await blockTime(r, await calendarFor(r), { start, end: finish, title: `Blocked: ${p.title}`, description: `Blocked by the owner (${ctx.channel}): "${ctx.request.slice(0, 300)}". No appointments are booked in this time.` });
+    if (done.blockId) undo.blockId = done.blockId;
+    if (done.eventId) undo.event = { id: done.eventId, calendarId: done.calendarId!, as: done.as ?? null };
+    summary = `Calendar blocked ${allDay ? range : `${range}, ${p.startTime} to ${p.endTime}`}: nothing will be booked then`;
   } else if (p.action === "info") {
     await addNote("FAQ", p.title, p.content, noteTags(p));
     summary = `Callers will now be told: "${p.content}"`;
@@ -151,6 +143,7 @@ export async function undoLatest(r: R): Promise<string> {
     }
   }
   if (u.event) await deleteEvent(u.event.calendarId, u.event.id, u.event.as).catch((e) => console.warn("undo calendar block", e));
+  if (u.blockId) await db.calendarBlock.deleteMany({ where: { id: u.blockId } });
   await db.ownerUpdate.update({ where: { id: last.id }, data: { undoneAt: new Date() } });
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: "Owner update undone", body: `Undone: ${last.summary}` });
   if (u.itemId || u.businessHours !== undefined) resyncLater(r.id);

@@ -1,3 +1,4 @@
+import { mimeBody, type Attachment } from "./email-brand";
 import "server-only";
 import { db } from "./db";
 import { companySendAs, connectedEmail, googleFetch, type GoogleAs } from "./google";
@@ -227,20 +228,21 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
 }
 
 /** Plain-text email from the connected Gmail account (no tracking, no activity). */
-export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null; as?: GoogleAs }) {
+export async function sendPlainEmail(params: { to: string; subject: string; body: string; fromName?: string; replyTo?: string | null; as?: GoogleAs; html?: string | null; attachments?: Attachment[] }) {
   const connected = await connectedEmail(params.as);
   if (!connected) throw new Error("Google is not connected");
   // Company emails can go out from an alias of the company account (e.g. hello@), set in Settings.
   const me = (!params.as && (await companySendAs())) || connected;
+  const part = mimeBody({ text: params.body, html: params.html, attachments: params.attachments });
   const mime = [
     `From: ${params.fromName ? `${encodeHeader(params.fromName)} <${me}>` : me}`,
     `To: ${safeAddress(params.to)}`,
     ...(params.replyTo ? [`Reply-To: ${safeAddress(params.replyTo)}`] : []),
     `Subject: ${encodeHeader(params.subject)}`,
     "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
+    `Content-Type: ${part.contentType}`,
     "",
-    params.body,
+    part.body,
   ].join("\r\n");
   return googleFetch<{ id: string; threadId: string }>(`${GMAIL}/messages/send`, {
     method: "POST",

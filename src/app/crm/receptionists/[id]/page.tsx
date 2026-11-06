@@ -18,6 +18,8 @@ import { kbHistory } from "@/lib/kb-history";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
+import { CalendarAndBranding } from "@/components/CalendarAndBranding";
+import { calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { googleConnection } from "@/lib/google";
 import { AvailabilityFields, FollowUpFields, LeadAlertFields, RingFields } from "@/components/ReceptionistOptions";
 import { syncCallsThrottled } from "@/lib/call-sync";
@@ -56,6 +58,9 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   ]);
   const reviewEmail = reviewContact?.email ?? null;
   const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
+  const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
+  const callerReplyTo = await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null);
+  const clientLine = r.agentType === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
   const returnTo = `/crm/receptionists/${r.id}`;
   // The Google account this receptionist books into: a person's own, or the company account.
   const google = await googleConnection(r.googleUserId);
@@ -140,7 +145,11 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           <form action={updateBooking.bind(null, r.id)} className="card grid grid-cols-2 gap-3">
             <h2 className="col-span-2">{followup ? "Calendar booking" : <>Calendar booking &amp; caller follow-ups</>}</h2>
             <p className="col-span-2 text-xs text-slate-500">
-              {google.connected
+              {bookingCal.mode === "client"
+                ? <>Bookings go into the client&apos;s own Google Calendar (<b>{bookingCal.email}</b>), connected in their portal. The calendar setting below isn&apos;t used while it&apos;s connected.</>
+                : bookingCal.mode === "crm"
+                ? <>Bookings use the built-in calendar (no Google needed): business hours below, minus existing bookings and blocked time. The client can connect their own Google Calendar under Booking calendar.</>
+                : google.connected
                 ? <>The agent checks <b>{google.email}</b>&apos;s Google Calendar for openings and books calls into it. To book into a client&apos;s calendar, have them share it with that account (“Make changes to events”) and enter its address below.</>
                 : <>{r.googleUserId ? "That person's" : "The company"} Google account isn&apos;t connected — connect it in <Link href="/crm/settings">Settings</Link>. Until then the agent collects preferred times instead.</>}
             </p>
@@ -203,6 +212,8 @@ export default async function ReceptionistPage({ params, searchParams }: { param
 
           {isAdmin && !r.demoExtension && !followup ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
           {!r.demoExtension && !followup ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
+
+          <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={app} returnTo={returnTo} canConnect={clientLine} staff />
 
           <div className="card space-y-3 text-sm">
             <h2>Client review link</h2>

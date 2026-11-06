@@ -2,13 +2,11 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Receptionist } from "@prisma/client";
 import { db } from "./db";
-import { connectedEmail, googleConnection } from "./google";
-import { busyIntervals, createEvent } from "./calendar";
+import { busyFor, calendarFor, placeBooking, removeBookingEvent, replyToAddress, type BookingCalendar } from "./booking-calendar";
 import { candidateSlots, closedDates, formatSlot, freeSlots, localDate, isoDate, parseWeeklyHours, pickSlots, type SlotRules } from "./booking";
 import { recordActivity } from "./outreach";
 import { normalizeDomain } from "./utils";
 import { samePhone, toE164 } from "./twilio";
-import { deleteEvent } from "./calendar";
 import { normalizeBusinessName } from "./business-names";
 import { findAccountIdByPhone } from "./team";
 import { followUpEnabled, pickChannel, sendFollowUp } from "./follow-up";
@@ -33,14 +31,14 @@ const FALLBACK = "Live booking is unavailable right now. Collect two preferred d
 
 async function ready(r: Receptionist): Promise<string | null> {
   if (!r.bookingEnabled) return "Booking is turned off for this receptionist. " + FALLBACK;
-  if (!(await googleConnection(r.googleUserId)).connected) return FALLBACK;
   return null;
 }
 
-async function openSlots(r: Receptionist, now: Date) {
+async function openSlots(r: Receptionist, now: Date, cal?: BookingCalendar) {
   const rules = slotRules(r);
-  const busy = await busyIntervals(r.bookingCalendarId, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000), r.googleUserId);
-  return { rules, slots: freeSlots(rules, now, busy) };
+  const calendar = cal ?? (await calendarFor(r));
+  const busy = await busyFor(r, calendar, now, new Date(now.getTime() + (rules.daysAhead + 1) * 86400_000));
+  return { rules, slots: freeSlots(rules, now, busy), calendar };
 }
 
 /** Every open slot in the booking window (the public booking page lists them by day). */
@@ -55,7 +53,7 @@ async function cancelReplaced(r: Receptionist, oldId: string) {
   const old = await db.booking.findUnique({ where: { id: oldId } });
   if (!old || old.receptionistId !== r.id || ["CANCELLED", "NO_SHOW"].includes(old.status)) return;
   await db.booking.update({ where: { id: old.id }, data: { status: "CANCELLED" } });
-  if (old.eventId) await deleteEvent(old.calendarId, old.eventId, old.googleUserId);
+  await removeBookingEvent(old);
 }
 
 export async function availability(r: Receptionist, input: { preferred_date?: string; time_of_day?: string }, now = new Date()) {
@@ -111,14 +109,16 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
   const start = new Date(input.start_iso ?? "");
   if (Number.isNaN(start.getTime())) return { booked: false, message: "start_iso is missing or invalid. Call get_available_times and use one of its start_iso values." };
   if (!input.caller_name?.trim() || !input.caller_phone?.trim()) return { booked: false, message: "Ask for the caller's name and best phone number before booking." };
-  const meetingType = meetingTypeFor(r.bookingMeetingType, input.meeting_type);
+  const cal = await calendarFor(r);
+  // A Google Meet needs a Google calendar; the CRM's own calendar books phone calls.
+  const meetingType = cal.mode === "crm" ? "phone" : meetingTypeFor(r.bookingMeetingType, input.meeting_type);
   const email = input.caller_email?.includes("@") ? input.caller_email.trim() : null;
   if (meetingType === "google_meet" && !email) return { booked: false, message: "A Google Meet needs the caller's email for the invite. Ask for it (spell it back), then book again." };
   const preference = input.summary_method ?? (input.wants_text === true || input.wants_text === "true" ? "text" : input.wants_text != null ? "none" : null);
   const channel = followUpEnabled(r, "booking") ? pickChannel(r.followUpChannel, preference, input.caller_phone.trim(), email) : null;
 
   // The slot must still be a valid opening (rules + calendar), so a stale or invented time can't book.
-  const { rules, slots } = await openSlots(r, now);
+  const { rules, slots } = await openSlots(r, now, cal);
   if (!slots.some((s) => s.getTime() === start.getTime())) {
     // Only on a miss: work out whether it was never a valid slot or was just taken.
     const valid = candidateSlots(rules, now).some((s) => s.getTime() === start.getTime());
@@ -147,8 +147,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     meetingType === "phone" ? `\nCall them at ${input.caller_phone.trim()}.` : "\nGoogle Meet (link in the invite).",
   ].filter(Boolean).join("\n");
 
-  const event = await createEvent({
-    calendarId: r.bookingCalendarId,
+  const event = await placeBooking(cal, {
     start,
     end,
     timezone: r.timezone,
@@ -157,16 +156,15 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     attendeeEmail: email,
     googleMeet: meetingType === "google_meet",
     requestId: randomUUID(),
-    as: r.googleUserId,
   });
 
   // Every booking is recorded: reminders, no-show rebooking and review requests run from it.
-  await db.booking.create({
+  const bookingRow = await db.booking.create({
     data: {
       receptionistId: r.id,
       eventId: event.id,
-      calendarId: r.bookingCalendarId,
-      googleUserId: r.googleUserId,
+      calendarId: cal.calendarId,
+      googleUserId: cal.as ?? null,
       start,
       end,
       timezone: r.timezone,
@@ -182,40 +180,45 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
 
   let lead: LeadResult | null = null;
   if (r.bookingAddsToCrm) {
-    lead = await addLead(r, input, label, `${r.bookingTitle}: ${label}`, `${details}\n\nCalendar: ${event.htmlLink}`).catch((e) => {
+    lead = await addLead(r, input, label, `${r.bookingTitle}: ${label}`, `${details}${event.htmlLink ? `\n\nCalendar: ${event.htmlLink}` : ""}`).catch((e) => {
       console.error("Booking CRM lead failed", e);
       return null;
     });
   }
 
   let sent = false;
+  // The CRM calendar has no Google invite: a caller who gave their email gets a branded
+  // confirmation from the business with an "add to calendar" file instead.
+  const invite = cal.mode === "crm" && email
+    ? { uid: `${bookingRow.id}@headabove`, start, end, title: `${r.bookingTitle} with ${r.businessName}`, description: meetingType === "phone" ? `${r.businessName} will call you at ${input.caller_phone.trim()}.` : "" }
+    : null;
+  const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await replyToAddress(r, cal)].filter(Boolean).join(" or email ");
+  const firstName = input.caller_name.trim().split(/\s+/)[0];
+  const phone = input.caller_phone.trim();
+  const emailBody = [
+    `Hi ${firstName},`,
+    "",
+    `You're booked for a ${r.bookingTitle.toLowerCase()} with ${r.businessName}:`,
+    "",
+    `When: ${label} (${r.timezone.replace("America/", "").replace("_", " ")} time), ${r.bookingSlotMinutes} minutes`,
+    `How: ${meetingType === "google_meet" ? "Google Meet — the link is in your calendar invite" : `we'll call you at ${phone}`}`,
+    ...(input.interest ? [`About: ${input.interest.trim()}`] : []),
+    ...(invite ? ["", "Add it to your calendar with the attached invite."] : []),
+    "",
+    `Need to reschedule or cancel? No problem — ${changeBy}.`,
+    "",
+    `The ${r.businessName} team`,
+  ].join("\n");
+  const subject = `Booked: ${r.bookingTitle} on ${label}`;
   if (channel) {
-    const changeBy = [r.escalationPhone ? `call or text ${r.escalationPhone}` : "call us back", await connectedEmail(r.googleUserId)].filter(Boolean).join(" or email ");
-    const how = meetingType === "google_meet" ? `Google Meet — the link is in your calendar invite${email ? ` (${email})` : ""}` : `we'll call you at ${input.caller_phone.trim()}`;
+    const how = meetingType === "google_meet" ? `Google Meet — the link is in your calendar invite${email ? ` (${email})` : ""}` : `we'll call you at ${phone}`;
     const topic = input.interest ? ` We'll cover: ${input.interest.trim()}.` : "";
-    const body = channel === "sms"
-      ? `${r.businessName}: you're booked for a ${r.bookingTitle.toLowerCase()} on ${label} (${r.bookingSlotMinutes} min, ${how}).${topic} To reschedule or cancel, ${changeBy}.`
-      : [
-          `Hi ${input.caller_name.trim().split(/\s+/)[0]},`,
-          "",
-          `You're booked for a ${r.bookingTitle.toLowerCase()} with ${r.businessName}:`,
-          "",
-          `When: ${label} (${r.timezone.replace("America/", "").replace("_", " ")} time), ${r.bookingSlotMinutes} minutes`,
-          `How: ${meetingType === "google_meet" ? "Google Meet — the link is in your calendar invite" : `we'll call you at ${input.caller_phone.trim()}`}`,
-          ...(input.interest ? [`About: ${input.interest.trim()}`] : []),
-          "",
-          `Need to reschedule or cancel? No problem — ${changeBy}.`,
-          "",
-          `The ${r.businessName} team`,
-        ].join("\n");
-    sent = await sendFollowUp(r, {
-      kind: "booking",
-      channel,
-      to: channel === "sms" ? input.caller_phone.trim() : email!,
-      subject: `Booked: ${r.bookingTitle} on ${label}`,
-      body,
-      conversationId: input.conversation_id || null,
-    });
+    const body = channel === "sms" ? `${r.businessName}: you're booked for a ${r.bookingTitle.toLowerCase()} on ${label} (${r.bookingSlotMinutes} min, ${how}).${topic} To reschedule or cancel, ${changeBy}.` : emailBody;
+    sent = await sendFollowUp(r, { kind: "booking", channel, to: channel === "sms" ? phone : email!, subject, body, conversationId: input.conversation_id || null, ...(channel === "email" && invite ? { invite } : {}) });
+  }
+  if (invite && channel !== "email") {
+    // They gave an email but chose a text (or no) confirmation: the calendar invite still goes by email.
+    await sendFollowUp(r, { kind: "booking", channel: "email", to: email!, subject, body: emailBody, conversationId: input.conversation_id || null, invite });
   }
 
   return {

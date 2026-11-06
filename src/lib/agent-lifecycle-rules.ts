@@ -32,6 +32,7 @@ export const PROMOTE_FIELDS = [
   "name", "greeting", "persona", "voiceId", "language", "timezone", "businessHours", "escalationPhone", "escalationRules",
   "bookingUrl", "extraInstructions", "bookingSlotMinutes", "bookingHours", "bookingMinNoticeHours", "bookingDaysAhead",
   "bookingBufferMinutes", "bookingMeetingType", "bookingQuestions", "bookingHolidays", "bookingClosedDates", "followUpOn", "followUpChannel",
+  "brandLogoUrl", "brandColor", "emailSignOff", "emailReplyTo",
 ] as const;
 
 export function promotedSettings<T extends Record<(typeof PROMOTE_FIELDS)[number], unknown>>(demo: T): Pick<T, (typeof PROMOTE_FIELDS)[number]> {

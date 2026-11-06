@@ -10,6 +10,7 @@ import { canAccessReceptionist } from "@/lib/access";
 import { str } from "@/lib/utils";
 import { toE164 } from "@/lib/twilio";
 import { clampThreshold } from "@/lib/customer-text-rules";
+import { recordActivity } from "@/lib/outreach";
 
 async function guard(receptionistId: string) {
   const session = await getSession();
@@ -133,4 +134,59 @@ export async function removeTrustedNumber(receptionistId: string, id: string, re
   await guard(receptionistId);
   await db.trustedNumber.deleteMany({ where: { id, receptionistId } });
   done(returnTo, "Removed from trusted numbers");
+}
+
+
+// --- Booking calendar and email branding (Level 0 / Level 3) -----------------------------------
+
+/** Logo, colour, sign-off and reply-to address for emails to this business's callers. */
+export async function saveEmailBranding(receptionistId: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const { safeColor, safeLogo } = await import("@/lib/email-brand");
+  const logo = str(form, "brandLogoUrl").trim();
+  const color = str(form, "brandColor").trim();
+  const replyTo = str(form, "emailReplyTo").trim().toLowerCase();
+  if (logo && !safeLogo(logo)) done(returnTo, "The logo link must start with https://", "error");
+  if (replyTo && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(replyTo)) done(returnTo, "Enter a valid reply-to email (or leave it empty)", "error");
+  await db.receptionist.update({
+    where: { id: receptionistId },
+    data: {
+      brandLogoUrl: logo ? safeLogo(logo) : null,
+      brandColor: color ? safeColor(color, "") || null : null,
+      emailSignOff: str(form, "emailSignOff").trim().slice(0, 500),
+      emailReplyTo: replyTo || null,
+    },
+  });
+  done(returnTo, "Email branding saved");
+}
+
+/** Fill the logo and colour from the business's website. */
+export async function brandFromWebsite(receptionistId: string, returnTo: string) {
+  await guard(receptionistId);
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, include: { account: { select: { website: true, domain: true } } } });
+  const site = r.account.website ?? r.account.domain;
+  if (!site) done(returnTo, "Add the business's website to the account first", "error");
+  const { fetchBrand } = await import("@/lib/brand-fetch");
+  const found = await fetchBrand(site!).catch(() => ({ logoUrl: null, color: null }));
+  if (!found.logoUrl && !found.color) done(returnTo, "Couldn't find a logo or colour on the website. Paste a logo link instead.", "error");
+  await db.receptionist.update({ where: { id: receptionistId }, data: { ...(found.logoUrl ? { brandLogoUrl: found.logoUrl } : {}), ...(found.color ? { brandColor: found.color } : {}) } });
+  done(returnTo, `From the website: ${[found.logoUrl ? "logo" : null, found.color ? "colour" : null].filter(Boolean).join(" and ")}. Check the preview.`);
+}
+
+/** Stop using the client's own Google Calendar (access is revoked at Google). */
+export async function disconnectCalendar(receptionistId: string, returnTo: string) {
+  const session = await guard(receptionistId);
+  const { disconnectClientCalendar } = await import("@/lib/google");
+  await disconnectClientCalendar(receptionistId);
+  const r = await db.receptionist.findUnique({ where: { id: receptionistId }, select: { accountId: true, name: true } });
+  if (r) await recordActivity({ accountId: r.accountId, type: "NOTE", source: session.role === "CLIENT" ? "portal" : "system", subject: "Google Calendar disconnected", body: `${session.email} disconnected ${r.name}'s Google Calendar. Bookings now use the built-in calendar.` }).catch(() => undefined);
+  done(returnTo, "Calendar disconnected. New bookings use the built-in calendar.");
+}
+
+/** The private link the owner's phone calendar subscribes to. */
+export async function createCalendarFeed(receptionistId: string, returnTo: string) {
+  await guard(receptionistId);
+  const { randomBytes } = await import("node:crypto");
+  await db.receptionist.update({ where: { id: receptionistId }, data: { calendarFeedToken: randomBytes(24).toString("base64url") } });
+  done(returnTo, "Your calendar link is ready below");
 }
