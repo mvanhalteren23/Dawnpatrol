@@ -63,11 +63,7 @@ export function CallList({ receptionistId, calls, returnTo, canBlock = false, ca
               ) : null}
               {c.summary ? <p className="mt-1 text-slate-700">{c.summary}</p> : null}
               <details className="mt-2">
-                <summary className="cursor-pointer text-xs font-medium text-indigo-700">Recording &amp; transcript</summary>
-                <audio controls preload="none" className="mt-2 w-full" src={`/api/calls/${c.id}/audio`}>
-                  <a href={`/api/calls/${c.id}/audio`}>Download recording</a>
-                </audio>
-                <div className="mt-1 text-xs"><a href={`/api/calls/${c.id}/audio`} download>Download recording (MP3)</a></div>
+                <summary className="cursor-pointer text-xs font-medium text-dawn-600">Transcript</summary>
                 {c.transcript ? <Transcript text={c.transcript} /> : <p className="mt-2 text-xs text-slate-500">No transcript for this call.</p>}
               </details>
             </li>
