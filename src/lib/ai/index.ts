@@ -1,6 +1,7 @@
 import "server-only";
 import { looksLikeInstructions, safetyRules } from "../safety-rules";
 import { DemoProfileSchema, type DemoProfile } from "../demo-research-rules";
+import { OwnerPlanSchema, type OwnerPlan } from "../owner-mode-rules";
 import { z } from "zod";
 import { companyName } from "../brand";
 import * as claude from "./anthropic";
@@ -169,6 +170,21 @@ For "ownerQuestions": every assumption to confirm, plus the most important remai
     report.text,
   );
   return { ...combine(report, ex), text: report.text, profile: ex.data };
+}
+
+// --- Owner updates by phone or text ---------------------------------------------
+
+/** What an owner wants changed, with dates resolved against today in their timezone. */
+export async function planOwnerRequest(o: { businessName: string; today: string; weekday: string; timezone: string; currentHours: string; request: string }): Promise<OwnerPlan> {
+  const ex = await structured(
+    "owner_requests",
+    OwnerPlanSchema,
+    `You help the owner of ${o.businessName} update their AI receptionist by phone or text. Today is ${o.weekday} ${o.today} (${o.timezone}). Their regular hours: ${o.currentHours || "not set"}.
+Work out what they want. Resolve every relative date ("tomorrow", "next week" = next Monday to Sunday, "the long weekend") to exact dates. "Block my calendar" or "don't book anything" means block. If they only want to know about calls or messages, use messages. Times are 24-hour HH:MM in their timezone.
+Write content as what the receptionist should tell callers, in plain words. If the request is missing something essential (like which day), use unclear and ask one short question.`,
+    o.request,
+  );
+  return ex.data;
 }
 
 // --- Outreach drafting -------------------------------------------------------

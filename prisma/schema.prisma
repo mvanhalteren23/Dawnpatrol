@@ -28,6 +28,9 @@ model User {
   lockedUntil        DateTime?
   // Sessions signed in before this are signed out (set on password change/reset and on disabling).
   sessionsValidAfter DateTime?
+  // Mobile (E.164): the team is recognised on our own line (Grace's team menu); a client's portal
+  // users are recognised as the owner on their business line (owner updates by call or text).
+  phone              String?
   accountId          String? // set for CLIENT users (portal access)
   account            Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   lastLoginAt        DateTime?
@@ -43,6 +46,8 @@ model User {
   activities    Activity[]
   prompts       SavedPrompt[]
   imports       ImportJob[]
+
+  @@index([phone])
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +360,7 @@ model Receptionist {
   checkinsOn            Boolean        @default(true) // call the owner about questions callers asked
   checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
   checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
+  ownerUpdates          OwnerUpdate[]
   bookingAddsToCrm      Boolean        @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
   elevenLabsToolIds     String         @default("{}") // JSON {name: toolId} for the booking webhook tools
   syncStatus            String         @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
@@ -793,4 +799,22 @@ model SecurityIncident {
   createdById           String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+}
+
+// Changes an owner made by calling or texting their own business line (closures, hours, calendar
+// blocks, what the receptionist says). Each is confirmed by text and can be undone ("UNDO").
+model OwnerUpdate {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  channel        String // call | text
+  byPhone        String
+  request        String // what the owner said
+  kind           String // closed | special_hours | hours | block | info
+  summary        String // what was done, as told to the owner
+  undo           String       @default("{}") // JSON: what to reverse
+  undoneAt       DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([receptionistId, createdAt])
 }

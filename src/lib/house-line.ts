@@ -9,7 +9,8 @@ import { toE164, twilioApi } from "./twilio";
 import { appBase } from "./twilio-request";
 import { matchAccount } from "./agent-booking";
 import { newLeadFormKey } from "./followup";
-import { callerTypeFor, DEFAULT_MENU_CODE, keypadResult, MAX_KEYPAD_TRIES, type CallerType } from "./house-line-rules";
+import { callerTypeFor, DEFAULT_MENU_CODE, keypadResult, matchDemoByName, MAX_KEYPAD_TRIES, type CallerType } from "./house-line-rules";
+import { teamMemberByPhone } from "./owner-mode";
 
 // Head Above Digital's own line (rules in house-line-rules.ts). The demo number is answered by
 // Grace, the company receptionist (the receptionist with "add each booking to this CRM"). She's told
@@ -36,6 +37,40 @@ export async function callerType(from: string): Promise<CallerType> {
   if (!from) return "new";
   const { account } = await matchAccount({ phone: from });
   return callerTypeFor(account, isClientStage);
+}
+
+/**
+ * What Grace is told when a call starts: the caller type, the team member's first name (team only),
+ * and her opening line (team members are greeted by name and asked what they'd like to do).
+ */
+export async function callerContext(from: string, greeting: string): Promise<{ caller_type: CallerType; team_name: string; opening: string }> {
+  const team = await teamMemberByPhone(from).catch(() => null);
+  if (team) {
+    const house = await houseReceptionist();
+    return { caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu, or a demo by company name.` };
+  }
+  return { caller_type: await callerType(from), team_name: "", opening: greeting };
+}
+
+/**
+ * open_demo (team callers only): move the call to a demo, by extension or company name, or to the
+ * demo menu. The caller's number is checked against the team's mobiles on the live call itself.
+ */
+export async function openDemoForTeam(callSid: string, wanted: string): Promise<{ message: string; redirect: string | null }> {
+  const refuse = { message: "That's only for our team. Carry on helping the caller.", redirect: null };
+  if (!/^CA[0-9a-f]{32}$/i.test(callSid)) return refuse;
+  const call = await twilioApi<{ status: string; to: string; from: string }>(`/Calls/${callSid}.json`).catch(() => null);
+  const number = demoNumber();
+  if (!call || call.status !== "in-progress" || !number || toE164(call.to) !== number) return refuse;
+  if (!(await teamMemberByPhone(call.from))) return refuse;
+  const demos = await db.receptionist.findMany({ where: { demoExtension: { not: null }, elevenLabsAgentId: { not: null }, lifecycle: "demo" }, select: { demoExtension: true, businessName: true }, orderBy: { updatedAt: "desc" }, take: 200 });
+  const said = wanted.trim();
+  if (!said || /^(the )?(demo )?menu$|directory|list/i.test(said)) return { message: "Say only: \"Opening the demo menu.\"", redirect: `${appBase()}/api/voice/demo?step=menu` };
+  const digits = said.replace(/\D/g, "");
+  const hit = demos.find((d) => digits && d.demoExtension === digits) ?? matchDemoByName(said, demos);
+  if (hit) return { message: `Say only: "Connecting you to ${hit.businessName}."`, redirect: `${appBase()}/api/voice/demo?step=open&ext=${hit.demoExtension}` };
+  const names = demos.slice(0, 8).map((d) => `${d.businessName} (${d.demoExtension})`).join(", ");
+  return { message: `No demo matches "${said}". ${names ? `Recent demos: ${names}. Ask which one they want.` : "There are no demos set up yet."}`, redirect: null };
 }
 
 function demoNumber(): string | null {

@@ -23,7 +23,7 @@ const RING: Record<string, string> = { always: "always", hours: "during your hou
 import { CustomerTextSettings } from "@/components/CustomerCare";
 import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
-import { chooseVoice } from "@/app/customer-actions";
+import { chooseVoice, saveMyMobile, undoOwnerChange } from "@/app/customer-actions";
 import { bookingLink } from "@/lib/customer-texts";
 
 export default async function PortalSettings({ searchParams }: { searchParams: Promise<{ account?: string; notice?: string; error?: string }> }) {
@@ -38,6 +38,12 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const days = r ? hoursByDay(r.bookingHours) : {};
   const link = r ? await bookingLink(r).catch(() => null) : null;
   const voices = await curatedVoices();
+  const [portalUsers, ownerUpdates] = await Promise.all([
+    db.user.findMany({ where: { accountId: account.id, disabled: false }, select: { id: true, phone: true } }),
+    r ? db.ownerUpdate.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 5 }) : [],
+  ]);
+  const me = portalUsers.find((u) => u.id === session.sub);
+  const portalPhones = portalUsers.map((u) => u.phone).filter((p): p is string => Boolean(p));
 
   return (
     <PortalShell accountId={account.id} accountName={account.name} adminAccountId={adminAccountId} email={session.email}>
@@ -83,6 +89,28 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 <button className="btn-secondary">Save voice</button>
               </form>
             ) : null}
+            <div className="card space-y-3 text-sm">
+              <h2>Update {r.name} by phone or text</h2>
+              {r.businessNumber ? (
+                <p className="text-slate-600">Call or text <b>{r.businessNumber}</b> from your own phone and {r.name} knows it&apos;s you. Say or text things like &ldquo;we&apos;re closed next Monday&rdquo;, &ldquo;block 2 to 4 Thursday&rdquo;, &ldquo;tell callers we now do heat pumps&rdquo; or &ldquo;any messages?&rdquo;. Every change is confirmed by text: reply <b>UNDO</b> to reverse it.</p>
+              ) : <p className="text-slate-600">Available once your business line is set up.</p>}
+              <p className="text-xs text-slate-500">Recognised numbers: {[r.ringFirstNumber, r.checkinPhone, ...portalPhones].filter(Boolean).join(", ") || "none yet"}.</p>
+              {session.role === "CLIENT" ? (
+                <form action={saveMyMobile.bind(null, returnTo)} className="flex gap-2">
+                  <input name="phone" type="tel" defaultValue={me?.phone ?? ""} placeholder="Your mobile" className="input" aria-label="Your mobile" />
+                  <button className="btn-secondary whitespace-nowrap">Save mobile</button>
+                </form>
+              ) : null}
+              {ownerUpdates.length ? (
+                <div>
+                  <div className="label mt-2">Recent changes</div>
+                  <ul className="space-y-1 text-xs">
+                    {ownerUpdates.map((u) => <li key={u.id} className={u.undoneAt ? "text-slate-400 line-through" : ""}>{formatDate(u.createdAt, true)} · by {u.channel}: {u.summary}</li>)}
+                  </ul>
+                  {ownerUpdates.some((u) => !u.undoneAt) ? <form action={undoOwnerChange.bind(null, r.id, returnTo)} className="mt-2"><button className="btn-secondary py-1 text-xs">Undo the latest change</button></form> : null}
+                </div>
+              ) : null}
+            </div>
             <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>

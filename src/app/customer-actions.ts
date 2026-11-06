@@ -47,6 +47,26 @@ export async function saveCustomerTextSettings(receptionistId: string, returnTo:
   done(returnTo, "Saved");
 }
 
+/** A portal user's own mobile: texting or calling their business line from it unlocks owner updates. */
+export async function saveMyMobile(returnTo: string, form: FormData) {
+  const session = await getSession();
+  if (!session || session.role !== "CLIENT") done(returnTo, "Only portal users set their mobile here", "error");
+  const raw = str(form, "phone").trim();
+  const { dialableNumber } = await import("@/lib/twilio");
+  const phone = raw ? dialableNumber(raw) : null;
+  if (raw && !phone) done(returnTo, "Enter your mobile as a 10-digit number", "error");
+  await db.user.update({ where: { id: session!.sub }, data: { phone } });
+  done(returnTo, phone ? "Saved. Call or text your business line from this number to make changes." : "Mobile removed");
+}
+
+/** Undo the latest change made by phone or text (same as replying UNDO). */
+export async function undoOwnerChange(receptionistId: string, returnTo: string) {
+  await guard(receptionistId);
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId } });
+  const { undoLatest } = await import("@/lib/owner-mode");
+  done(returnTo, await undoLatest(r));
+}
+
 /** The client picks their receptionist's voice from the curated list; it's live within a minute. */
 export async function chooseVoice(receptionistId: string, returnTo: string, form: FormData) {
   await guard(receptionistId);

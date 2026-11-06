@@ -44,7 +44,10 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     update: { summary: fields.summary || undefined, transcript: fields.transcript || undefined, durationSec: fields.durationSec || undefined },
   });
   const full = await db.receptionist.findUnique({ where: { id: receptionist.id } });
-  if (full) {
+  // The owner calling their own line (owner mode) isn't a customer: no texts, alerts or open questions.
+  const { ownerCaller } = await import("./owner-mode");
+  const ownerCall = full && full.agentType !== "followup" && call.callerNumber ? await ownerCaller(full, call.callerNumber).catch(() => null) : null;
+  if (full && !ownerCall) {
     if (full.agentType === "followup") await linkLeadToCall(data, outcome).catch((e) => console.error("lead update failed", e));
     await sendCallFollowUp(full, call, collected).catch((e) => console.error("call follow-up failed", e));
     // No booking but they wanted something: a booking link by text (skipped if a summary just went out).

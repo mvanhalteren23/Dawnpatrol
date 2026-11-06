@@ -7,7 +7,7 @@ import { normalizeBusinessName } from "./business-names";
 export const DEFAULT_MENU_CODE = "1098";
 export const MAX_KEYPAD_TRIES = 4;
 
-export type CallerType = "new" | "prospect" | "client";
+export type CallerType = "new" | "prospect" | "client" | "team";
 
 /** What Grace is told about a caller she recognises: the kind of caller only, never their history. */
 export function callerTypeFor(account: { stage: string } | null, isClientStage: (s: string) => boolean): CallerType {

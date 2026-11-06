@@ -17,6 +17,7 @@ export const TASKS = {
   extraction: { label: "Structured fields", web: false, help: "Turn a research report into fit score, contacts, prospects or KB entries." },
   outreach: { label: "Outreach emails", web: false, help: "Draft personalised first-touch emails." },
   caller_summary: { label: "Caller summaries", web: false, help: "Texts and emails sent to callers after a call." },
+  owner_requests: { label: "Owner updates", web: false, help: "Reads what a client's owner asks for by phone or text (closures, hours, calendar blocks, what to tell callers) and turns it into the change." },
   sms_chat: { label: "Customer texts", web: false, help: "Replies to customers who text a client's business line, from the receptionist's knowledge base." },
   test_chat: { label: "Receptionist test chat", web: false, help: "The chat on receptionist pages (the live phone agents use the model set in ElevenLabs)." },
   voicemail: { label: "AI voicemail scripts", web: false, help: "Writes the personalised voicemail the auto-dialer leaves (then voiced by ElevenLabs)." },

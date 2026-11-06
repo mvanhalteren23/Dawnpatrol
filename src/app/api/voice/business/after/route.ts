@@ -10,5 +10,5 @@ export async function POST(req: Request) {
   if (params.DialCallStatus === "completed") return xml(twiml("<Hangup/>"));
   const r = await db.receptionist.findUnique({ where: { id: new URL(req.url).searchParams.get("r") ?? "" } });
   if (!r) return xml(twiml("<Hangup/>"));
-  return xml(await toAgent(r, params.From ?? "", params.To ?? ""));
+  return xml(await toAgent(r, params.From ?? "", params.To ?? "", params.CallSid ?? ""));
 }

@@ -20,7 +20,7 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
-vi.mock("@/lib/house-line", () => ({ houseReceptionist: async () => house, callerType: async (from: string) => (from === "+16045550101" ? "client" : "new") }));
+vi.mock("@/lib/house-line", () => ({ houseReceptionist: async () => house, callerContext: async (from: string, greeting: string) => (from === "+16045550199" ? { caller_type: "team", team_name: "Matt", opening: "Hi Matt" } : { caller_type: from === "+16045550101" ? "client" : "new", team_name: "", opening: greeting }) }));
 vi.mock("@/lib/demo-line", () => ({ demoLineConfig: async () => ({ number: "+17786504870", greeting: "Welcome to the demo line.", fallbackReceptionistId: null }) }));
 vi.mock("@/lib/elevenlabs", () => ({ registerTwilioCall }));
 vi.mock("@/lib/outreach", () => ({ recordActivity }));
@@ -74,11 +74,19 @@ describe("demo line webhook", () => {
     expect((await call("", base, false)).status).toBe(403);
   });
 
+  it("greets a team member by name when they call from the mobile on their login", async () => {
+    house = { id: "h1", name: "Grace", elevenLabsAgentId: "agent_grace" };
+    await call("", { ...base, From: "+16045550199" });
+    expect(registerTwilioCall).toHaveBeenCalledWith("agent_grace", "+16045550199", "+17786504870", { dynamicVariables: { caller_type: "team", team_name: "Matt", opening: "Hi Matt", call_sid: "CA1" } });
+    house = null;
+    registerTwilioCall.mockClear();
+  });
+
   it("puts callers through to the company receptionist when there is one, with the caller type only", async () => {
     house = { id: "h1", name: "Grace", elevenLabsAgentId: "agent_grace" };
     const r = await call("", { ...base, From: "+16045550101" });
     expect(r.body).toContain("<Connect");
-    expect(registerTwilioCall).toHaveBeenCalledWith("agent_grace", "+16045550101", "+17786504870", { dynamicVariables: { caller_type: "client", call_sid: "CA1" } });
+    expect(registerTwilioCall).toHaveBeenCalledWith("agent_grace", "+16045550101", "+17786504870", { dynamicVariables: { caller_type: "client", team_name: "", opening: expect.any(String), call_sid: "CA1" } });
     house = null;
   });
 
@@ -93,7 +101,7 @@ describe("demo line webhook", () => {
   it("connects a known extension to its ElevenLabs agent and logs the call", async () => {
     const r = await call("?step=ext&attempt=1", { ...base, Digits: "101" });
     expect(r.body).toBe("<Response><Connect/></Response>");
-    expect(registerTwilioCall).toHaveBeenCalledWith("agent_101", "+17205550123", "+17786504870");
+    expect(registerTwilioCall).toHaveBeenCalledWith("agent_101", "+17205550123", "+17786504870", { dynamicVariables: { caller_role: "customer", owner_name: "", call_sid: "CA1" } });
     expect(recordActivity).toHaveBeenCalledWith(expect.objectContaining({ accountId: "acct1", contactId: "c1", type: "CALL", direction: "INBOUND", externalId: "twilio:CA1" }));
   });
 

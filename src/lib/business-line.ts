@@ -6,6 +6,7 @@ import { slotRules } from "./agent-booking";
 import { isOpenAt } from "./booking";
 import { attachNumber, buyNumber, cleanDigits, findLocalNumber, releaseNumber, say, toE164, twiml } from "./twilio";
 import { appBase } from "./twilio-request";
+import { ownerCaller } from "./owner-mode";
 
 // Business line ("ring my cell first, then the receptionist"):
 //   caller → business number → /api/voice/business → rings ringFirstNumber for ringSeconds with a
@@ -27,11 +28,17 @@ export function shouldRingFirst(r: Receptionist, now = new Date()): boolean {
   }
 }
 
-/** TwiML that hands the call to the receptionist's ElevenLabs agent. */
-export async function toAgent(r: Receptionist, from: string, to: string): Promise<string> {
+/**
+ * TwiML that hands the call to the receptionist's ElevenLabs agent. The agent is told whether the
+ * caller is the owner (matched from their number; see src/lib/owner-mode.ts).
+ */
+export async function toAgent(r: Receptionist, from: string, to: string, callSid = ""): Promise<string> {
   if (!r.elevenLabsAgentId) return twiml(`${say(`Sorry, ${r.businessName} can't take your call right now. Please call back shortly.`)}<Hangup/>`);
   try {
-    return await registerTwilioCall(r.elevenLabsAgentId, from, to);
+    const owner = await ownerCaller(r, from).catch(() => null);
+    return await registerTwilioCall(r.elevenLabsAgentId, from, to, {
+      dynamicVariables: { caller_role: owner ? "owner" : "customer", owner_name: owner?.firstName ? ` ${owner.firstName}` : "", call_sid: callSid },
+    });
   } catch (err) {
     console.error("business line: register-call failed", err);
     return twiml(`${say(`Sorry, ${r.businessName} can't take your call right now. Please call back shortly.`)}<Hangup/>`);

@@ -154,6 +154,22 @@ export function salesTools(r: { id: string; ragToken: string }) {
         },
       },
     },
+    open_demo: {
+      type: "webhook",
+      name: "open_demo",
+      description: "Only for a team member (caller type team): open the demo menu or a demo the team member asks for, by company name or extension. The app checks the caller is on the team.",
+      response_timeout_secs: 10,
+      api_schema: {
+        url: `${base}/open-demo`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: { demo: str("The company name or extension they asked for, or \"menu\" for the demo menu."), call_sid: { type: "string", dynamic_variable: "call_sid" } },
+          required: ["demo"],
+        },
+      },
+    },
     get_personalization_questions: {
       type: "webhook",
       name: "get_personalization_questions",
@@ -284,6 +300,56 @@ export function builderTools(r: { id: string; ragToken: string }) {
   };
 }
 
+/**
+ * Owner mode on a client's own line (src/lib/owner-mode.ts): the owner, recognised by their
+ * number, changes closures, hours, calendar blocks and what the agent says, or hears messages.
+ * The app checks the live call's number itself; the agent's judgement is never trusted for that.
+ */
+export function ownerTools(r: { id: string; ragToken: string }) {
+  const base = `${appUrl()}/api/agent-tools/${r.id}`;
+  const headers = { Authorization: `Bearer ${r.ragToken}` };
+  const callSid = { type: "string", dynamic_variable: "call_sid" };
+  return {
+    owner_request: {
+      type: "webhook",
+      name: "owner_request",
+      description: "Only when the caller is the owner (caller role owner): a change the owner wants (closed days, special or regular hours, blocking calendar time, what to tell callers). First call with confirmed false, read back what it returns, and call again with confirmed true only after they say yes.",
+      response_timeout_secs: 25,
+      api_schema: {
+        url: `${base}/owner-request`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: {
+            request: str("What the owner wants, in their words, with every detail they gave (dates, times, what to tell callers)."),
+            confirmed: { type: "boolean", description: "false to get the read-back; true only after the owner said yes to it." },
+            call_sid: callSid,
+          },
+          required: ["request", "confirmed"],
+        },
+      },
+    },
+    owner_messages: {
+      type: "webhook",
+      name: "owner_messages",
+      description: "Only when the caller is the owner (caller role owner): today's call count and who is waiting for a call back.",
+      response_timeout_secs: 10,
+      api_schema: {
+        url: `${base}/owner-messages`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: { type: "object", properties: { call_sid: callSid }, required: [] },
+      },
+    },
+  };
+}
+
+/** A client's own receptionist answering their line (not ours, not a follow-up/builder/check-in agent). */
+export function isClientInbound(r: { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string }): boolean {
+  return (r.agentType ?? "inbound") === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
+}
+
 /** The weekly owner check-in agent (src/lib/owner-checkin.ts). */
 export function checkinTools(r: { id: string; ragToken: string }) {
   return {
@@ -309,12 +375,12 @@ export function checkinTools(r: { id: string; ragToken: string }) {
   };
 }
 
-type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string };
+type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string; lifecycle: string };
 
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isClientInbound(r) ? ownerTools(r) : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -345,12 +411,14 @@ export function agentConfig(
   const checkin = r.agentType === "checkin"; // the weekly owner check-in: businessName is our company's name too
   const greeting = checkin ? checkinOpening({ name: r.name, companyName: r.businessName }) : builder ? builderOpening({ name: r.name, companyName: r.businessName }) : followup ? followupOpening(r) : r.greeting || defaultGreeting({ businessName: r.businessName, name: r.name });
   const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
-  const dynamicDefaults = house ? { caller_type: "new", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const clientLine = !house && isClientInbound(r as { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string });
+  // Our line: the opening is chosen per call (team members are greeted by name).
+  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "" } : clientLine ? { caller_role: "customer", owner_name: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
       agent: {
-        first_message: greeting,
+        first_message: house ? "{{opening}}" : greeting,
         language: r.language,
         // Follow-up calls start with these filled from the lead; defaults keep test calls working.
         ...(dynamicDefaults ? { dynamic_variables: { dynamic_variable_placeholders: dynamicDefaults } } : {}),

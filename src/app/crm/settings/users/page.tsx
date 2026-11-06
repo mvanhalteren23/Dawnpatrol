@@ -49,6 +49,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                     <div className="min-w-[12rem]">
                       <input name="name" defaultValue={u.name ?? ""} placeholder="Name" className="input py-1" aria-label="Name" />
                       <input name="email" type="email" defaultValue={u.email} className="input mt-1 py-1 text-xs" aria-label="Sign-in email" />
+                      <input name="phone" type="tel" defaultValue={u.phone ?? ""} placeholder="Mobile (Grace knows you)" className="input mt-1 py-1 text-xs" aria-label="Mobile number" />
                       {u.id === session.sub ? <div className="mt-0.5 text-xs text-slate-500">(you)</div> : null}
                     </div>
                     <select name="role" defaultValue={u.role} className="input w-auto py-1" aria-label="Role" disabled={u.disabled}>
@@ -102,6 +103,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         <form action={createUser} className="grid gap-3 md:grid-cols-2">
           <Field label="Name"><input name="name" className="input" placeholder="Jordan Lee" /></Field>
           <Field label="Email (their sign-in)"><input name="email" type="email" required className="input" /></Field>
+          <Field label="Mobile (optional: calling our line from it opens the team menu)"><input name="phone" type="tel" className="input" placeholder="604 555 0100" /></Field>
           <Field label="Role">
             <select name="role" defaultValue="REP" className="input">
               <option value="REP">{ROLE_LABELS.REP}</option>

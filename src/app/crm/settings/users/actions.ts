@@ -4,6 +4,14 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { hashPassword, requireAdmin } from "@/lib/auth";
 import { optStr, str } from "@/lib/utils";
+import { dialableNumber } from "@/lib/twilio";
+
+/** The mobile on a login (E.164), "" to clear it; undefined when it isn't a valid number. */
+function phoneFrom(form: FormData): string | null | undefined {
+  const raw = str(form, "phone").trim();
+  if (!raw) return null;
+  return dialableNumber(raw) ?? undefined;
+}
 
 // Team management (administrators only): add reps/admins, change roles, reset passwords, turn off access.
 
@@ -32,7 +40,9 @@ export async function createUser(form: FormData) {
   if (!role) back({ error: "Pick a role" });
   if (password.length < 10) back({ error: "The temporary password must be at least 10 characters" });
   if (await db.user.findUnique({ where: { email } })) back({ error: `${email} already has a login` });
-  await db.user.create({ data: { email, name: optStr(form, "name"), role, passwordHash: await hashPassword(password) } });
+  const phone = phoneFrom(form);
+  if (phone === undefined) back({ error: "Enter the mobile as a 10-digit North American number" });
+  await db.user.create({ data: { email, name: optStr(form, "name"), role, phone, passwordHash: await hashPassword(password) } });
   back({ notice: `Added ${email}. Send them the sign-in link and temporary password; they can change it under Settings.` });
 }
 
@@ -48,7 +58,9 @@ export async function updateUser(userId: string, form: FormData) {
     if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(email)) back({ error: "Enter a valid email" });
     if (await db.user.findUnique({ where: { email } })) back({ error: `${email} is already a user` });
   }
-  await db.user.update({ where: { id: userId }, data: { role, name: optStr(form, "name"), ...(email && email !== user.email ? { email } : {}) } });
+  const phone = phoneFrom(form);
+  if (phone === undefined) back({ error: "Enter the mobile as a 10-digit North American number" });
+  await db.user.update({ where: { id: userId }, data: { role, name: optStr(form, "name"), phone, ...(email && email !== user.email ? { email } : {}) } });
   if (email && email !== user.email && userId === session.sub) back({ notice: `Saved. Sign in with ${email} from now on.` });
   back({ notice: userId === session.sub && role !== "ADMIN" ? "Saved. You're now a sales rep." : "Saved" });
 }

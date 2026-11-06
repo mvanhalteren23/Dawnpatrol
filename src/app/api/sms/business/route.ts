@@ -5,10 +5,14 @@ import { isHandledReply, isOptIn, isOptOut } from "@/lib/follow-up-rules";
 import { leadAlertNumbers } from "@/lib/follow-up";
 import { after } from "next/server";
 import { handleCustomerText, receptionistForSharedText, textsCustomers } from "@/lib/customer-texts";
+import { handleOwnerText, ownerCaller } from "@/lib/owner-mode";
+import { isClientInbound } from "@/lib/elevenlabs";
 
 // Texts to a business line:
 // - STOP / START from anyone: recorded so the line never texts that number again (Twilio also
 //   handles the carrier reply itself, so we answer with nothing).
+// - From an owner number to their own line: owner updates (closures, hours, calendar blocks, what
+//   the agent says), "messages", and UNDO.
 // - "1" (or "done") from the owner: marks their latest open lead handled.
 // - Anything else from a customer: answered by the text agent (src/lib/customer-texts.ts), which
 //   also handles reminder replies and forwards what needs the owner; without it, forwarded as before.
@@ -34,6 +38,15 @@ export async function POST(req: Request) {
   }
 
   const owners = new Set([...leadAlertNumbers(r), ...(r.ringFirstNumber ? [r.ringFirstNumber] : [])]);
+  // The owner texting their own line: changes, messages and UNDO (src/lib/owner-mode.ts).
+  const ownLine = Boolean(r.businessNumber) && toE164(params.To ?? "") === toE164(r.businessNumber!);
+  if (ownLine && isClientInbound(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null))) {
+    const reply = await handleOwnerText(r, from, body.slice(0, 1000)).catch((e) => {
+      console.error("owner text", e);
+      return "Sorry, that didn't go through. Please try again, or use your portal.";
+    });
+    return xml(twiml(`<Message>${escapeXml(reply.slice(0, 1500))}</Message>`));
+  }
   if (owners.has(from)) {
     if (!isHandledReply(body)) return xml(twiml("")); // the owner's own texts aren't forwarded back to them
     const open = await db.callLog.findFirst({ where: { receptionistId: r.id, followUpNeeded: true, followedUpAt: null }, orderBy: { startedAt: "desc" } });

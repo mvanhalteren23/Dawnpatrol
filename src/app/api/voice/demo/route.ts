@@ -8,7 +8,8 @@ import { appUrl } from "@/lib/app-url";
 import { twilioSignatureOk } from "@/lib/twilio-request";
 import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
-import { callerType, houseReceptionist } from "@/lib/house-line";
+import { callerContext, houseReceptionist } from "@/lib/house-line";
+import { defaultGreeting } from "@/lib/safety-rules";
 import { matchDemoByName } from "@/lib/house-line-rules";
 import { escapeXml } from "@/lib/twilio";
 
@@ -27,9 +28,10 @@ function base() {
   return appUrl();
 }
 
-async function connect(agentId: string, from: string, to: string) {
+async function connect(agentId: string, from: string, to: string, callSid = "") {
   try {
-    return xml(await registerTwilioCall(agentId, from, to));
+    // Every inbound agent's prompt reads these (owner mode is only ever set on a client's own line).
+    return xml(await registerTwilioCall(agentId, from, to, { dynamicVariables: { caller_role: "customer", owner_name: "", call_sid: callSid } }));
   } catch (err) {
     console.error("demo line: register-call failed", err);
     return xml(twiml(`${say("Sorry, the demo is having a technical issue. Please try again in a few minutes.")}<Hangup/>`));
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
     if (step === "menu") return menu("Demo menu. Enter the extension and press pound, or say the company name.", 1);
     const ext = step === "open" ? cleanDigits(url.searchParams.get("ext") ?? "") : cleanDigits(params.Digits);
     const chosen = demos.find((d) => ext && d.demoExtension === ext) ?? (step === "pick" && params.SpeechResult ? matchDemoByName(params.SpeechResult, demos) : null);
-    if (chosen) return connect(chosen.elevenLabsAgentId!, from, to);
+    if (chosen) return connect(chosen.elevenLabsAgentId!, from, to, params.CallSid ?? "");
     if (step === "open" || attempt >= MAX_ATTEMPTS) return xml(twiml(`${say("Sorry, that demo isn't available right now. Goodbye.")}<Hangup/>`));
     return menu("Sorry, I couldn't find that one. Enter the extension, or say the company name.", attempt + 1);
   }
@@ -82,7 +84,7 @@ export async function POST(req: Request) {
     const grace = await houseReceptionist();
     if (grace?.elevenLabsAgentId) {
       try {
-        return xml(await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { caller_type: await callerType(from), call_sid: params.CallSid ?? "" } }));
+        return xml(await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await callerContext(from, grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }))), call_sid: params.CallSid ?? "" } }));
       } catch (err) {
         console.error("demo line: receptionist register-call failed", err);
       }
@@ -108,7 +110,7 @@ export async function POST(req: Request) {
     ? await db.receptionist.findUnique({ where: { demoExtension: digits }, include: { account: { include: { contacts: true } } } })
     : null;
 
-  if (receptionist?.elevenLabsAgentId && internal) return connect(receptionist.elevenLabsAgentId, from, to); // live demo on a builder call (logged there)
+  if (receptionist?.elevenLabsAgentId && internal) return connect(receptionist.elevenLabsAgentId, from, to, params.CallSid ?? ""); // live demo on a builder call (logged there)
   if (internal) return xml(twiml("<Hangup/>"));
   if (receptionist?.elevenLabsAgentId) {
     const account = receptionist.account;
@@ -125,14 +127,14 @@ export async function POST(req: Request) {
         externalId: params.CallSid ? `twilio:${params.CallSid}` : null,
       }).catch((e) => console.warn("demo line activity", e));
     });
-    return connect(receptionist.elevenLabsAgentId, from, to);
+    return connect(receptionist.elevenLabsAgentId, from, to, params.CallSid ?? "");
   }
 
   if (attempt >= MAX_ATTEMPTS) {
     const fallback = config.fallbackReceptionistId
       ? await db.receptionist.findUnique({ where: { id: config.fallbackReceptionistId } })
       : null;
-    if (fallback?.elevenLabsAgentId) return connect(fallback.elevenLabsAgentId, from, to);
+    if (fallback?.elevenLabsAgentId) return connect(fallback.elevenLabsAgentId, from, to, params.CallSid ?? "");
     return xml(twiml(`${say("Sorry, we couldn't find that demo. Please check the extension in your email and call back. Goodbye.")}<Hangup/>`));
   }
 
