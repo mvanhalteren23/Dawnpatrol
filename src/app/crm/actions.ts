@@ -10,7 +10,7 @@ import { canTouch, findDuplicateAccount, OwnershipError, touchAccount } from "@/
 import { STAGES, isClientStage, type Stage } from "@/lib/constants";
 import { googleConnection } from "@/lib/google";
 import { addDays, joinTags, normalizeDomain, optInt, optStr, parseMoneyToCents, safeJson, str, websiteUrl } from "@/lib/utils";
-import { changeStage, recordActivity, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
+import { changeStage, recordActivity, sendPlainEmail, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
 import { ensureAccountFolders } from "@/lib/drive";
 import { importCsvText, importRows } from "@/lib/importer";
 import {
@@ -1485,4 +1485,48 @@ export async function deleteReceptionist(receptionistId: string, form: FormData)
     unstable_rethrow(err);
     back("/crm/receptionists", { error: errMsg(err) });
   }
+}
+
+
+// --- Client knowledge-base review links (src/lib/kb-review.ts) ---------------------------
+
+/** A link the client opens (no login) to review and complete the knowledge base; optionally emailed. */
+export async function createKbReviewLink(receptionistId: string, form: FormData) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, include: { account: { include: { contacts: { where: { email: { not: null } }, orderBy: { isPrimary: "desc" }, take: 1 } } } } });
+  const path = `/crm/receptionists/${receptionistId}`;
+  await guard(session, r.accountId, path);
+  const to = str(form, "email").trim().toLowerCase();
+  if (to && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(to)) back(path, { error: "Enter a valid email, or leave it empty to just copy the link" });
+  const { createReviewLink, reviewUrl } = await import("@/lib/kb-review");
+  const link = await createReviewLink(receptionistId, { by: session.email, sentTo: to || null });
+  const url = reviewUrl(link.token);
+  if (to) {
+    const contact = r.account.contacts.find((c) => c.email?.toLowerCase() === to);
+    const first = contact?.firstName?.trim();
+    const company = await companyName();
+    const mine = await googleConnection(session.sub);
+    try {
+      await sendPlainEmail({
+        to,
+        subject: `Quick review: what your AI receptionist knows about ${r.businessName}`,
+        body: `Hi${first ? ` ${first}` : ""},\n\nHere's everything ${r.name}, your AI receptionist, currently knows about ${r.businessName}. Could you take about 10 minutes to fix anything that's wrong, fill in the few gaps, and add anything customers often ask?\n\n${url}\n\nEach change saves as you go, and there's no login. The link is private to you and works for 30 days.\n\nThanks,\n${session.email.split("@")[0]}\n${company}`,
+        ...(mine.connected ? { as: session.sub } : {}),
+      });
+    } catch (err) {
+      unstable_rethrow(err);
+      back(path, { error: `The link was created but the email didn't send (${errMsg(err)}). Copy the link below instead.` });
+    }
+    await recordActivity({ accountId: r.accountId, type: "EMAIL", direction: "OUTBOUND", source: "system", subject: "Knowledge base review link sent", body: `Sent to ${to}: ${url}`, createdById: session.sub });
+    back(path, { notice: `Review link emailed to ${to}` });
+  }
+  back(path, { notice: "Review link created: copy it below" });
+}
+
+export async function revokeKbReviewLink(receptionistId: string, linkId: string) {
+  const session = await requireStaff();
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { accountId: true } });
+  await guard(session, r.accountId, `/crm/receptionists/${receptionistId}`);
+  await db.kbReviewLink.updateMany({ where: { id: linkId, receptionistId }, data: { revokedAt: new Date() } });
+  back(`/crm/receptionists/${receptionistId}`, { notice: "Link turned off" });
 }

@@ -361,6 +361,7 @@ model Receptionist {
   checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
   checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
   ownerUpdates          OwnerUpdate[]
+  reviewLinks           KbReviewLink[]
   // Call protections (src/lib/call-guard.ts): limits per line, editable in the CRM.
   maxCallMinutes        Int            @default(10) // ElevenLabs ends the call at this length
   silenceHangupSeconds  Int            @default(30) // ends the call after this long with nobody speaking
@@ -835,4 +836,24 @@ model BlockedNumber {
   reason    String   @default("")
   createdBy String?
   createdAt DateTime @default(now())
+}
+
+// A link a client opens (no login) to review and complete their receptionist's knowledge base
+// before a demo or during onboarding. The unguessable token is the access check.
+model KbReviewLink {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  token          String       @unique
+  sentTo         String? // email it was sent to, if any
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastOpenedAt   DateTime?
+  changes        Int          @default(0)
+  finishedAt     DateTime?
+  finishNote     String       @default("")
+
+  @@index([receptionistId, createdAt])
 }

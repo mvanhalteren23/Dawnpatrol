@@ -23,7 +23,7 @@ import { syncCallsThrottled } from "@/lib/call-sync";
 import { FollowupSettingsCard, WebsiteFormCard } from "@/components/FollowupCards";
 import { LeadList } from "@/components/LeadList";
 import { followupOpening } from "@/lib/followup-rules";
-import { applyTemplateAction, resetCallGuard, saveCallGuard, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
+import { applyTemplateAction, createKbReviewLink, revokeKbReviewLink, resetCallGuard, saveCallGuard, draftKbFromWebsite, getBusinessLine, previewOpenings, promoteDemo, removeBusinessLine, reviveDemoAction, saveRingSettings, rotateRagToken, syncToElevenLabs, updateBooking, updateReceptionist } from "../../actions";
 import { demoExpiry } from "@/lib/agent-lifecycle";
 import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
@@ -49,6 +49,11 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const leads = followup ? await db.lead.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 30 }) : [];
   const kbRun = await db.researchRun.findFirst({ where: { kind: "KB_DRAFT", accountId: r.accountId }, orderBy: { createdAt: "desc" } });
   const app = appUrl();
+  const [reviewLinks, reviewContact] = await Promise.all([
+    db.kbReviewLink.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 3 }),
+    db.contact.findFirst({ where: { accountId: r.accountId, email: { not: null } }, orderBy: { isPrimary: "desc" }, select: { email: true } }),
+  ]);
+  const reviewEmail = reviewContact?.email ?? null;
   const returnTo = `/crm/receptionists/${r.id}`;
   // The Google account this receptionist books into: a person's own, or the company account.
   const google = await googleConnection(r.googleUserId);
@@ -196,6 +201,32 @@ export default async function ReceptionistPage({ params, searchParams }: { param
 
           {isAdmin && !r.demoExtension && !followup ? <KeepNumberCard r={r} returnTo={returnTo} admin /> : null}
           {!r.demoExtension && !followup ? <Link href={`/portal/reports?account=${r.accountId}`} className="btn-secondary w-fit">Client&apos;s call reports →</Link> : null}
+
+          <div className="card space-y-3 text-sm">
+            <h2>Client review link</h2>
+            <p className="text-xs text-slate-500">Send the client a private link (no login) to check and complete {r.name}&apos;s knowledge: fill the &ldquo;TO FILL IN&rdquo; gaps, confirm the &ldquo;(assumed)&rdquo; answers, keep or remove website drafts, edit anything, and add what&apos;s missing. Changes save as they go and appear in History (undo any of them). Lasts 30 days.</p>
+            <form action={createKbReviewLink.bind(null, r.id)} className="flex flex-wrap gap-2">
+              <input name="email" type="email" defaultValue={reviewEmail ?? ""} placeholder="Client's email (or leave empty to copy the link)" className="input min-w-[16rem] flex-1" aria-label="Client's email" />
+              <SubmitButton className="btn whitespace-nowrap" pendingText="…">Create link</SubmitButton>
+            </form>
+            {reviewLinks.length ? (
+              <ul className="space-y-2">
+                {reviewLinks.map((l) => {
+                  const state = l.revokedAt ? "off" : l.expiresAt < new Date() ? "expired" : "active";
+                  return (
+                    <li key={l.id} className="rounded-[10px] border border-slate-200 p-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                        <span>{formatDate(l.createdAt, true)}{l.sentTo ? ` · emailed to ${l.sentTo}` : ""} · {l.lastOpenedAt ? `opened ${formatDate(l.lastOpenedAt, true)}` : "not opened yet"} · {l.changes} change{l.changes === 1 ? "" : "s"}{l.finishedAt ? " · finished" : ""}</span>
+                        <span className="flex items-center gap-2"><Badge className={state === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}>{state}</Badge>{state === "active" ? <form action={revokeKbReviewLink.bind(null, r.id, l.id)}><button className="underline">Turn off</button></form> : null}</span>
+                      </div>
+                      {state === "active" ? <input readOnly value={`${app}/review/${l.token}`} className="input mt-1 py-1 text-xs" aria-label="Review link" /> : null}
+                      {l.finishNote ? <p className="mt-1 text-xs">Client&apos;s note: &ldquo;{l.finishNote}&rdquo;</p> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
 
           <form action={saveCallGuard.bind(null, r.id)} className="card space-y-3 text-sm">
             <div className="flex items-center justify-between"><h2>Call protection</h2>{r.guardTrippedAt ? <Badge className="bg-red-100 text-red-800">paused: voicemail</Badge> : <Badge className="bg-emerald-100 text-emerald-800">normal</Badge>}</div>
