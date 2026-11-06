@@ -67,7 +67,7 @@ export function SiteFooter({ account }: { account: { href: string; label: string
         </nav>
       </div>
       <div className="mx-auto mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div style={{ letterSpacing: "0.15em" }} className="font-condensed-700 mb-3 text-xs uppercase text-[#D8B47A]">Serving British Columbia</div>
+        <div style={{ letterSpacing: "0.15em" }} className="font-condensed-700 mb-3 text-xs uppercase text-[#D8B47A]">Serving businesses across Canada</div>
         <div className="grid gap-4 text-xs sm:grid-cols-3">
           {Object.values(INDUSTRIES).map((i) => (
             <ul key={i.id} className="space-y-1">

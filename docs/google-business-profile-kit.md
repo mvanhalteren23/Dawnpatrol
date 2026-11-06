@@ -10,15 +10,15 @@ Everything to paste into business.google.com, in order. Prices match the website
 | Primary category | Telephone answering service |
 | Additional categories | Software company · Marketing agency · Business management consultant |
 | Customer location? | **No** (service-area business; address hidden) |
-| Service areas | Sunshine Coast · Gibsons · Sechelt · Vancouver · North Vancouver · Burnaby · Surrey · Richmond · Squamish · Whistler · Victoria · Kelowna |
+| Service areas | Squamish · Whistler · Pemberton · North Vancouver · West Vancouver · Vancouver · Burnaby · Richmond · Sunshine Coast · Surrey (Google wants areas within about 2 hours of your base; Toronto, Calgary and the rest of Canada are covered by the website's pages instead) |
 | Phone | Your demo line (Grace answers 24/7) |
 | Website | `https://www.headabovedigital.com/?utm_source=google&utm_medium=gbp` |
 | Appointments link | `https://www.headabovedigital.com/?utm_source=google&utm_medium=gbp&utm_campaign=book` (the home page; "Book a demo" is at the top) |
 | Hours | Open 24 hours (every day) |
 
-## 2. Description (paste as is; 668 of 750 characters)
+## 2. Description (paste as is; 697 of 750 characters)
 
-> Head Above Digital builds AI receptionists for BC contractors, auto repair shops and local storefronts. Your receptionist answers every call in your business name, 24 hours a day, books appointments straight into your calendar, answers common questions from what you've told it, and texts you a summary of every call. Website enquiries can be called back within minutes with our follow-up agent. Keep your existing number, change your hours or closures with a quick call or text, and see every call in your own portal. Plans start at CA$139 a month with 200 minutes included and no setup fee. Based on the Sunshine Coast and serving businesses across British Columbia.
+> Head Above Digital builds AI receptionists for Canadian contractors, auto repair shops and local storefronts. Your receptionist answers every call in your business name, 24 hours a day, books appointments straight into your calendar, answers common questions from what you've told it, and texts you a summary of every call. Website enquiries can be called back within minutes with our follow-up agent. Keep your existing number, change your hours or closures with a quick call or text, and see every call in your own portal. Plans start at CA$139 a month with 200 minutes included and no setup fee. Based in Squamish, BC and serving businesses across Canada, from Vancouver to Calgary and Toronto.
 
 ## 3. Services (add each, with its description)
 
@@ -65,17 +65,17 @@ Don't change the name, category or address while verification is pending.
 1. **Offer:** "Hear an AI receptionist answer as your business. Book a free demo and we'll build one with your name, services and hours." Button: Book.
 2. **Tip:** "3 calls contractors miss every winter: the burst pipe at 7pm, the Saturday estimate, the second quote. An AI receptionist answers all three on the first ring." Button: Learn more → /contractors
 3. **How it works:** "Keep your number. Forward the calls you miss, and every one is answered, booked and texted to you." Button: Learn more → /guides/keep-your-business-number
-4. **Local:** "Based on the Sunshine Coast. When you're on the ferry, your calls still get answered." Button: Learn more → /contractors/sunshine-coast
+4. **Local:** "Based in Squamish. When you're out of service on the Sea-to-Sky, your calls still get answered." Button: Learn more → /contractors/squamish
 
 ## 8. Review request (text to each happy client)
 
-> Hi {first name}, thanks for trusting us with your phones! If your receptionist has been helping, would you leave us a quick Google review? Mentioning your trade and town helps other BC businesses find us: {review link}. Thank you! Matt, Head Above Digital
+> Hi {first name}, thanks for trusting us with your phones! If your receptionist has been helping, would you leave us a quick Google review? Mentioning your trade and town helps other businesses find us: {review link}. Thank you! Matt, Head Above Digital
 
 Never write reviews for clients or offer anything for a review.
 
 ## 9. Same details everywhere (copy from section 1)
 
-Bing Places (import from Google) · Apple Business Connect · Yelp · BBB · yp.ca · LinkedIn company page · Facebook page · Clutch.co · GoodFirms · Sunshine Coast / Gibsons / Sechelt chambers of commerce
+Bing Places (import from Google) · Apple Business Connect · Yelp · BBB · yp.ca · LinkedIn company page · Facebook page · Clutch.co · GoodFirms · Squamish Chamber of Commerce · Tourism/trade associations along the Sea-to-Sky
 
 ## 10. Google Search Console
 

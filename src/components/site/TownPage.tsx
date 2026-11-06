@@ -4,7 +4,7 @@ import { PRICES, PRICING, type TradeKey } from "@/lib/site-content";
 import { faqJsonLd, jsonLdScript, townBySlug, townPage } from "@/lib/seo";
 import { IndustryPage } from "./IndustryPage";
 
-// A trade's page for one BC town (e.g. /contractors/vancouver): the trade page with local copy.
+// A trade's page for one town (e.g. /contractors/vancouver): the trade page with local copy.
 
 export async function townMetadata(trade: TradeKey, params: Promise<{ town: string }>): Promise<Metadata> {
   const town = townBySlug((await params).town);
@@ -19,7 +19,7 @@ export async function TownPage({ trade, params }: { trade: TradeKey; params: Pro
   const p = townPage(trade, town);
   const faq = [
     town.faq,
-    { q: `How much does it cost for ${p.noun} ${town.where}?`, a: `The same everywhere in BC: CA$${PRICES.CAD.monthly} a month plus GST/HST, with ${PRICING.includedMinutes} minutes included and no setup fee. ${PRICING.minimumMonths}-month minimum, then cancel any time.` },
+    { q: `How much does it cost for ${p.noun} ${town.where}?`, a: `The same across Canada: CA$${PRICES.CAD.monthly} a month plus GST/HST, with ${PRICING.includedMinutes} minutes included and no setup fee. ${PRICING.minimumMonths}-month minimum, then cancel any time.` },
   ];
   return (
     <>

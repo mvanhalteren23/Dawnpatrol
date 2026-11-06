@@ -12,23 +12,33 @@ export const BUSINESS = {
   email: "team@headabovedigital.com",
   region: "BC",
   country: "CA",
-  locality: "Sunshine Coast",
-  description: "AI receptionists for BC trades, auto repair shops and local storefronts: every call answered 24/7, appointments booked into your calendar, and every lead texted to you.",
+  locality: "Squamish",
+  description: "AI receptionists for Canadian trades, auto repair shops and local storefronts: every call answered 24/7, appointments booked into your calendar, and every lead texted to you.",
 } as const;
 
 export type Town = { slug: string; name: string; where: string; region: string; areaCodes: string; intro: string; local: string; faq: { q: string; a: string } };
 
-/** BC towns with their own page per trade. Each says something true and specific about the place. */
+/** Towns across Canada with their own page per trade (Squamish, our base, first). Each says something true and specific about the place. */
 export const TOWNS: Town[] = [
+  {
+    slug: "squamish",
+    where: "in Squamish and the Sea-to-Sky",
+    name: "Squamish and the Sea-to-Sky",
+    region: "Squamish, Whistler, Pemberton and Britannia Beach",
+    areaCodes: "604 and 778",
+    intro: "Head Above Digital is based in Squamish, so we know how work runs along the Sea-to-Sky: a busy season, a rush of second homes and renovations, and owners covering a long stretch of highway.",
+    local: "When the phone rings during the rush, or you're out of service on the highway to Whistler, your receptionist handles it: it answers questions from your knowledge base, books the job and flags anything urgent to your cell.",
+    faq: { q: "Do you work with Sea-to-Sky businesses in person?", a: "Yes. We're based in Squamish, so setup can be done in person or by phone, whichever suits you." },
+  },
   {
     slug: "sunshine-coast",
     where: "on the Sunshine Coast",
     name: "the Sunshine Coast",
     region: "Gibsons, Sechelt, Roberts Creek and Pender Harbour",
     areaCodes: "604 and 778",
-    intro: "Head Above Digital is based on the Sunshine Coast, so we know how work runs here: one crew covering Gibsons to Pender Harbour, and ferry days that eat half an afternoon.",
+    intro: "On the Sunshine Coast, one crew often covers everything from Gibsons to Pender Harbour, and a ferry day can eat half an afternoon.",
     local: "When you're on the Langdale ferry or out of service on the highway past Sechelt, calls still get answered. Your receptionist books the job, takes the address and texts it to you, so you can call back once you're off the boat.",
-    faq: { q: "Do you work with businesses on the Sunshine Coast in person?", a: "Yes. We're local, so setup can be done in person or by phone, whichever suits you." },
+    faq: { q: "Do you work with businesses on the Sunshine Coast?", a: "Yes. We're just up the coast in Squamish, so setup can be done by phone, video or in person." },
   },
   {
     slug: "vancouver",
@@ -41,6 +51,26 @@ export const TOWNS: Town[] = [
     faq: { q: "Can I keep my 604 number?", a: "Yes. You can forward your current number to your receptionist, or move it over to us. Either way callers dial the number they already know." },
   },
   {
+    slug: "toronto",
+    where: "in Toronto and the GTA",
+    name: "Toronto and the GTA",
+    region: "Toronto, Mississauga, Brampton, Vaughan and Markham",
+    areaCodes: "416, 647, 437, 905, 289 and 365",
+    intro: "In the GTA, a caller who hits voicemail has dozens of other businesses a tap away, and owners lose hours a day in traffic on the 401 and the DVP between jobs.",
+    local: "Your receptionist answers every call in your business name while you're driving or on a job, books the visit and texts you the address, so the job doesn't go to the next result on Google.",
+    faq: { q: "Do you work with Ontario businesses?", a: "Yes. We set up and support businesses across Canada by phone and video, and Ontario clients are billed in Canadian dollars with HST." },
+  },
+  {
+    slug: "calgary",
+    where: "in Calgary",
+    name: "Calgary",
+    region: "Calgary, Airdrie, Cochrane, Chestermere and Okotoks",
+    areaCodes: "403, 587, 825 and 368",
+    intro: "Calgary's weather keeps the phones busy: one summer hailstorm or a cold snap can bring a week's worth of calls in an afternoon, for roofers, auto body shops and furnace repair alike.",
+    local: "When the calls pile up after a storm, your receptionist answers every one at once, takes the details and books the inspections, so you work through a full calendar instead of a full voicemail.",
+    faq: { q: "Can it handle a rush of calls at the same time?", a: "Yes. It answers every call at once, so nobody gets a busy signal, and every caller is booked or taken as a message." },
+  },
+  {
     slug: "surrey",
     where: "in Surrey",
     name: "Surrey",
@@ -49,16 +79,6 @@ export const TOWNS: Town[] = [
     intro: "Surrey is one of the fastest-growing cities in BC, and new homeowners and new businesses mean a steady stream of first-time callers looking for someone they can trust.",
     local: "First impressions matter when a caller has never heard of you. Your receptionist answers on the first ring, sounds like your own front desk, and books the visit before they try someone else.",
     faq: { q: "Can callers book an estimate on the call?", a: "Yes. Connect your Google Calendar and the receptionist offers real open times and books them, then texts both of you the details." },
-  },
-  {
-    slug: "squamish",
-    where: "in Squamish and the Sea-to-Sky",
-    name: "Squamish and the Sea-to-Sky",
-    region: "Squamish, Whistler and Pemberton",
-    areaCodes: "604 and 778",
-    intro: "Along the Sea-to-Sky, work comes in waves: a busy season, a rush of second homes and renovations, and owners covering a long stretch of highway.",
-    local: "When the phone rings during the rush, your receptionist handles it: it answers questions from your knowledge base, books the job and flags anything urgent to your cell.",
-    faq: { q: "What happens with an urgent call?", a: "You decide the rules. Urgent calls can be transferred to your cell or texted to you straight away, and everything else is booked or taken as a message." },
   },
   {
     slug: "victoria",
@@ -136,7 +156,7 @@ export function businessJsonLd(o: { telephone: string | null }) {
     ...(o.telephone ? { telephone: o.telephone } : {}),
     description: BUSINESS.description,
     address: { "@type": "PostalAddress", addressLocality: BUSINESS.locality, addressRegion: BUSINESS.region, addressCountry: BUSINESS.country },
-    areaServed: [{ "@type": "AdministrativeArea", name: "British Columbia" }, ...TOWNS.map((t) => ({ "@type": "Place", name: t.name.replace(/^the /, "") }))],
+    areaServed: [{ "@type": "Country", name: "Canada" }, ...TOWNS.map((t) => ({ "@type": "Place", name: t.name.replace(/^the /, "") }))],
     openingHoursSpecification: { "@type": "OpeningHoursSpecification", dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], opens: "00:00", closes: "23:59" },
     priceRange: `CA$${PRICES.CAD.monthly}+/month`,
     makesOffer: offers,
@@ -161,7 +181,7 @@ const m = PRICES.CAD.monthly;
 export const GUIDES: Guide[] = [
   {
     slug: "ai-receptionist-vs-answering-service",
-    title: "AI Receptionist vs Answering Service: Which Is Right for a Small BC Business?",
+    title: "AI Receptionist vs Answering Service: Which Is Right for a Small Canadian Business?",
     description: "How an AI receptionist compares with a traditional answering service on cost, hours, booking and what callers hear.",
     updated: "2026-11-06",
     sections: [

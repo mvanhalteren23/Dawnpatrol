@@ -4,8 +4,8 @@ import { GUIDES } from "@/lib/seo";
 import { Eyebrow } from "@/components/site/Sections";
 
 export const metadata: Metadata = {
-  title: "Guides for BC Small Business Owners | Head Above Digital",
-  description: "Plain answers on phone answering, AI receptionists, keeping your number and what a receptionist really costs a small BC business.",
+  title: "Guides for Canadian Small Business Owners | Head Above Digital",
+  description: "Plain answers on phone answering, AI receptionists, keeping your number and what a receptionist really costs a small business.",
   alternates: { canonical: "/guides" },
 };
 
