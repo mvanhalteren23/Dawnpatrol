@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { TOWNS } from "@/lib/seo";
 import { usePathname } from "next/navigation";
 import { INDUSTRIES, type TradeKey } from "@/lib/site-content";
 import { BrandLogo } from "./BrandLogo";
@@ -65,17 +64,6 @@ export function SiteFooter({ account }: { account: { href: string; label: string
           <Link href="/guides" className="text-[#EFE6D4] hover:text-[#D8B47A] hover:no-underline">Guides</Link>
           <Link href={account.href} className="text-[#EFE6D4] hover:text-[#D8B47A] hover:no-underline">{account.label}</Link>
         </nav>
-      </div>
-      <div className="mx-auto mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div style={{ letterSpacing: "0.15em" }} className="font-condensed-700 mb-3 text-xs uppercase text-[#D8B47A]">Serving businesses across Canada</div>
-        <div className="grid gap-4 text-xs sm:grid-cols-3">
-          {Object.values(INDUSTRIES).map((i) => (
-            <ul key={i.id} className="space-y-1">
-              <li className="font-semibold text-[#EFE6D4]">{i.tabLabel}</li>
-              {TOWNS.map((t) => <li key={t.slug}><Link href={`${i.path}/${t.slug}`} className="text-[#EFE6D4]/70 hover:text-[#D8B47A] hover:no-underline">{t.name.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase())}</Link></li>)}
-            </ul>
-          ))}
-        </div>
       </div>
     </footer>
   );
