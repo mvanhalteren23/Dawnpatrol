@@ -59,6 +59,10 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     await recordUnanswered(full, call, collected).catch((e) => console.error("open questions failed", e));
     await sendLeadAlert(full, call).catch((e) => console.error("lead alert failed", e));
     if (!full.demoExtension) await checkMinuteUsage(full).catch((e) => console.error("minute usage check failed", e));
+    if (full.lifecycle === "production" && !full.bookingAddsToCrm) {
+      const { billExtraMinutesNow } = await import("./billing");
+      await billExtraMinutesNow(full.accountId).catch((e) => console.error("extra minutes charge failed", e));
+    }
   }
   return call;
 }

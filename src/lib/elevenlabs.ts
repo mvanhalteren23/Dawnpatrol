@@ -273,7 +273,8 @@ async function mergedPlatformSettings(agentId: string | null, followup = false) 
       },
     },
     // Shorter is fine (someone chose it); unlimited (-1) or longer becomes 90 days.
-    privacy: { ...(current.privacy ?? {}), retention_days: retention > 0 && retention <= RETENTION_DAYS ? retention : RETENTION_DAYS },
+    // Calls aren't recorded: no call audio is kept, only the transcript and summary (deleted after 90 days).
+    privacy: { ...(current.privacy ?? {}), record_voice: false, retention_days: retention > 0 && retention <= RETENTION_DAYS ? retention : RETENTION_DAYS },
   };
 }
 

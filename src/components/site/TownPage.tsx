@@ -19,7 +19,7 @@ export async function TownPage({ trade, params }: { trade: TradeKey; params: Pro
   const p = townPage(trade, town);
   const faq = [
     town.faq,
-    { q: `How much does it cost for ${p.noun} ${town.where}?`, a: `The same across Canada: CA$${PRICES.CAD.monthly} a month plus GST/HST, with ${PRICING.includedMinutes} minutes included and no setup fee. ${PRICING.minimumMonths}-month minimum, then cancel any time.` },
+    { q: `How much does it cost for ${p.noun} ${town.where}?`, a: `The same across Canada: CA$${PRICES.CAD.monthly} a month plus GST/HST, with ${PRICING.includedMinutes} minutes included and no setup fee. No contract: cancel any time.` },
   ];
   return (
     <>

@@ -275,7 +275,7 @@ export const GUIDES: Guide[] = [
     ],
     faq: [
       { q: "Is the AI receptionist a tax-deductible business expense?", a: "Business software and services are generally deductible business expenses in Canada. Check with your accountant for your situation." },
-      { q: "Is there a contract?", a: `Plans have a ${PRICING.minimumMonths}-month minimum term, then you can cancel any time.` },
+      { q: "Is there a contract?", a: "No. You're billed monthly from the day you sign up and can cancel any time; it ends at the end of the month you've paid for." },
     ],
   },
 ];

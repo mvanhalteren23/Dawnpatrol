@@ -11,7 +11,7 @@ export const BRAND = {
   signal: "#A8401F",
 } as const;
 
-export const PRICING = { includedMinutes: 200, blockMinutes: 100, minimumMonths: 3 } as const;
+export const PRICING = { includedMinutes: 200, blockMinutes: 100, minimumMonths: 0 } as const; // month to month, cancel any time
 
 /** Prices by currency: Canadian businesses pay in CAD, US businesses in USD (website toggle). */
 export type Currency = "CAD" | "USD";

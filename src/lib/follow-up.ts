@@ -123,7 +123,7 @@ export async function checkMinuteUsage(r: Receptionist, now = new Date()) {
     await sendPlainEmail({
       to,
       subject: `${account?.name ?? r.businessName} has used ${minutes} of ${cap} minutes this month`,
-      body: `${r.name} (${r.businessName}) has used ${minutes} of the ${cap} minutes in their plan for ${month.label} (${Math.round((minutes / cap) * 100)}%).\n\nMinutes over ${cap} are billed automatically in 100-minute blocks on their next invoice. Worth a call about their plan before the month runs out.\n\n${appBase()}/crm/accounts/${r.accountId}`,
+      body: `${r.name} (${r.businessName}) has used ${minutes} of the ${cap} minutes in their plan for ${month.label} (${Math.round((minutes / cap) * 100)}%).\n\nMinutes over ${cap} are charged automatically in 100-minute blocks as each block is used. Worth a call about their plan before the month runs out.\n\n${appBase()}/crm/accounts/${r.accountId}`,
     }).catch((e) => console.warn("minute alert email", e));
   }
   return { minutes, cap, alerted: true };

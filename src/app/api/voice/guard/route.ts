@@ -31,5 +31,11 @@ export async function POST(req: Request) {
     update: {},
   });
   await sendLeadAlert(r, call).catch((e) => console.error("voicemail alert failed", e));
+  // Calls aren't recorded: once the voicemail is transcribed, its audio is deleted at Twilio.
+  const recordingSid = params.RecordingSid ?? "";
+  if (/^RE[0-9a-f]{32}$/i.test(recordingSid)) {
+    const { twilioApi } = await import("@/lib/twilio");
+    await twilioApi(`/Recordings/${recordingSid}.json`, { method: "DELETE" }).catch((e) => console.warn("voicemail audio delete", e));
+  }
   return xml(twiml(""));
 }

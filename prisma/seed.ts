@@ -34,7 +34,7 @@ async function main() {
       priceCents: 13900,
       setupFeeCents: 0,
       includedMinutes: 200,
-      minimumMonths: 3,
+      minimumMonths: 0, // month to month
       features: "24/7 call answering\nBooks into your Google Calendar\nUrgent calls transferred to you\nText or email summaries to callers\nKeep your existing number\nClient portal with weekly and monthly reports\nExtra minutes: $25 per 100 minutes",
     },
   ];

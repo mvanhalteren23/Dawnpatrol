@@ -17,7 +17,7 @@ export default function Terms() {
     <LegalPage
       title="Terms of Service"
       updated={UPDATED}
-      intro={<p>These terms apply to Head Above Digital&apos;s AI receptionist service, the client portal and our website. By signing up for or using the service, your business agrees to them. If you have a separate signed agreement with us, that agreement takes priority where it differs.</p>}
+      intro={<p>These terms apply to the AI receptionist service, client portal and website of Luna VR Inc., doing business as Head Above Digital (&ldquo;we&rdquo;). Your business agrees to them by ticking &ldquo;I agree&rdquo; at checkout or by using the service. If you have a separate signed agreement with us, it takes priority where it differs.</p>}
     >
       <h2>The service</h2>
       <p>We set up and run an AI receptionist for your business. It answers your calls and texts, answers questions from the information you give us, books appointments, takes messages, and sends you and your customers confirmations and summaries. You can see your calls, bookings and settings in your client portal.</p>
@@ -33,14 +33,14 @@ export default function Terms() {
       <ul>
         <li>Plans are billed monthly in advance, in Canadian dollars (or US dollars for US businesses). Prices start at CA${PRICES.CAD.monthly} (US${PRICES.USD.monthly}) a month with {PRICING.includedMinutes} call minutes included, and there is no setup fee.</li>
         <li>Canadian businesses are charged GST or HST as applicable.</li>
-        <li>Minutes over your plan are billed in {PRICING.blockMinutes}-minute blocks on your next invoice. We let you know when you reach 75% of your minutes.</li>
-        <li>Plans have a {PRICING.minimumMonths}-month minimum term. After that, you can cancel at any time from your portal, effective at the end of your current billing period.</li>
+        <li>Minutes over your plan are charged in {PRICING.blockMinutes}-minute blocks as each block is used, to the card on file. We let you know when you reach 75% of your minutes.</li>
+        <li>There is no minimum term. You&apos;re billed monthly from the day you sign up, and you can cancel any time from your portal. Your service continues until the end of the month you&apos;ve paid for, so nothing stops abruptly; there are no refunds for partial months.</li>
         <li>Add-ons, such as the website follow-up agent, are billed monthly with your plan.</li>
       </ul>
 
       <h2>Your responsibilities</h2>
       <ul>
-        <li><b>Laws that apply to your calls and messages.</b> You are responsible for complying with the laws that apply to your business, including any requirement to tell callers that calls are recorded or handled by an AI system, and consent rules for texts and calls to your customers. We give you settings to help, but you decide how they are used.</li>
+        <li><b>Laws that apply to your calls and messages.</b> You are responsible for complying with the laws that apply to your business, including any requirement to tell callers they are speaking with an AI system, and consent rules for texts and calls to your customers. We give you settings to help, but you decide how they are used. Calls are not recorded: we keep a transcript and summary of each call, and voicemail audio is deleted once it is transcribed.</li>
         <li><b>Acceptable use.</b> Don&apos;t use the service for anything unlawful, deceptive, or harassing; for unsolicited marketing calls or texts; or for emergency services. The receptionist tells callers in danger to call 911 and is not a substitute for emergency services.</li>
         <li>Don&apos;t try to misuse, overload or get around the protections on the service, including the limits on calls and minutes.</li>
       </ul>
@@ -58,7 +58,7 @@ export default function Terms() {
       <p>We work to keep the service running around the clock but can&apos;t promise it will never be interrupted; phone networks and the providers we rely on can have outages. We may improve or change features over time and will tell you about significant changes. We may update these terms; we&apos;ll post the new version here and tell you about material changes.</p>
 
       <h2>Liability</h2>
-      <p>To the extent the law allows, the service is provided &ldquo;as is&rdquo;. We are not liable for indirect or consequential losses such as lost profits or missed opportunities, and our total liability for any claim is limited to the fees you paid us in the three months before the claim arose.</p>
+      <p>To the extent the law allows, the service is provided &ldquo;as is&rdquo;. We are not liable for indirect or consequential losses such as lost profits or missed opportunities, and our total liability for all claims is limited to the fees you paid us in the 12 months before the claim arose.</p>
 
       <h2>Suspension and ending</h2>
       <p>We may suspend or end the service if fees are unpaid or these terms are seriously breached, after giving notice where reasonable. You can cancel as described above.</p>
@@ -67,7 +67,7 @@ export default function Terms() {
       <p>These terms are governed by the laws of British Columbia and the federal laws of Canada that apply there.</p>
 
       <h2>Contact</h2>
-      <p>Head Above Digital, Squamish, British Columbia, Canada · <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+      <p>Luna VR Inc., doing business as Head Above Digital, Squamish, British Columbia, Canada · <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
     </LegalPage>
   );
 }

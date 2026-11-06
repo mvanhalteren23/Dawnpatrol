@@ -19,7 +19,7 @@ export default function Privacy() {
       intro={<p>Head Above Digital (&ldquo;we&rdquo;, &ldquo;us&rdquo;) builds and runs AI receptionists for small businesses in Canada and the United States. This policy explains what information we handle, why, who we share it with, and the choices you have. It covers our website, our client portal and CRM, and the AI receptionists we operate for our clients.</p>}
     >
       <h2>Who we are</h2>
-      <p>Head Above Digital is based in Squamish, British Columbia, Canada. For any privacy question or request, email <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
+      <p>Head Above Digital is a business name of Luna VR Inc., based in Squamish, British Columbia, Canada. For any privacy question or request, email <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
 
       <h2>Information we handle</h2>
       <h3>Visitors to our website</h3>
@@ -34,7 +34,7 @@ export default function Privacy() {
         <li>Settings you choose, such as your business hours, booking rules, branding and notification preferences.</li>
       </ul>
       <h3>People who call or text our clients&apos; businesses</h3>
-      <p>When someone calls or texts a business that uses our service, we process the call or message <b>on that business&apos;s behalf</b>. This can include the caller&apos;s phone number, what they say (a transcript and a summary of the call), the details they give (such as name, email and the reason for calling), any appointment they book, and text messages they send. The business decides how this information is used. Callers with questions about their information should contact the business they called; we will help that business respond.</p>
+      <p>When someone calls or texts a business that uses our service, we process the call or message <b>on that business&apos;s behalf</b>. Calls are not recorded: we keep a written transcript and summary, not the audio, and if a caller leaves a voicemail its audio is deleted once it has been transcribed. This can include the caller&apos;s phone number, what they say (a transcript and a summary of the call), the details they give (such as name, email and the reason for calling), any appointment they book, and text messages they send. The business decides how this information is used. Callers with questions about their information should contact the business they called; we will help that business respond.</p>
 
       <h2>How we use information</h2>
       <ul>
@@ -86,7 +86,7 @@ export default function Privacy() {
       <p>We may update this policy. We will post the new version here with a new date, and tell clients about significant changes.</p>
 
       <h2>Contact</h2>
-      <p>Head Above Digital, Squamish, British Columbia, Canada · <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+      <p>Luna VR Inc., doing business as Head Above Digital, Squamish, British Columbia, Canada · <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
     </LegalPage>
   );
 }

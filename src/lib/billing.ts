@@ -1,3 +1,4 @@
+import { TERMS_VERSION, SITE_TERMS_URL, SITE_PRIVACY_URL } from "./terms";
 import "server-only";
 import { appUrl } from "./app-url";
 import Stripe from "stripe";
@@ -67,15 +68,28 @@ export async function createCheckout(accountId: string, planId: string, returnPa
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
   const app = appUrl();
-  const session = await stripe().checkout.sessions.create({
+  const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     customer,
     line_items: [{ price: priceId, quantity: 1 }, ...addOnPrices.map((price) => ({ price, quantity: 1 }))],
     client_reference_id: accountId,
-    subscription_data: { metadata: { accountId, planId }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
+    subscription_data: { metadata: { accountId, planId, termsVersion: TERMS_VERSION }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
     success_url: `${app}${returnPath}?billing=success`,
     cancel_url: `${app}${returnPath}?billing=cancelled`,
-  });
+    // Signing up = ticking "I agree to the Terms of Service" on the checkout page.
+    consent_collection: { terms_of_service: "required" },
+    custom_text: { terms_of_service_acceptance: { message: `I agree to Head Above Digital's [Terms of Service](${SITE_TERMS_URL}) and [Privacy Policy](${SITE_PRIVACY_URL}). Billed monthly from today; cancel any time, effective at the end of the paid month.` } },
+  };
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe().checkout.sessions.create(params);
+  } catch (err) {
+    // Stripe needs a Terms of Service URL in its settings (Settings → Public details) for the tick box.
+    if (!/terms of service/i.test(String((err as Error).message))) throw err;
+    console.warn("Stripe checkout: no Terms of Service URL set in Stripe; checkout created without the terms tick box");
+    const { consent_collection: _c, custom_text: _t, ...rest } = params;
+    session = await stripe().checkout.sessions.create(rest);
+  }
   if (!session.url) throw new Error("Stripe did not return a checkout URL");
   return session.url;
 }
@@ -83,7 +97,7 @@ export async function createCheckout(accountId: string, planId: string, returnPa
 export async function createPortalSession(accountId: string, returnPath: string): Promise<string> {
   const customer = await ensureCustomer(accountId);
   const sub = await db.subscription.findUnique({ where: { accountId }, include: { plan: { select: { minimumMonths: true } } } });
-  const locked = cancelLocked(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 3);
+  const locked = cancelLocked(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 0);
   const session = await stripe().billingPortal.sessions.create({
     customer,
     return_url: `${appUrl()}${returnPath}`,
@@ -95,7 +109,7 @@ export async function createPortalSession(accountId: string, returnPath: string)
 /** When a client can cancel in the portal (end of their minimum term), for the billing page. */
 export async function cancelAvailableFrom(accountId: string): Promise<Date | null> {
   const sub = await db.subscription.findUnique({ where: { accountId }, include: { plan: { select: { minimumMonths: true } } } });
-  const until = cancelLockedUntil(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 3);
+  const until = cancelLockedUntil(sub?.startedAt ?? null, sub?.plan?.minimumMonths ?? 0);
   return until && until.getTime() > Date.now() ? until : null;
 }
 
@@ -152,8 +166,11 @@ async function addOverage(inv: Stripe.Invoice) {
   });
   const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
   const included = account.subscription?.plan?.includedMinutes || 200;
-  const blocks = overageBlocks(minutes, included);
-  if (!blocks) return;
+  // Blocks are normally charged the moment they're used (billExtraMinutesNow); this only catches any missed.
+  const subId = typeof inv.parent?.subscription_details?.subscription === "string" ? inv.parent.subscription_details.subscription : null;
+  const already = subId ? Number((await getSetting(overageKey(subId, inv.period_start))) ?? 0) : 0;
+  const blocks = overageBlocks(minutes, included) - already;
+  if (blocks <= 0) return;
   const currency = inv.currency?.toUpperCase() === "USD" ? "USD" : "CAD";
   const taxRate = await taxRateId(salesTaxFor(account.state));
   await stripe().invoiceItems.create(
@@ -179,6 +196,74 @@ async function addOverage(inv: Stripe.Invoice) {
     await sendPlainEmail({ to, subject: `Extra minutes billed: ${account.name}`, body: `${note}
 
 ${appUrl()}/crm/accounts/${accountId}` }).catch((e) => console.warn("overage email", e));
+  }
+}
+
+const overageKey = (subscriptionId: string, periodStart: number) => `overage.billed.${subscriptionId}.${periodStart}`;
+
+/**
+ * Extra minutes are charged as soon as each 100-minute block is used: after every call on a paying
+ * client's line, count this billing period's minutes and charge any new blocks right away (its own
+ * invoice, paid with the card on file, with GST/HST). The renewal invoice catches anything missed.
+ */
+export async function billExtraMinutesNow(accountId: string): Promise<void> {
+  if (!stripeConfigured()) return;
+  const account = await db.account.findUnique({ where: { id: accountId }, include: { subscription: { include: { plan: true } } } });
+  const sub = account?.subscription;
+  if (!account || !sub?.stripeSubscriptionId || !sub.stripeCustomerId || !["ACTIVE", "TRIALING", "PAST_DUE"].includes(sub.status)) return;
+  const live = await stripe().subscriptions.retrieve(sub.stripeSubscriptionId);
+  const item = live.items.data[0];
+  if (!item?.current_period_start || !item.current_period_end) return;
+  const start = new Date(item.current_period_start * 1000);
+  const end = new Date(item.current_period_end * 1000);
+  const used = await db.callLog.aggregate({
+    where: { receptionist: { accountId, lifecycle: "production" }, startedAt: { gte: start, lt: end }, outcome: { not: "SPAM" } },
+    _sum: { durationSec: true },
+  });
+  const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
+  const included = sub.plan?.includedMinutes || 200;
+  const due = overageBlocks(minutes, included);
+  const key = overageKey(live.id, item.current_period_start);
+  const billed = Number((await getSetting(key)) ?? 0);
+  if (due <= billed) return;
+  const blocks = due - billed;
+  const currency = live.currency?.toUpperCase() === "USD" ? "USD" : "CAD";
+  const taxRate = await taxRateId(salesTaxFor(account.state));
+  const tag = `${live.id}-${item.current_period_start}-${due}`;
+  await setSetting(key, String(due)); // claim first, so two calls ending together can't both charge
+  try {
+    await stripe().invoiceItems.create(
+      {
+        customer: sub.stripeCustomerId,
+        currency: currency.toLowerCase(),
+        amount: blocks * blockPriceCents(currency),
+        description: `Extra call minutes: ${minutes} used of ${included} included this month (${blocks} × 100-minute block)`,
+        metadata: { accountId, kind: "extra_minutes", minutes: String(minutes) },
+        ...(taxRate ? { tax_rates: [taxRate] } : {}),
+      },
+      { idempotencyKey: `extra-item-${tag}` },
+    );
+    const invoice = await stripe().invoices.create(
+      { customer: sub.stripeCustomerId, collection_method: "charge_automatically", auto_advance: true, pending_invoice_items_behavior: "include", description: "Extra call minutes", metadata: { accountId, kind: "extra_minutes" } },
+      { idempotencyKey: `extra-inv-${tag}` },
+    );
+    if (invoice.id) {
+      const final = await stripe().invoices.finalizeInvoice(invoice.id);
+      if (final.status === "open" && final.id) await stripe().invoices.pay(final.id).catch((e) => console.warn("extra minutes payment", (e as Error).message));
+    }
+  } catch (err) {
+    await setSetting(key, String(billed)); // not charged: try again after the next call
+    throw err;
+  }
+  const amount = (blocks * blockPriceCents(currency)) / 100;
+  const note = `${account.name} has used ${minutes} of ${included} minutes this billing period (${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}): ${blocks} extra 100-minute block${blocks === 1 ? "" : "s"} charged now, ${currency} $${amount.toFixed(2)} plus tax.`;
+  await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Extra minutes charged: ${blocks} block${blocks === 1 ? "" : "s"}`, body: note });
+  await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: `Extra minutes charged. ${note} Worth a call about their plan.` } });
+  const { supportAddress } = await import("./google");
+  const to = await supportAddress();
+  if (to) {
+    const { sendPlainEmail } = await import("./outreach");
+    await sendPlainEmail({ to, subject: `Extra minutes charged: ${account.name}`, body: `${note}\n\n${appUrl()}/crm/accounts/${accountId}` }).catch((e) => console.warn("overage email", e));
   }
 }
 
@@ -277,6 +362,9 @@ export async function handleStripeEvent(event: Stripe.Event) {
       if (s.subscription) {
         const subId = typeof s.subscription === "string" ? s.subscription : s.subscription.id;
         await syncSubscription(await stripe().subscriptions.retrieve(subId));
+      }
+      if (s.client_reference_id && s.consent?.terms_of_service === "accepted") {
+        await recordActivity({ accountId: s.client_reference_id, type: "BILLING", source: "system", subject: "Terms of Service accepted", body: `Accepted the Terms of Service (version ${TERMS_VERSION}, ${SITE_TERMS_URL}) and Privacy Policy at checkout${s.customer_details?.email ? ` by ${s.customer_details.email}` : ""}, ${new Date().toISOString().slice(0, 10)}.` }).catch((e) => console.warn("terms acceptance note", e));
       }
       break;
     }
