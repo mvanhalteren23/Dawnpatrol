@@ -15,11 +15,15 @@ async function main() {
   const existing = await db.user.findUnique({ where: { email } });
   // A database that already has an admin (e.g. the preview copy, which has no ADMIN_EMAIL or
   // ADMIN_PASSWORD set) keeps it; only a brand-new database needs ADMIN_PASSWORD.
-  const anyAdmin = existing ?? (await db.user.findFirst({ where: { role: "ADMIN", disabled: false }, orderBy: { createdAt: "asc" } }));
-  if (!anyAdmin && !password) throw new Error("Set ADMIN_PASSWORD before seeding");
-  const admin = existing
-    ? await db.user.update({ where: { email }, data: { role: "ADMIN" } })
-    : anyAdmin ?? (await db.user.create({ data: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password!, 12) } }));
+  const anyAdmin = await db.user.findFirst({ where: { role: "ADMIN", disabled: false }, orderBy: { createdAt: "asc" } });
+  if (!anyAdmin && !existing && !password) throw new Error("Set ADMIN_PASSWORD before seeding");
+  // Never change an existing login's role here: this runs on every deploy, and ADMIN_EMAIL may
+  // later be used as a client's portal login. Admin rights are only given in CRM → Settings → Users.
+  const admin =
+    (existing?.role === "ADMIN" ? existing : null) ??
+    anyAdmin ??
+    (existing ? null : await db.user.create({ data: { email, name: "Admin", role: "ADMIN", passwordHash: await bcrypt.hash(password!, 12) } }));
+  if (!admin) throw new Error(`${email} (ADMIN_EMAIL) is a ${existing!.role.toLowerCase()} login and there's no admin: create one first`);
   console.log(`Admin: ${admin.email}`);
 
   for (const p of DEFAULT_PROMPTS) {
