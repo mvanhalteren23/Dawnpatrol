@@ -22,8 +22,9 @@ those prompts to improve its products; the paid tier doesn't. Calendar data is n
    Google Cloud (ideally matt@headabovedigital.com).
 2. Add property → **Domain** → `headabovedigital.com` → Continue.
 3. Copy the TXT record Google shows (starts with `google-site-verification=`).
-4. Vercel → your team → **Domains** → headabovedigital.com → **DNS Records** → Add:
-   Type `TXT`, Name `@`, Value = the text you copied → Save.
+4. The domain's DNS is at **Cloudflare** (not Vercel): dash.cloudflare.com → headabovedigital.com →
+   **DNS → Records → Add record**: Type `TXT`, Name `@`, Content = the text you copied, TTL Auto → Save.
+   Leave existing TXT records (e.g. SPF) as they are.
 5. Back in Search Console press **Verify** (it can take a few minutes; try again if it fails at first).
 6. While you're there: Sitemaps → submit `https://www.headabovedigital.com/sitemap.xml` (the SEO step).
 
