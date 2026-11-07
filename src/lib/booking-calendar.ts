@@ -32,6 +32,25 @@ export async function setCalendarConnectLive(on: boolean) {
   await setSetting(LIVE_KEY, on ? "on" : "");
 }
 
+const TESTERS_KEY = "calendar.connectTesters";
+
+/** Client logins that can connect before Google approves (e.g. for the verification video). */
+export async function calendarConnectTesters(): Promise<string[]> {
+  const { getSetting } = await import("./settings");
+  return ((await getSetting(TESTERS_KEY).catch(() => null)) ?? "").split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter((e) => e.includes("@"));
+}
+
+export async function setCalendarConnectTesters(emails: string[]) {
+  const { setSetting } = await import("./settings");
+  await setSetting(TESTERS_KEY, Array.from(new Set(emails.map((e) => e.trim().toLowerCase()).filter((e) => e.includes("@")))).join(","));
+}
+
+/** Whether this client login is offered "Connect Google Calendar": everyone once approved, test clients before. */
+export async function calendarConnectAllowedFor(email: string | null | undefined): Promise<boolean> {
+  if (await calendarConnectLive()) return true;
+  return Boolean(email) && (await calendarConnectTesters()).includes(email!.toLowerCase());
+}
+
 /** The client's calendar stopped working: note it, so bookings fall back to the built-in calendar. */
 export async function markClientCalendarBroken(receptionistId: string, err: unknown) {
   const marked = await db.clientCalendar.updateMany({ where: { receptionistId, lastError: null }, data: { lastError: String((err as Error)?.message ?? err).slice(0, 300) } }).catch(() => ({ count: 0 }));

@@ -1574,7 +1574,8 @@ export async function bulkReceptionists(form: FormData) {
 export async function setCalendarLive(form: FormData) {
   await requireAdmin();
   const on = str(form, "live") === "on";
-  const { setCalendarConnectLive } = await import("@/lib/booking-calendar");
+  const { setCalendarConnectLive, setCalendarConnectTesters } = await import("@/lib/booking-calendar");
   await setCalendarConnectLive(on);
+  await setCalendarConnectTesters(str(form, "testers").split(/[\s,;]+/));
   back("/crm/settings", { notice: on ? "Clients now see \"Connect Google Calendar\" (recommended) in their portal. The built-in calendar stays as the backup." : "Clients use the built-in calendar; the Connect Google Calendar option is hidden from them." });
 }

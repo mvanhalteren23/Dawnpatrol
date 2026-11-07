@@ -26,7 +26,7 @@ import { curatedVoices } from "@/lib/voices";
 import { chooseVoice, saveMyMobile, undoOwnerChange } from "@/app/customer-actions";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
-import { calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
+import { calendarConnectAllowedFor, calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { appUrl } from "@/lib/app-url";
 import { bookingLink } from "@/lib/customer-texts";
 
@@ -49,7 +49,8 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const me = portalUsers.find((u) => u.id === session.sub);
   const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
   const bookingCal: { mode: "client" | "google" | "crm"; email: string | null; fallbackFrom?: string | null } = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
-  const calendarLive = await calendarConnectLive();
+  // Before Google approves, only test clients (CRM → Settings → Client calendars) see the option.
+  const calendarLive = adminAccountId ? await calendarConnectLive() : await calendarConnectAllowedFor(session.email);
   const callerReplyTo = r ? await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null) : null;
   const portalPhones = portalUsers.map((u) => u.phone).filter((p): p is string => Boolean(p));
 

@@ -22,7 +22,7 @@ import { Badge, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { companyName } from "@/lib/brand";
 import { blockNumberManually, saveCuratedVoicesAction, saveSpendAlert, setCalendarLive, unblockNumber } from "../actions";
-import { calendarConnectLive } from "@/lib/booking-calendar";
+import { calendarConnectLive, calendarConnectTesters } from "@/lib/booking-calendar";
 import { spendAlertAmount } from "@/lib/call-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { curatedVoices, MAX_CURATED_VOICES } from "@/lib/voices";
@@ -95,6 +95,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const company = await companyName();
   const dialer = await dialerStatus();
   const [blocked, spendAlert, calendarLive] = await Promise.all([db.blockedNumber.findMany({ orderBy: { createdAt: "desc" }, take: 50 }), spendAlertAmount().catch(() => null), calendarConnectLive()]);
+  const calendarTesters = await calendarConnectTesters();
   const [previousGoogle, sendAs, migrationRaw] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs"), getSetting("elevenlabs.migration")]);
   const [sampleRows, sampleRunRaw] = await Promise.all([db.sampleAudio.findMany({ select: { key: true, createdAt: true } }), getSetting("samples.lastRun")]);
   const sampleRun = safeJson<{ at: string; results: { key: string; ok: boolean; note: string }[] } | null>(sampleRunRaw, null);
@@ -251,6 +252,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <h2>Client calendars</h2>
         <p className="text-xs text-slate-500">Until Google approves the calendar app (see docs/NEXT-STEPS.md), every client books into the built-in calendar: no setup, branded confirmations with an &ldquo;add to calendar&rdquo; invite. Once approved, switch this on: clients see &ldquo;Connect Google Calendar&rdquo; (recommended) in their portal, and the built-in calendar stays as the automatic backup if a connection ever stops working.</p>
         <label className="flex items-center gap-2"><input type="checkbox" name="live" defaultChecked={calendarLive} /> Google has approved the calendar app: offer &ldquo;Connect Google Calendar&rdquo; to clients</label>
+        <Field label="Test clients before approval (portal logins, one per line)">
+          <textarea name="testers" rows={2} defaultValue={calendarTesters.join("\n")} placeholder="demo-client@headabovedigital.com" className="input" />
+        </Field>
+        <p className="text-xs text-slate-500">These client logins see &ldquo;Connect Google Calendar&rdquo; now, e.g. to record Google&apos;s verification video. The Google account they connect must also be a test user in Google Cloud (Audience → Test users) until approval.</p>
         <SubmitButton className="btn-secondary">Save</SubmitButton>
       </form>
 
