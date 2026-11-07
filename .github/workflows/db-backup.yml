@@ -51,7 +51,7 @@ jobs:
         run: |
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in db.dump -out "headabove-db-$(date -u +%Y-%m-%d).dump.enc" -pass env:BACKUP_PASSPHRASE
           rm db.dump
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: db-backup-${{ github.run_number }}
           path: headabove-db-*.dump.enc
