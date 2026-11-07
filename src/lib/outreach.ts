@@ -222,6 +222,14 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
     if (created) {
       recorded++;
       touched.add(match.accountId);
+      // "Unsubscribe" / "remove me" replies go on the do-not-email list.
+      if (!outbound && msg.snippet) {
+        const { isEmailOptOut } = await import("./campaign-rules");
+        if (isEmailOptOut(msg.snippet)) {
+          const { suppress } = await import("./suppression");
+          for (const addr of from) await suppress(addr, "reply", { note: msg.snippet.slice(0, 200) }).catch((e) => console.warn("suppress", e));
+        }
+      }
     }
   }
   return { scanned: ids.length, recorded, accountsTouched: Array.from(touched), startedAt };
@@ -258,6 +266,9 @@ export async function sendPlainEmail(params: { to: string; subject: string; body
 export async function sendTrackedEmail(params: { accountId: string; contactId: string; subject: string; body: string; userId?: string }) {
   const contact = await db.contact.findUniqueOrThrow({ where: { id: params.contactId } });
   if (!contact.email) throw new Error("Contact has no email address");
+  const { suppressionFor } = await import("./suppression");
+  const blocked = await suppressionFor(contact.email);
+  if (blocked) throw new Error(`${contact.email} is on the do-not-email list (${blocked.value.startsWith("@") ? "whole domain" : blocked.reason}, ${blocked.createdAt.toISOString().slice(0, 10)}). See Campaigns → Do-not-email list.`);
   const me = await connectedEmail(params.userId);
   if (!me) throw new Error(params.userId ? "Connect your Gmail first: CRM → Settings → Your Gmail & Calendar." : "Google is not connected");
 
@@ -273,11 +284,16 @@ export async function sendTrackedEmail(params: { accountId: string; contactId: s
   });
   if (!activity) throw new Error("Could not record activity");
 
-  const html = instrumentHtml(textToHtml(params.body), activity.id, appUrl());
+  const { oneClickUrl, unsubscribeUrl } = await import("./unsubscribe-token");
+  // CASL: every sales email carries a way to opt out.
+  const footer = `\n\n--\nDon't want emails from us? Unsubscribe: ${unsubscribeUrl(appUrl(), contact.email)}`;
+  const html = instrumentHtml(textToHtml(`${params.body}${footer}`), activity.id, appUrl());
   const mime = [
     `From: ${me}`,
     `To: ${encodeHeader(contactName(contact).replace(/[<>"]/g, ""))} <${safeAddress(contact.email)}>`,
     `Subject: ${encodeHeader(params.subject)}`,
+    `List-Unsubscribe: <${oneClickUrl(appUrl(), contact.email)}>`,
+    "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
     "MIME-Version: 1.0",
     'Content-Type: text/html; charset="UTF-8"',
     "",

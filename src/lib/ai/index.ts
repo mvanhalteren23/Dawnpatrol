@@ -7,7 +7,7 @@ import { companyName } from "../brand";
 import * as claude from "./anthropic";
 import * as gemini from "./gemini";
 import { runTask } from "./router";
-import type { ChatTurn, Target, Task, WebResult } from "./types";
+import { fenceSource, type ChatTurn, type Target, type Task, type WebResult } from "./types";
 
 // Every AI feature in the CRM goes through here. Each function names its task; the router
 // (CRM → Settings → AI models) decides which provider and model runs it.
@@ -200,6 +200,24 @@ export async function draftOutreachEmail(renderedPrompt: string, researchContext
     researchContext || "No research available.",
   );
   return ex.data;
+}
+
+const PersonalLineSchema = z.object({ line: z.string().describe("One sentence, or empty when nothing specific and true can be said") });
+
+/**
+ * One opening line for a cold email that shows we looked at this business (from their own
+ * website text). Empty when there's nothing specific and verifiable to say.
+ */
+export async function writePersonalLine(o: { businessName: string; city: string; industry: string; siteText: string }): Promise<string> {
+  const ex = await structured(
+    "campaign_line",
+    PersonalLineSchema,
+    `Write ONE sentence (at most 25 words) for the start of a cold email to ${o.businessName}${o.city ? ` in ${o.city}` : ""}${o.industry ? ` (${o.industry})` : ""}, from a company that answers small businesses' phones with an AI receptionist.
+It should mention one specific, checkable fact from their website that relates to phone calls, bookings, hours, or busy periods (e.g. "I saw you take same-day bookings by phone and close at 5 on weekdays."). Plain and friendly, no flattery, no exclamation marks, no questions, no links, no claims about their business you can't see in the text.
+If the text doesn't give you anything specific, return an empty line.`,
+    fenceSource(o.siteText.slice(0, 8000)) || "No website text.",
+  );
+  return ex.data.line;
 }
 
 const StyleGuideSchema = z.object({

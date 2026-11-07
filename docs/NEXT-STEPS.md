@@ -35,3 +35,19 @@ connections must use a **separate, calendar-only Google app**.
 ### Not chosen
 - Sending through the client's Gmail account (restricted scope: paid annual security assessment).
 - Reading their Gmail signature (restricted scope).
+
+## Cold email campaigns: before the first send
+
+Built: CRM → Email campaigns (sequences, sending inboxes, replies/bounces, demo-on-reply) and
+CRM → Email campaigns → Do-not-email list. Sending runs every 30 minutes from the "Daytime sweep"
+GitHub workflow (`/api/cron/campaigns`).
+
+- [ ] Buy 1–2 sending domains (e.g. tryheadabove.com) and point their websites at headabovedigital.com.
+- [ ] Add them to the existing Google Workspace as secondary domains (so the CRM's Google sign-in,
+      which may be limited to your organisation, can connect them) and create 1 inbox on each.
+- [ ] SPF, DKIM and DMARC on each sending domain.
+- [ ] Warm the inboxes for 2–3 weeks (Instantly, Smartlead or similar) and keep warm-up running at a low level.
+- [ ] Connect each inbox: Email campaigns → Connect a sending inbox. Set the name shown to recipients.
+- [ ] Enter the business name and mailing address (CASL: shown in every email).
+- [ ] Verify the list's email addresses (a verification service) before the first send; keep bounces under 3%.
+- [ ] Start at 20–30 emails per inbox per day.

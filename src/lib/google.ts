@@ -26,7 +26,15 @@ export const GOOGLE_SCOPES = [
 /** A person's own connection: no Drive (files stay in the company Drive). */
 export const PERSONAL_SCOPES = GOOGLE_SCOPES.filter((s) => !s.includes("/drive"));
 
-export type GoogleAs = string | null | undefined; // user id, "cal:<receptionistId>" (a client's own calendar), or company
+/** A campaign sending inbox: send, and read replies and bounces. Nothing else. */
+export const INBOX_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "openid",
+  "email",
+];
+
+export type GoogleAs = string | null | undefined; // user id, "cal:<receptionistId>" (a client's own calendar), "inbox:<id>" (a campaign inbox), or company
 
 // A client's own Google Calendar (portal → "Connect Google Calendar"): a separate, calendar-only
 // Google app, so its consent screen and Google's review cover only these two permissions.
@@ -108,20 +116,21 @@ export function oauthClient(): OAuth2Client {
   });
 }
 
-export function authUrl(state: string, kind: "company" | "personal" = "company", loginHint?: string): string {
+export function authUrl(state: string, kind: "company" | "personal" | "inbox" = "company", loginHint?: string): string {
   return oauthClient().generateAuthUrl({
     access_type: "offline",
     prompt: "consent select_account",
-    scope: kind === "company" ? GOOGLE_SCOPES : PERSONAL_SCOPES,
+    scope: kind === "company" ? GOOGLE_SCOPES : kind === "inbox" ? INBOX_SCOPES : PERSONAL_SCOPES,
     state,
     ...(loginHint ? { login_hint: loginHint } : {}),
-    // Point Google's account picker at the business Workspace (e.g. headabovedigital.com).
-    ...(process.env.GOOGLE_WORKSPACE_DOMAIN ? { hd: process.env.GOOGLE_WORKSPACE_DOMAIN } : {}),
+    // Point Google's account picker at the business Workspace (e.g. headabovedigital.com). Campaign
+    // inboxes are usually on a separate sending domain, so they're left open.
+    ...(process.env.GOOGLE_WORKSPACE_DOMAIN && kind !== "inbox" ? { hd: process.env.GOOGLE_WORKSPACE_DOMAIN } : {}),
   });
 }
 
 /** Finish the Google sign-in: store the company connection, or this person's own. */
-export async function completeOAuth(code: string, target: { kind: "company" } | { kind: "personal"; userId: string }): Promise<string | null> {
+export async function completeOAuth(code: string, target: { kind: "company" } | { kind: "personal"; userId: string } | { kind: "inbox" }): Promise<string | null> {
   const client = oauthClient();
   const { tokens } = await client.getToken(code);
   let email: string | null = null;
@@ -144,13 +153,19 @@ export async function completeOAuth(code: string, target: { kind: "company" } | 
   }
   if (!tokens.refresh_token) throw new Error("Google didn't grant offline access. Remove the app at myaccount.google.com/permissions and connect again.");
   if (!email) throw new Error("Google didn't share the account's email address");
+  if (target.kind === "inbox") {
+    if (!(tokens.scope ?? "").includes("gmail.send")) throw new Error("Sending wasn't allowed. Connect again and tick every box on Google's screen.");
+    const inbox = { refreshToken: seal(tokens.refresh_token), scopes: tokens.scope ?? "", lastError: null };
+    await db.outreachInbox.upsert({ where: { email }, create: { email, ...inbox, replyCursor: Math.floor(Date.now() / 1000) }, update: inbox });
+    return email;
+  }
   const data = { email, refreshToken: seal(tokens.refresh_token), scopes: tokens.scope ?? "", lastError: null };
   // Track this mailbox from now on (older mail was already synced by whoever had it before).
   await db.googleAccount.upsert({ where: { userId: target.userId }, create: { userId: target.userId, ...data, gmailCursor: Math.floor(Date.now() / 1000) - 14 * 86400 }, update: data });
   return email;
 }
 
-type Creds = { refresh: string; email: string | null; scopes: string; personal: boolean; calendarOf?: string };
+type Creds = { refresh: string; email: string | null; scopes: string; personal: boolean; calendarOf?: string; inboxId?: string };
 
 async function companyCreds(): Promise<Creds | null> {
   const [stored, email, scopes] = await Promise.all([getSetting(REFRESH_KEY), getSetting(EMAIL_KEY), getSetting(SCOPES_KEY)]);
@@ -176,8 +191,14 @@ async function clientCalendarCreds(receptionistId: string): Promise<Creds | null
   return c ? { refresh: open(c.refreshToken), email: c.email, scopes: c.scopes, personal: false, calendarOf: receptionistId } : null;
 }
 
+async function inboxCreds(id: string): Promise<Creds | null> {
+  const i = await db.outreachInbox.findUnique({ where: { id } });
+  return i ? { refresh: open(i.refreshToken), email: i.email, scopes: i.scopes, personal: false, inboxId: id } : null;
+}
+
 async function creds(as: GoogleAs): Promise<Creds | null> {
   if (as?.startsWith("cal:")) return clientCalendarCreds(as.slice(4));
+  if (as?.startsWith("inbox:")) return inboxCreds(as.slice(6));
   return as ? personalCreds(as) : companyCreds();
 }
 
@@ -206,6 +227,10 @@ export async function googleFetch<T = unknown>(url: string, init: RequestInit = 
     if (c.calendarOf) {
       void db.clientCalendar.updateMany({ where: { receptionistId: c.calendarOf }, data: { lastError: `Google sign-in expired: ${err.message}` } });
       throw new Error(`The calendar connection for ${c.email ?? "this business"} has expired or was removed. Reconnect it in the portal (Your setup → Your calendar).`);
+    }
+    if (c.inboxId) {
+      void db.outreachInbox.updateMany({ where: { id: c.inboxId }, data: { lastError: `Google sign-in expired: ${err.message}` } });
+      throw new Error(`The sending inbox ${c.email ?? ""} has expired or was removed. Reconnect it on the Campaigns page.`);
     }
     if (c.personal && as) void db.googleAccount.updateMany({ where: { userId: as }, data: { lastError: `Google sign-in expired: ${err.message}` } });
     throw new Error(`Google sign-in for ${c.email ?? "this account"} has expired or was revoked. Reconnect it in CRM → Settings.`);

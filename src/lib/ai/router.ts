@@ -33,6 +33,7 @@ export function defaultRoutes(): Routes {
   return Object.fromEntries(
     TASK_KEYS.map((t) => {
       if (t === "call_notes") return [t, { ...geminiT, fallback: null }]; // audio: Gemini only
+      if (t === "campaign_line") return [t, hasGemini ? { ...geminiT, fallback: { provider: "anthropic", model: "claude-haiku-5-5" } } : { provider: "anthropic", model: "claude-haiku-5-5", fallback: null }]; // high volume: cheapest
       const primary = TASKS[t].web && hasGemini ? geminiT : claude;
       const other = primary.provider === "gemini" ? claude : hasGemini ? geminiT : null;
       return [t, { ...primary, fallback: other }];

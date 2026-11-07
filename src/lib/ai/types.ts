@@ -16,6 +16,7 @@ export const TASKS = {
   demo_research: { label: "Demo agent research", web: true, help: "Deep research on a prospect (their whole website, Google profile and reviews, nearby competitors) that builds their demo agent." },
   extraction: { label: "Structured fields", web: false, help: "Turn a research report into fit score, contacts, prospects or KB entries." },
   outreach: { label: "Outreach emails", web: false, help: "Draft personalised first-touch emails." },
+  campaign_line: { label: "Campaign personal lines", web: false, help: "One line per cold email from the prospect's website. Runs hundreds of times, so it uses the cheaper model (Gemini Flash when set up)." },
   caller_summary: { label: "Caller summaries", web: false, help: "Texts and emails sent to callers after a call." },
   owner_requests: { label: "Owner updates", web: false, help: "Reads what a client's owner asks for by phone or text (closures, hours, calendar blocks, what to tell callers) and turns it into the change." },
   sms_chat: { label: "Customer texts", web: false, help: "Replies to customers who text a client's business line, from the receptionist's knowledge base." },

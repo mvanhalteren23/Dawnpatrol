@@ -6,10 +6,11 @@ import { ensureRootFolders } from "@/lib/drive";
 export async function GET(req: NextRequest) {
   const [expected, kind] = (req.cookies.get("g_oauth_state")?.value ?? "").split(".");
   const personal = kind === "me";
+  const inbox = kind === "inbox";
   const session = await apiSession(personal ? "STAFF" : "ADMIN");
   if (!session) return NextResponse.redirect(new URL("/login", req.url));
   const url = req.nextUrl;
-  const settings = new URL("/crm/settings", req.url);
+  const settings = new URL(inbox ? "/crm/campaigns" : "/crm/settings", req.url);
   const state = url.searchParams.get("state");
   if (!state || !expected || state !== expected) {
     settings.searchParams.set("error", "Google sign-in expired, try again");
@@ -21,7 +22,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(settings);
   }
   try {
-    if (personal) {
+    if (inbox) {
+      const email = await completeOAuth(code, { kind: "inbox" });
+      settings.searchParams.set("notice", `Sending inbox connected (${email}). Choose it as a sender on a campaign.`);
+    } else if (personal) {
       const email = await completeOAuth(code, { kind: "personal", userId: session.sub });
       settings.searchParams.set("notice", `Your Gmail & Calendar are connected (${email}). Emails you send from the CRM now go from this address, and replies are tracked.`);
     } else {

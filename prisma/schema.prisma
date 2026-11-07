@@ -100,6 +100,7 @@ model Account {
   emailDrafts   EmailDraft[]
   users         User[]
   callAudits    CallAudit[]
+  campaignRecipients CampaignRecipient[]
 
   @@index([stage])
 }
@@ -910,4 +911,87 @@ model ClientCalendar {
   connectedBy    String?
   connectedAt    DateTime     @default(now())
   lastError      String?
+}
+
+// ---------------------------------------------------------------------------
+// Cold email: the do-not-email list, sending inboxes and campaigns
+// ---------------------------------------------------------------------------
+
+/**
+ * Do-not-email list. Checked before every sales email (campaigns and CRM sends). Entries are a
+ * lowercase address, or "@domain.com" for everyone at a business. Kept as a record for CASL.
+ */
+model EmailSuppression {
+  id          String   @id @default(cuid())
+  value       String   @unique
+  reason      String // link | one-click | reply | bounce | manual
+  note        String?
+  campaignId  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
+/** An extra Gmail / Workspace mailbox used only to send campaigns (e.g. on a separate cold-email domain). */
+model OutreachInbox {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  displayName  String    @default("")
+  refreshToken String // encrypted (AES-256-GCM)
+  scopes       String    @default("")
+  paused       Boolean   @default(false)
+  lastError    String?
+  replyCursor  Int? // unix seconds of the last reply check
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Campaign {
+  id               String   @id @default(cuid())
+  name             String
+  status           String   @default("DRAFT") // DRAFT | ACTIVE | PAUSED | DONE
+  senders          String   @default("[]") // JSON array of sending mailboxes ("inbox:<id>" or a user id)
+  dailyPerInbox    Int      @default(30)
+  sendStartHour    Int      @default(9)
+  sendEndHour      Int      @default(16)
+  timezone         String   @default("America/Vancouver")
+  weekdaysOnly     Boolean  @default(true)
+  steps            String   @default("[]") // JSON [{ delayDays, subject, body }]
+  buildDemoOnReply Boolean  @default(true)
+  prebuildMinFit   Int? // build a demo agent before the first email for accounts with this fit score or higher
+  lastError        String?
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  recipients CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id           String    @id @default(cuid())
+  campaignId   String
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactId    String?
+  email        String
+  firstName    String?
+  // QUEUED (nothing sent) | SENDING (in the sequence) | REPLIED | UNSUBSCRIBED | BOUNCED | SKIPPED | DONE
+  status       String    @default("QUEUED")
+  step         Int       @default(0) // emails sent so far
+  nextSendAt   DateTime?
+  sender       String? // the mailbox that sends every email to this person (same thread)
+  threadId     String?
+  messageId    String? // RFC Message-ID of the last email, so follow-ups thread
+  firstSubject String?
+  personalLine String?
+  emailSource  String    @default("") // where the address came from (CASL record)
+  demoRunId    String?
+  note         String?
+  lastSentAt   DateTime?
+  repliedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@unique([campaignId, email])
+  @@index([status, nextSendAt])
+  @@index([threadId])
 }
