@@ -5,7 +5,7 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage, recordActivity } from "./outreach";
 import { getSetting, setSetting } from "./settings";
-import { blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, salesTaxFor, type SalesTax } from "./billing-rules";
+import { blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planPriceCents, planPriceKey, salesTaxFor, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
 export function stripe(): Stripe {
@@ -49,22 +49,51 @@ async function ensureCustomer(accountId: string): Promise<string> {
   return customer.id;
 }
 
+type PricedPlan = { id: string; name: string; priceCents: number; kind: string; stripePriceId: string | null; stripePriceIdUsd: string | null };
+
+/**
+ * The plan's Stripe price in this currency. If none is saved (or the saved one belongs to
+ * another Stripe mode, e.g. test vs live), the product and monthly price are created in Stripe
+ * and saved on the plan, so nothing has to be set up in Stripe by hand.
+ */
+async function ensurePrice(plan: PricedPlan, currency: "CAD" | "USD"): Promise<string> {
+  const saved = currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId;
+  if (saved) {
+    const ok = await stripe().prices.retrieve(saved).then((p) => p.active, () => false);
+    if (ok) return saved;
+  }
+  const cents = planPriceCents(plan, currency);
+  if (!cents) throw new Error(`"${plan.name}" has no ${currency} price: set one in CRM → Billing (Stripe price id${currency === "USD" ? ", USD" : ""})`);
+  const key = planPriceKey(plan.id, currency, cents);
+  const found = await stripe().prices.list({ lookup_keys: [key], active: true, limit: 1 });
+  let id = found.data[0]?.id;
+  if (!id) {
+    const price = await stripe().prices.create({
+      currency: currency.toLowerCase(),
+      unit_amount: cents,
+      recurring: { interval: "month" },
+      lookup_key: key,
+      product_data: { name: `Head Above Digital: ${plan.name}`, metadata: { planId: plan.id } },
+      metadata: { planId: plan.id },
+    });
+    id = price.id;
+  }
+  await db.plan.update({ where: { id: plan.id }, data: currency === "USD" ? { stripePriceIdUsd: id } : { stripePriceId: id } });
+  return id;
+}
+
 /** Hosted Stripe Checkout for a plan — send the link to the client or open it from the portal. */
 export async function createCheckout(accountId: string, planId: string, returnPath: string, addOnIds: string[] = []): Promise<string> {
   const plan = await db.plan.findUniqueOrThrow({ where: { id: planId } });
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { state: true } });
   // US clients pay in USD; everyone else in CAD.
   const currency = currencyForAccount(account.state);
-  const priceId = currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId;
-  if (!priceId) throw new Error(`Plan "${plan.name}" has no Stripe ${currency} price id (CRM → Billing → the plan)`);
+  const priceId = await ensurePrice(plan, currency);
   const taxRate = await taxRateId(salesTaxFor(account.state));
   // Add-ons (e.g. the Follow-Up Agent) ride on the same subscription, in the same currency.
   const addOns = addOnIds.length ? await db.plan.findMany({ where: { id: { in: addOnIds }, kind: "addon", isActive: true } }) : [];
-  const addOnPrices = addOns.map((a) => {
-    const id = currency === "USD" ? a.stripePriceIdUsd : a.stripePriceId;
-    if (!id) throw new Error(`Add-on "${a.name}" has no Stripe ${currency} price id (CRM → Billing)`);
-    return id;
-  });
+  const addOnPrices: string[] = [];
+  for (const a of addOns) addOnPrices.push(await ensurePrice(a, currency));
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
   const app = appUrl();

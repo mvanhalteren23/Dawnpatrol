@@ -25,6 +25,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
     ["/crm/prompts", "Saved prompts", "Prompts"],
     ...(isAdmin
       ? ([
+          ["/crm/launch", "Launch check", "Launch"],
           ["/crm/campaigns", "Email campaigns", "Campaigns"],
           ["/crm/receptionists", "Receptionists & RAG", "RAG"],
           ["/crm/demo-line", "Demo line", "Demo"],
