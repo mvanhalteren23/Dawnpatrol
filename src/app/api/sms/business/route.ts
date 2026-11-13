@@ -5,6 +5,8 @@ import { isHandledReply, isOptIn, isOptOut } from "@/lib/follow-up-rules";
 import { leadAlertNumbers } from "@/lib/follow-up";
 import { after } from "next/server";
 import { handleCustomerText, receptionistForSharedText, textsCustomers } from "@/lib/customer-texts";
+import { parseMedia, bodyWithPhotos } from "@/lib/photo-rules";
+import { acceptPhotos, logPhotoAck } from "@/lib/photos";
 import { handleOwnerText, ownerCaller } from "@/lib/owner-mode";
 import { isClientInbound } from "@/lib/elevenlabs";
 import { isBlocked } from "@/lib/call-guard";
@@ -17,6 +19,7 @@ import { isBlocked } from "@/lib/call-guard";
 // - "1" (or "done") from the owner: marks their latest open lead handled.
 // - Anything else from a customer: answered by the text agent (src/lib/customer-texts.ts), which
 //   also handles reminder replies and forwards what needs the owner; without it, forwarded as before.
+// - Photos (MMS) from a customer: saved, and the owner gets a link to see them (src/lib/photos.ts).
 // The shared texting number (clients without a business line) points here too: the reply goes to
 // the client who last texted that customer.
 export const maxDuration = 60;
@@ -27,7 +30,9 @@ export async function POST(req: Request) {
   const r = (await db.receptionist.findUnique({ where: { businessNumber: params.To ?? "" } })) ?? (await receptionistForSharedText(params.From ?? ""));
   const body = params.Body ?? "";
   const from = toE164(params.From ?? "");
-  if (!r || !body || !from) return xml(twiml(""));
+  const media = parseMedia(params);
+  // Photos can come with no words at all, but only a client's live line takes them.
+  if (!r || !from || (!body && !(media.length && textsCustomers(r) && r.photoTextsOn))) return xml(twiml(""));
   if (await isBlocked(from)) return xml(twiml(""));
 
   if (isOptOut(body)) {
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
   const owners = new Set([...leadAlertNumbers(r), ...(r.ringFirstNumber ? [r.ringFirstNumber] : [])]);
   // The owner texting their own line: changes, messages and UNDO (src/lib/owner-mode.ts).
   const ownLine = Boolean(r.businessNumber) && toE164(params.To ?? "") === toE164(r.businessNumber!);
-  if (ownLine && isClientInbound(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null))) {
+  if (ownLine && body && isClientInbound(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null))) {
     const reply = await handleOwnerText(r, from, body.slice(0, 1000)).catch((e) => {
       console.error("owner text", e);
       return "Sorry, that didn't go through. Please try again, or use your portal.";
@@ -58,7 +63,15 @@ export async function POST(req: Request) {
   }
 
   if (textsCustomers(r)) {
-    const { reply, background } = await handleCustomerText(r, from, body);
+    const photos = media.length && r.photoTextsOn ? await acceptPhotos(r, from, body, media, params.MessageSid ?? "").catch((e) => { console.error("photos", e); return null; }) : null;
+    if (!body.trim()) {
+      // Photos and nothing else: save them, and say thanks.
+      if (!photos) return xml(twiml(""));
+      after(photos.background);
+      return xml(twiml(`<Message>${escapeXml(await logPhotoAck(r, from, photos.count))}</Message>`));
+    }
+    const { reply, background } = await handleCustomerText(r, from, photos ? bodyWithPhotos(body, photos.count) : body);
+    if (photos) after(photos.background);
     if (background) after(background);
     return xml(twiml(reply ? `<Message>${escapeXml(reply)}</Message>` : ""));
   }

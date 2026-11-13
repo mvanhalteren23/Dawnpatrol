@@ -20,5 +20,8 @@ export async function GET(req: Request) {
   const leads = await processDueLeads(10).catch((e: Error) => e.message);
   // Warn the team before voice credits or the phone balance run out.
   const health = await (await import("@/lib/launch-check")).healthAlerts().catch((e: Error) => e.message);
-  return NextResponse.json({ audits, texts, checkins, leads, health });
+  // Once a day: the free line check (no call placed) and removal of old customer photos.
+  const lineCheck = await (await import("@/lib/line-check")).runLineCheckIfDue().then((r) => (r ? { lines: r.lines.length, problems: r.lines.filter((l) => l.problems.length).length } : "not due")).catch((e: Error) => e.message);
+  const photos = await (await import("@/lib/photos")).expireOldPhotos().catch((e: Error) => e.message);
+  return NextResponse.json({ audits, texts, checkins, leads, health, lineCheck, photos });
 }

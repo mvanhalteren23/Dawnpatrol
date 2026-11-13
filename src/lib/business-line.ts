@@ -38,8 +38,10 @@ export async function toAgent(r: Receptionist, from: string, to: string, callSid
   if (!r.elevenLabsAgentId) return agentUnavailable(r, "no voice agent is set up for this line");
   try {
     const owner = await ownerCaller(r, from).catch(() => null);
+    // Returning callers: what our own records say about this number (empty for new callers and the owner).
+    const caller_context = owner ? "" : await (await import("./caller-memory")).callerMemory(r, from);
     const handoff = await registerTwilioCall(r.elevenLabsAgentId, from, to, {
-      dynamicVariables: { caller_role: owner ? "owner" : "customer", owner_name: owner?.firstName ? ` ${owner.firstName}` : "", call_sid: callSid },
+      dynamicVariables: { caller_role: owner ? "owner" : "customer", owner_name: owner?.firstName ? ` ${owner.firstName}` : "", caller_context, call_sid: callSid },
     });
     // If the agent drops the call in its first seconds, the caller is sent to voicemail.
     return guardedHandoff(r, handoff);

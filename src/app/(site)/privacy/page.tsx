@@ -34,7 +34,7 @@ export default function Privacy() {
         <li>Settings you choose, such as your business hours, booking rules, branding and notification preferences.</li>
       </ul>
       <h3>People who call or text our clients&apos; businesses</h3>
-      <p>When someone calls or texts a business that uses our service, we process the call or message <b>on that business&apos;s behalf</b>. Calls are not recorded: we keep a written transcript and summary, not the audio, and if a caller leaves a voicemail its audio is deleted once it has been transcribed. This can include the caller&apos;s phone number, what they say (a transcript and a summary of the call), the details they give (such as name, email and the reason for calling), any appointment they book, and text messages they send. The business decides how this information is used. Callers with questions about their information should contact the business they called; we will help that business respond.</p>
+      <p>When someone calls or texts a business that uses our service, we process the call or message <b>on that business&apos;s behalf</b>. Calls are not recorded: we keep a written transcript and summary, not the audio, and if a caller leaves a voicemail its audio is deleted once it has been transcribed. This can include the caller&apos;s phone number, what they say (a transcript and a summary of the call), the details they give (such as name, email and the reason for calling), any appointment they book, and text messages they send. If a customer texts photos to the business, we keep the photos for 60 days (then delete them) so the business can see them, and a caller who has called or booked before may be recognised by phone number so the receptionist can greet them or ask about their appointment. The business decides how this information is used. Callers with questions about their information should contact the business they called; we will help that business respond.</p>
 
       <h2>How we use information</h2>
       <ul>
@@ -69,6 +69,7 @@ export default function Privacy() {
       <h2>How long we keep information</h2>
       <ul>
         <li>Call transcripts held by our voice provider are deleted after 90 days.</li>
+        <li>Photos customers text to a business are deleted after 60 days.</li>
         <li>Call logs, bookings, messages and knowledge in a client&apos;s account are kept while the account is active, so the client can see their history, and deleted when the client asks or after the account closes.</li>
         <li>Encrypted database backups are kept for 30 days.</li>
       </ul>

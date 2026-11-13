@@ -354,6 +354,8 @@ model Receptionist {
   bookingKey            String?        @unique // public booking link: /book/<key>
   rescueTextsOn         Boolean        @default(true) // text a booking link after a call that didn't book
   smsAgentOn            Boolean        @default(true) // answer customers' texts to the business line
+  recognizeCallers      Boolean        @default(true) // greet returning callers by first name / mention their appointment (from their number and our records)
+  photoTextsOn          Boolean        @default(true) // accept photos customers text to the line and send them to the owner
   remindersOn           Boolean        @default(true) // day-before reminder, reply C/R; no-show rebook text
   reviewRequestsOn      Boolean        @default(false) // after the appointment, text the Google review link
   reviewLink            String         @default("")
@@ -365,6 +367,7 @@ model Receptionist {
   reviewLinks           KbReviewLink[]
   trustedNumbers        TrustedNumber[]
   calendarBlocks        CalendarBlock[]
+  smsMedia              SmsMedia[]
   clientCalendar        ClientCalendar?
   // Branded emails to callers (booking confirmations, call summaries): the client's logo, colour,
   // sign-off and reply-to address. Logo and colour are pulled from their website when blank.
@@ -994,4 +997,21 @@ model CampaignRecipient {
   @@unique([campaignId, email])
   @@index([status, nextSendAt])
   @@index([threadId])
+}
+
+/** Photos customers text to a client's line (MMS). Kept 60 days, then deleted. Viewed through signed links. */
+model SmsMedia {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  messageSid     String // Twilio's id of the text the photo came in: photos of one text are shown together
+  phone          String // the customer, E.164
+  caption        String       @default("")
+  contentType    String
+  data           Bytes
+  bytes          Int
+  createdAt      DateTime     @default(now())
+
+  @@index([messageSid])
+  @@index([receptionistId, createdAt])
 }

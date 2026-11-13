@@ -11,7 +11,7 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "sharp"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

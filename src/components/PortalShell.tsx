@@ -38,6 +38,7 @@ export async function PortalShell({ accountId, accountName, adminAccountId, emai
             <Link href={`/portal/knowledge${q}`}>What it knows</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
             <Link href={`/portal/bookings${q}`}>Bookings</Link>
+            <Link href={`/portal/photos${q}`}>Photos</Link>
             {followups ? <Link href={`/portal/leads${q}`}>Leads</Link> : null}
             <Link href={`/portal/reports${q}`}>Reports</Link>
             <Link href={`/portal/billing${q}`}>Billing</Link>

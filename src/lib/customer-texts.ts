@@ -58,7 +58,7 @@ export async function textCustomer(r: R, phoneRaw: string, body: string, kind: s
   return true;
 }
 
-async function alertOwner(r: R, body: string) {
+export async function alertOwner(r: R, body: string) {
   const to = leadAlertNumbers(r)[0] ?? r.ringFirstNumber ?? r.escalationPhone;
   if (!to) return;
   await sendSms(to, body.slice(0, 600), r.businessNumber).catch((e) => console.error("owner alert text failed", e));

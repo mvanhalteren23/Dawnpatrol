@@ -34,3 +34,18 @@ export async function setBackupAnswering() {
   revalidatePath("/crm/launch");
   redirect(`/crm/launch?${new URLSearchParams(msg).toString()}`);
 }
+
+/** Run the daily line check now. */
+export async function checkLinesNow() {
+  await requireAdmin();
+  let msg: Record<string, string>;
+  try {
+    const run = await (await import("@/lib/line-check")).runLineCheck();
+    const bad = run.lines.filter((l) => l.problems.length).length;
+    msg = bad ? { error: `${bad} of ${run.lines.length} lines have a problem: see the list` } : { notice: `All ${run.lines.length} line${run.lines.length === 1 ? "" : "s"} look healthy` };
+  } catch (e) {
+    msg = { error: (e as Error).message.slice(0, 200) };
+  }
+  revalidatePath("/crm/launch");
+  redirect(`/crm/launch?${new URLSearchParams(msg).toString()}`);
+}

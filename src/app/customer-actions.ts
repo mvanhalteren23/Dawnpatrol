@@ -36,6 +36,8 @@ export async function saveCustomerTextSettings(receptionistId: string, returnTo:
     data: {
       rescueTextsOn: form.get("rescueTextsOn") === "on",
       smsAgentOn: form.get("smsAgentOn") === "on",
+      photoTextsOn: form.get("photoTextsOn") === "on",
+      recognizeCallers: form.get("recognizeCallers") === "on",
       remindersOn: form.get("remindersOn") === "on",
       reviewRequestsOn,
       reviewLink,
@@ -189,4 +191,11 @@ export async function createCalendarFeed(receptionistId: string, returnTo: strin
   const { randomBytes } = await import("node:crypto");
   await db.receptionist.update({ where: { id: receptionistId }, data: { calendarFeedToken: randomBytes(24).toString("base64url") } });
   done(returnTo, "Your calendar link is ready below");
+}
+
+/** A portal user deletes the photos of one customer text (they're deleted after 60 days anyway). */
+export async function deletePhotos(receptionistId: string, messageSid: string, returnTo: string) {
+  await guard(receptionistId);
+  await db.smsMedia.deleteMany({ where: { receptionistId, messageSid } });
+  done(returnTo, "Photos deleted");
 }

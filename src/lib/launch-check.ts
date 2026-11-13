@@ -108,6 +108,20 @@ export async function healthAlerts(): Promise<string[]> {
   return sent;
 }
 
+async function lineCheckRow(): Promise<Check> {
+  const base = { area: "Phones", label: "Daily line check (no test call)" };
+  const { lastLineCheck } = await import("./line-check");
+  const { checkFresh } = await import("./line-check-rules");
+  const run = await lastLineCheck();
+  if (!run) return { ...base, state: "warn", detail: "Hasn't run yet. It runs by itself once a day, or press the button to run it now.", fix: "Press the button." };
+  const bad = run.lines.filter((l) => l.problems.length);
+  const warn = run.lines.filter((l) => l.warnings.length);
+  const when = new Date(run.at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  if (bad.length) return { ...base, state: "todo", detail: `${when}: ${bad.map((l) => `${l.business} (${l.problems[0]})`).join("; ")}.`, fix: "Fix these, then press the button to re-check." };
+  if (!checkFresh(run.at)) return { ...base, state: "warn", detail: `Last ran ${when}: it should run daily.`, fix: "Check that the \"Daytime sweep\" GitHub workflow is enabled." };
+  return { ...base, state: warn.length ? "warn" : "ok", detail: `${when}: ${run.lines.length} line${run.lines.length === 1 ? "" : "s"} checked${warn.length ? `; to look at: ${warn.slice(0, 3).map((l) => `${l.business} (${l.warnings[0]})`).join("; ")}` : ", all healthy"}${run.healed ? `; backup answering added to ${run.healed} number${run.healed === 1 ? "" : "s"}` : ""}.` };
+}
+
 async function stripeChecks(): Promise<Check[]> {
   const key = process.env.STRIPE_SECRET_KEY ?? "";
   if (!key) return [{ area: "Payments", label: "Stripe", state: "todo", detail: "No Stripe key set.", fix: "Add STRIPE_SECRET_KEY (live) in Vercel." }];
@@ -128,10 +142,11 @@ async function stripeChecks(): Promise<Check[]> {
 }
 
 export async function launchChecks(): Promise<Check[]> {
-  const [el, tw, backup, st, plans, admins, spend, house, connectLive, testers, address, inboxes, google, clientsWithLogin] = await Promise.all([
+  const [el, tw, backup, lineRow, st, plans, admins, spend, house, connectLive, testers, address, inboxes, google, clientsWithLogin] = await Promise.all([
     elevenLabs(),
     twilio(),
     backupAnswer(),
+    lineCheckRow(),
     stripeChecks(),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     db.user.findMany({ where: { role: "ADMIN", disabled: false }, select: { email: true, phone: true, totpEnabledAt: true } }),
@@ -144,7 +159,7 @@ export async function launchChecks(): Promise<Check[]> {
     (await import("./google")).googleConnection().catch(() => ({ connected: false, email: null })),
     db.user.findUnique({ where: { email: (process.env.ADMIN_EMAIL ?? "").toLowerCase() || "-" }, select: { role: true } }),
   ]);
-  const checks: Check[] = [el, tw, backup];
+  const checks: Check[] = [el, tw, backup, lineRow];
 
   checks.push(
     !process.env.TWILIO_DEMO_NUMBER

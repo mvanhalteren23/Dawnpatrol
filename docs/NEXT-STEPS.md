@@ -51,3 +51,13 @@ GitHub workflow (`/api/cron/campaigns`).
 - [ ] Enter the business name and mailing address (CASL: shown in every email).
 - [ ] Verify the list's email addresses (a verification service) before the first send; keep bounces under 3%.
 - [ ] Start at 20–30 emails per inbox per day.
+
+## After deploying the daily check, caller recognition and photos by text
+
+- [ ] Re-sync every client receptionist (CRM → Receptionists → select all → Sync). Caller recognition adds a
+      section to the agent prompt and a `caller_context` placeholder; until an agent is re-synced it behaves as before.
+- [ ] CRM → Launch check → "Check all lines now": confirms every line and sets Twilio's backup address.
+- [ ] Test photos: text a photo (with and without words) to a client line from a phone that isn't the owner's.
+      Twilio US/Canadian local numbers accept MMS; if a number doesn't, photos won't arrive.
+- [ ] Test recognition: book a test appointment from your mobile, then call the line from the same mobile.
+      The agent should ask "Is this <name>?" and whether you're calling about the appointment.

@@ -39,9 +39,9 @@ export async function alertOnce(key: string, minutes: number, subject: string, b
   }
 }
 
-type TwilioNumberRow = { sid: string; phone_number: string; voice_url?: string | null; voice_fallback_url?: string | null };
+export type TwilioNumberRow = { sid: string; phone_number: string; voice_url?: string | null; voice_fallback_url?: string | null };
 
-async function crmNumbers(): Promise<TwilioNumberRow[]> {
+export async function crmNumbers(): Promise<TwilioNumberRow[]> {
   const { twilioApi } = await import("./twilio");
   return (await twilioApi<{ incoming_phone_numbers: TwilioNumberRow[] }>("/IncomingPhoneNumbers.json?PageSize=200")).incoming_phone_numbers ?? [];
 }

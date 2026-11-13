@@ -6,7 +6,7 @@ import { Badge, Empty } from "./ui";
 
 // Customer texts, bookings and open questions (shared by the CRM receptionist page and the portal).
 
-type R = Pick<Receptionist, "id" | "name" | "rescueTextsOn" | "smsAgentOn" | "remindersOn" | "reviewRequestsOn" | "reviewLink" | "reviewDelayHours" | "checkinsOn" | "checkinThreshold" | "checkinPhone" | "ringFirstNumber" | "businessNumber" | "bookingEnabled">;
+type R = Pick<Receptionist, "id" | "name" | "rescueTextsOn" | "smsAgentOn" | "recognizeCallers" | "photoTextsOn" | "remindersOn" | "reviewRequestsOn" | "reviewLink" | "reviewDelayHours" | "checkinsOn" | "checkinThreshold" | "checkinPhone" | "ringFirstNumber" | "businessNumber" | "bookingEnabled">;
 
 const Toggle = ({ name, on, label, help }: { name: string; on: boolean; label: string; help: string }) => (
   <label className="flex items-start gap-2">
@@ -22,6 +22,8 @@ export function CustomerTextSettings({ r, returnTo, bookingLink }: { r: R; retur
       {!r.businessNumber ? <p className="text-xs text-slate-500">Texts go out from our shared number until you have your own business line.</p> : null}
       <Toggle name="rescueTextsOn" on={r.rescueTextsOn} label="Text a booking link after missed opportunities" help="When a caller hangs up or leaves a message without booking, they get a text within a minute with a link to pick a time." />
       <Toggle name="smsAgentOn" on={r.smsAgentOn} label={`${r.name} answers customers' texts`} help="Customers who text your line get answers from your knowledge base and the booking link. Anything that needs you is sent to your phone." />
+      <Toggle name="photoTextsOn" on={r.photoTextsOn} label="Accept photos customers text" help="Customers can text photos of the job (a leak, damage, the space). You get a text with a link to see them; photos are deleted after 60 days." />
+      <Toggle name="recognizeCallers" on={r.recognizeCallers} label="Recognise returning callers" help={`${r.name} can greet someone by first name and ask about their upcoming appointment, based on their phone number and your own booking and call records. It only confirms, and never reads details out.`} />
       <Toggle name="remindersOn" on={r.remindersOn} label="Appointment reminders and no-show rebooking" help="A text the day before (reply C to confirm, R to reschedule). Mark a no-show and they get a link to rebook." />
       <div className="space-y-2 rounded-lg border border-slate-200 p-3">
         <Toggle name="reviewRequestsOn" on={r.reviewRequestsOn} label="Ask for a Google review after appointments" help="Every customer gets your review link (Google doesn't allow asking only happy customers). Replies come to you." />
