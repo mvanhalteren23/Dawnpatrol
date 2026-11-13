@@ -18,5 +18,7 @@ export async function GET(req: Request) {
   const checkins = await processCheckins().catch((e: Error) => ({ error: e.message }));
   // Website leads that came in outside calling hours: called as soon as calling hours start.
   const leads = await processDueLeads(10).catch((e: Error) => e.message);
-  return NextResponse.json({ audits, texts, checkins, leads });
+  // Warn the team before voice credits or the phone balance run out.
+  const health = await (await import("@/lib/launch-check")).healthAlerts().catch((e: Error) => e.message);
+  return NextResponse.json({ audits, texts, checkins, leads, health });
 }

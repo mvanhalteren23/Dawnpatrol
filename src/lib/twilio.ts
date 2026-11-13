@@ -94,10 +94,19 @@ export async function findLocalNumber(country: "CA" | "US", areaCode: string): P
   return res.available_phone_numbers[0]?.phone_number ?? null;
 }
 
+/** Twilio's backup address: used if the main voice address errors or times out. */
+function backupAnswer(voiceUrl: string): Record<string, string> {
+  try {
+    return { VoiceFallbackUrl: new URL("/api/voice/fallback", voiceUrl).toString(), VoiceFallbackMethod: "POST" };
+  } catch {
+    return {};
+  }
+}
+
 /** Buy a number with its voice and SMS webhooks pointing at the CRM. */
 export async function buyNumber(phoneNumber: string, label: string, voiceUrl: string, smsUrl: string): Promise<TwilioNumber> {
   return twilioApi<TwilioNumber>("/IncomingPhoneNumbers.json", {
-    form: { PhoneNumber: phoneNumber, FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", SmsUrl: smsUrl, SmsMethod: "POST" },
+    form: { PhoneNumber: phoneNumber, FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", ...backupAnswer(voiceUrl), SmsUrl: smsUrl, SmsMethod: "POST" },
   });
 }
 
@@ -107,7 +116,7 @@ export async function attachNumber(phoneNumber: string, label: string, voiceUrl:
   const n = found.incoming_phone_numbers[0];
   if (!n) throw new Error(`${phoneNumber} isn't on this Twilio account`);
   return twilioApi<TwilioNumber>(`/IncomingPhoneNumbers/${n.sid}.json`, {
-    form: { FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", SmsUrl: smsUrl, SmsMethod: "POST" },
+    form: { FriendlyName: label.slice(0, 64), VoiceUrl: voiceUrl, VoiceMethod: "POST", ...backupAnswer(voiceUrl), SmsUrl: smsUrl, SmsMethod: "POST" },
   });
 }
 

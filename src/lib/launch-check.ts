@@ -78,6 +78,36 @@ async function twilio(): Promise<Check> {
   }
 }
 
+async function backupAnswer(): Promise<Check> {
+  const base = { area: "Phones", label: "Backup answering on every number" };
+  try {
+    const { fallbackCoverage } = await import("./agent-fallback");
+    const c = await fallbackCoverage();
+    if (!c.total) return { ...base, state: "unknown", detail: "No numbers on the Twilio account point at this site." };
+    return c.missing
+      ? { ...base, state: "todo", detail: `${c.missing} of ${c.total} number${c.total === 1 ? "" : "s"} have no backup: if this site were unreachable, callers would hear an error.`, fix: "Press the button to set it on every number." }
+      : { ...base, state: "ok", detail: `All ${c.total} number${c.total === 1 ? "" : "s"} take a message if this site can't be reached.` };
+  } catch (e) {
+    return { ...base, state: "unknown", detail: `Couldn't read the numbers (${short(e)}).` };
+  }
+}
+
+/**
+ * Run from the 30-minute sweep: text and email the team when voice credits or the phone balance
+ * are running out, at most once a day each, so lines never stop without warning.
+ */
+export async function healthAlerts(): Promise<string[]> {
+  const { alertOnce } = await import("./agent-fallback");
+  const { appUrl } = await import("./app-url");
+  const sent: string[] = [];
+  for (const [key, c] of [["elevenlabs", await elevenLabs()], ["twilio", await twilio()]] as const) {
+    if (c.state !== "todo" && c.state !== "warn") continue;
+    const urgent = c.state === "todo";
+    if (await alertOnce(`health.${key}.${c.state}`, 24 * 60, `${urgent ? "URGENT: " : ""}${c.label} ${urgent ? "has run out" : "is running low"}`, `${c.detail} ${c.fix ?? ""} ${appUrl()}/crm/launch`)) sent.push(key);
+  }
+  return sent;
+}
+
 async function stripeChecks(): Promise<Check[]> {
   const key = process.env.STRIPE_SECRET_KEY ?? "";
   if (!key) return [{ area: "Payments", label: "Stripe", state: "todo", detail: "No Stripe key set.", fix: "Add STRIPE_SECRET_KEY (live) in Vercel." }];
@@ -98,9 +128,10 @@ async function stripeChecks(): Promise<Check[]> {
 }
 
 export async function launchChecks(): Promise<Check[]> {
-  const [el, tw, st, plans, admins, spend, house, connectLive, testers, address, inboxes, google, clientsWithLogin] = await Promise.all([
+  const [el, tw, backup, st, plans, admins, spend, house, connectLive, testers, address, inboxes, google, clientsWithLogin] = await Promise.all([
     elevenLabs(),
     twilio(),
+    backupAnswer(),
     stripeChecks(),
     db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
     db.user.findMany({ where: { role: "ADMIN", disabled: false }, select: { email: true, phone: true, totpEnabledAt: true } }),
@@ -113,7 +144,7 @@ export async function launchChecks(): Promise<Check[]> {
     (await import("./google")).googleConnection().catch(() => ({ connected: false, email: null })),
     db.user.findUnique({ where: { email: (process.env.ADMIN_EMAIL ?? "").toLowerCase() || "-" }, select: { role: true } }),
   ]);
-  const checks: Check[] = [el, tw];
+  const checks: Check[] = [el, tw, backup];
 
   checks.push(
     !process.env.TWILIO_DEMO_NUMBER

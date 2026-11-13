@@ -90,10 +90,14 @@ export async function POST(req: Request) {
       if (screened) return xml(screened);
     }
     if (grace?.elevenLabsAgentId) {
+      const { agentUnavailable, guardedHandoff } = await import("@/lib/agent-fallback");
       try {
-        return xml(await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await callerContext(from, grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }))), call_sid: params.CallSid ?? "" } }));
+        const handoff = await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await callerContext(from, grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }))), call_sid: params.CallSid ?? "" } });
+        // If the agent drops the call in its first seconds, the caller is sent to voicemail.
+        return xml(guardedHandoff(grace, handoff));
       } catch (err) {
         console.error("demo line: receptionist register-call failed", err);
+        return xml(await agentUnavailable(grace, (err as Error).message ?? "the agent couldn't be reached"));
       }
     }
     return xml(gatherExtension(config.greeting, action(1), action(1)));

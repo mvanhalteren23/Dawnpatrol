@@ -31,7 +31,7 @@ export async function blockNumber(phone: string, reason: string, by: string | nu
 }
 
 /** 2-minute voicemail: while a line's daily cutoff is tripped, or for a caller over their limit. */
-export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why: "paused" | "limit" = "paused"): string {
+export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why: "paused" | "limit" | "agent" = "paused"): string {
   const base = `${appBase()}/api/voice/guard?r=${encodeURIComponent(r.id)}&why=${why}`;
   return twiml(`${say(MESSAGES.voicemail(r.businessName))}<Record maxLength="${VOICEMAIL_SECONDS}" playBeep="true" timeout="8" transcribe="true" transcribeCallback="${escapeXml(`${base}&step=transcript`)}" action="${escapeXml(`${base}&step=done`)}" method="POST"/><Hangup/>`);
 }

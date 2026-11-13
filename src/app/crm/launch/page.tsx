@@ -4,7 +4,7 @@ import { sortChecks, type CheckState } from "@/lib/launch-check-rules";
 import { Badge, Notice, PageHeader, Stat } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
-import { hideOldPlans, toggleLaunchItem } from "./actions";
+import { hideOldPlans, setBackupAnswering, toggleLaunchItem } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,6 +24,7 @@ function Row({ c }: { c: Check }) {
         <div className="font-medium">{c.label} <span className="text-xs font-normal text-slate-500">· {c.area}</span></div>
         <div className="text-slate-600">{c.detail}</div>
         {c.fix ? <div className="mt-1 text-slate-800"><b>Fix:</b> {c.fix}</div> : null}
+        {c.label === "Backup answering on every number" && c.state === "todo" ? <form action={setBackupAnswering} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Setting…">Set backup answering on every number</SubmitButton></form> : null}
         {c.label === "Old plans still on offer" ? <form action={hideOldPlans} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Hiding…">Hide the old plans</SubmitButton></form> : null}
       </div>
     </li>

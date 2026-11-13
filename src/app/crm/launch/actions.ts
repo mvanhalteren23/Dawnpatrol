@@ -20,3 +20,17 @@ export async function hideOldPlans() {
   revalidatePath("/crm/launch");
   redirect(`/crm/launch?notice=${encodeURIComponent(res.count ? `Hid ${res.count} old plan${res.count === 1 ? "" : "s"}` : "Nothing to hide: any remaining old plan has a subscriber")}`);
 }
+
+/** Set Twilio's backup address on every number that answers through this site. */
+export async function setBackupAnswering() {
+  await requireAdmin();
+  let msg: Record<string, string>;
+  try {
+    const n = await (await import("@/lib/agent-fallback")).applyFallbackUrls();
+    msg = { notice: n ? `Backup answering set on ${n} number${n === 1 ? "" : "s"}` : "Every number already has it" };
+  } catch (e) {
+    msg = { error: (e as Error).message.slice(0, 200) };
+  }
+  revalidatePath("/crm/launch");
+  redirect(`/crm/launch?${new URLSearchParams(msg).toString()}`);
+}

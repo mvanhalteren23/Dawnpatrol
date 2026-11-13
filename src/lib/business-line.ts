@@ -33,15 +33,19 @@ export function shouldRingFirst(r: Receptionist, now = new Date()): boolean {
  * caller is the owner (matched from their number; see src/lib/owner-mode.ts).
  */
 export async function toAgent(r: Receptionist, from: string, to: string, callSid = ""): Promise<string> {
-  if (!r.elevenLabsAgentId) return twiml(`${say(`Sorry, ${r.businessName} can't take your call right now. Please call back shortly.`)}<Hangup/>`);
+  const { agentUnavailable, guardedHandoff } = await import("./agent-fallback");
+  // No agent, or it can't be reached: the caller leaves a message instead of hitting a dead end.
+  if (!r.elevenLabsAgentId) return agentUnavailable(r, "no voice agent is set up for this line");
   try {
     const owner = await ownerCaller(r, from).catch(() => null);
-    return await registerTwilioCall(r.elevenLabsAgentId, from, to, {
+    const handoff = await registerTwilioCall(r.elevenLabsAgentId, from, to, {
       dynamicVariables: { caller_role: owner ? "owner" : "customer", owner_name: owner?.firstName ? ` ${owner.firstName}` : "", call_sid: callSid },
     });
+    // If the agent drops the call in its first seconds, the caller is sent to voicemail.
+    return guardedHandoff(r, handoff);
   } catch (err) {
     console.error("business line: register-call failed", err);
-    return twiml(`${say(`Sorry, ${r.businessName} can't take your call right now. Please call back shortly.`)}<Hangup/>`);
+    return agentUnavailable(r, (err as Error).message ?? "the agent couldn't be reached");
   }
 }
 

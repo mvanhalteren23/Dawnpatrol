@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       callerNumber: params.From || null,
       startedAt: new Date(),
       durationSec: Math.min(VOICEMAIL_SECONDS, Number(params.RecordingDuration ?? 0) || 0),
-      summary: `Voicemail (${url.searchParams.get("why") === "limit" ? "this caller had already called several times today" : "the line was paused for unusual call volume"}): ${text || "no words could be transcribed"}`.slice(0, 2000),
+      summary: `Voicemail (${{ limit: "this caller had already called several times today", agent: "the receptionist couldn't take the call" }[url.searchParams.get("why") ?? ""] ?? "the line was paused for unusual call volume"}): ${text || "no words could be transcribed"}`.slice(0, 2000),
       transcript: text,
       outcome: "MESSAGE_TAKEN",
       followUpNeeded: Boolean(text),
