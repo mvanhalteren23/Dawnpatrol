@@ -14,9 +14,9 @@ describe("returning-caller recognition", () => {
     expect(callerContextText({ firstName: null, upcoming: null, calls: 0, lastCallAt: null, lastOutcome: null, lastBookingAt: null }, now)).toBe("");
   });
   it("gives the name, the appointment and the last call", () => {
-    const text = callerContextText({ firstName: "Dave", upcoming: { title: "Estimate", start: new Date("2026-11-19T22:00:00Z"), timezone: "America/Vancouver" }, calls: 3, lastCallAt: new Date("2026-11-10T18:00:00Z"), lastOutcome: "BOOKED", lastBookingAt: null }, now);
+    const text = callerContextText({ firstName: "Dave", upcoming: { title: "Estimate", start: new Date("2026-11-19T22:00:00Z"), timezone: "UTC" }, calls: 3, lastCallAt: new Date("2026-11-10T18:00:00Z"), lastOutcome: "BOOKED", lastBookingAt: null }, now);
     expect(text).toContain("First name on file: Dave.");
-    expect(text).toContain("Upcoming appointment: Estimate on Thursday, Nov 19 at 2:00 PM.");
+    expect(text).toContain("Upcoming appointment: Estimate on Thursday, Nov 19 at 10:00 PM.");
     expect(text).toContain("Last called 3 days ago and booked an appointment.");
     expect(text).toContain("3 calls in total.");
   });
