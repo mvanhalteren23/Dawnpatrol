@@ -2,10 +2,15 @@ import { requireStaff } from "@/lib/auth";
 import { NavLink } from "@/components/ui";
 import { companyName } from "@/lib/brand";
 import { db } from "@/lib/db";
+import type { Metadata, Viewport } from "next";
 import { BrandLogo } from "@/components/site/BrandLogo";
 
 // Claude research, prospecting and KB drafting run in after() from this segment's server actions.
 export const maxDuration = 300;
+
+// Installable as an app (Android app and "Add to home screen") straight into the CRM.
+export const metadata: Metadata = { manifest: "/crm.webmanifest", icons: { apple: "/icons/apple-touch-icon.png" } };
+export const viewport: Viewport = { themeColor: "#1F3B2D" };
 
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
   const [session, company] = await Promise.all([requireStaff(), companyName()]);
