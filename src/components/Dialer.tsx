@@ -414,16 +414,16 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
         </div>
       </div>
       {controls ? (
-        <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm md:grid-cols-[auto_1fr]">
-          <div className="flex rounded-lg border border-slate-300 bg-white p-0.5 text-xs" role="radiogroup" aria-label="Dialing mode">
+        <div className="grid min-w-0 grid-cols-1 gap-2 rounded-lg bg-slate-50 p-3 text-sm md:grid-cols-[auto_1fr]">
+          <div className="flex rounded-lg border border-slate-300 bg-white p-0.5 text-sm md:text-xs" role="radiogroup" aria-label="Dialing mode">
             {(["oneclick", "auto"] as const).map((m) => (
-              <button key={m} type="button" onClick={() => { setMode(m); if (m === "oneclick") setCountdown(null); }} className={`rounded-md px-3 py-1 ${mode === m ? "bg-dawn-600 text-white" : "text-slate-600"}`} aria-pressed={mode === m}>
+              <button key={m} type="button" onClick={() => { setMode(m); if (m === "oneclick") setCountdown(null); }} className={`flex-1 rounded-md px-3 py-2 md:flex-none md:py-1 ${mode === m ? "bg-dawn-600 text-white" : "text-slate-600"}`} aria-pressed={mode === m}>
                 {m === "oneclick" ? "One-click" : "Auto-dial"}
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-auto py-1 text-xs" aria-label="Voicemail handling" disabled={busy}>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs" aria-label="Voicemail handling" disabled={busy}>
               {(Object.keys(VM_LABELS) as VmMode[]).map((v) => (
                 <option key={v} value={v} disabled={(v === "recorded" && (!controls.voicemails.length || !controls.consent)) || (v === "ai" && (!controls.aiVoice || !controls.consent))}>
                   {VM_LABELS[v]}{v === "recorded" && !controls.voicemails.length ? " (record one first)" : ""}{v === "ai" && !controls.aiVoice ? " (set a voice first)" : ""}{(v === "recorded" || v === "ai") && !controls.consent ? " (see settings)" : ""}
@@ -442,7 +442,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
             ) : null}
           </div>
           {mode === "auto" ? <p className="text-xs text-slate-500 md:col-span-2">Auto-dial calls the next prospect after each call. No-answers and voicemails are logged automatically (with a follow-up task); live conversations still get the wrap-up form, then it continues.</p> : null}
-          <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2 md:col-span-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200 pt-2 md:col-span-2">
             {session ? (
               <>
                 <span className="text-xs text-slate-700">
@@ -456,12 +456,12 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
               </>
             ) : (
               <>
-                <button type="button" onClick={() => void startSession()} disabled={busy || phase === "wrapup" || !selected.size} className="btn py-1 text-xs">
+                <button type="button" onClick={() => void startSession()} disabled={busy || phase === "wrapup" || !selected.size} className="btn w-full py-2.5 text-sm md:w-auto md:py-1 md:text-xs">
                   ▶ Start auto-dial session{selected.size ? ` (${selected.size})` : ""}
                 </button>
-                <button type="button" onClick={() => setSelected(new Set(targets.filter((t) => !done.has(t.key) && t.numbers.length).map((t) => t.key)))} className="text-xs">Select all</button>
-                <button type="button" onClick={() => setSelected(new Set())} className="text-xs">None</button>
-                <span className="text-xs text-slate-500">{selected.size ? `${selected.size} selected` : "Tick the accounts to call in the list below."}{vmMode === "ai" ? " AI voicemails are written for all of them as the session starts." : ""}</span>
+                <button type="button" onClick={() => setSelected(new Set(targets.filter((t) => !done.has(t.key) && t.numbers.length).map((t) => t.key)))} className="min-h-10 px-2 text-sm md:min-h-0 md:px-0 md:text-xs">Select all</button>
+                <button type="button" onClick={() => setSelected(new Set())} className="min-h-10 px-2 text-sm md:min-h-0 md:px-0 md:text-xs">None</button>
+                <span className="basis-full text-xs text-slate-500 md:basis-auto">{selected.size ? `${selected.size} selected` : "Tick the accounts to call in the list below."}{vmMode === "ai" ? " AI voicemails are written for all of them as the session starts." : ""}</span>
               </>
             )}
           </div>

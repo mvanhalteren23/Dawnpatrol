@@ -4,13 +4,15 @@ import { companyName } from "@/lib/brand";
 import { db } from "@/lib/db";
 import type { Metadata, Viewport } from "next";
 import { BrandLogo } from "@/components/site/BrandLogo";
+import { MobileNav } from "@/components/MobileNav";
 
 // Claude research, prospecting and KB drafting run in after() from this segment's server actions.
 export const maxDuration = 300;
 
 // Installable as an app (Android app and "Add to home screen") straight into the CRM.
 export const metadata: Metadata = { manifest: "/crm.webmanifest", icons: { apple: "/icons/apple-touch-icon.png" } };
-export const viewport: Viewport = { themeColor: "#1F3B2D" };
+// viewportFit "cover" lets the bars sit under the status and gesture areas (safe-area padding keeps content clear).
+export const viewport: Viewport = { themeColor: "#1F3B2D", viewportFit: "cover" };
 
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
   const [session, company] = await Promise.all([requireStaff(), companyName()]);
@@ -60,11 +62,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-3 overflow-x-auto bg-dawn-900 px-4 py-2 text-sm md:hidden">
-          {nav.map(([href, , label]) => (
-            <a key={href} href={href} className="whitespace-nowrap text-dawn-100 hover:text-dawn-400">{label}</a>
-          ))}
-        </div>
+        <MobileNav nav={nav} email={session.email} role={isAdmin ? "Administrator" : "Sales rep"} company={company} />
         {toReview.length ? (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
             🔔 {toReview.length === 1 ? "1 account" : `${toReview.length}${toReview.length === 5 ? "+" : ""} accounts`} added or updated from receptionist bookings — review and edit as needed:{" "}
@@ -76,7 +74,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
             Protect your clients&apos; call data: <a href="/crm/settings#two-step" className="font-medium text-amber-900 underline">turn on two-step sign-in</a> (2 minutes, with an authenticator app).
           </div>
         ) : null}
-        <main className="mx-auto max-w-7xl p-4 md:p-8">{children}</main>
+        <main className="mx-auto max-w-7xl p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-8">{children}</main>
       </div>
     </div>
   );

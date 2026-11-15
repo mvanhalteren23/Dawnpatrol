@@ -8,6 +8,10 @@ underneath (a "Trusted Web Activity"). Everything in the CRM works in it, becaus
 - **Dialer** and **auto-dial** (the microphone prompt appears the first time you call)
 - Campaigns, Launch check and everything else in the menu
 
+Designed for the **Pixel 10 Pro** (6.3", 410×914 CSS px, Android 16): on phones the CRM has a
+bottom tab bar (Home · Accounts · Health · Dialer · More) within thumb reach, clear of the gesture
+bar; *More* opens every other page. Tablets and computers keep the sidebar.
+
 New CRM features show up in the app the moment they're deployed: no app update needed.
 Links to `headabovedigital.com/crm/...` (alert emails, texts) open in the app.
 
