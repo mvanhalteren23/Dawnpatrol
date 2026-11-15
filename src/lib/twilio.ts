@@ -178,15 +178,17 @@ export function dialableNumber(input: string): string | null {
  * callbacks. With `amdCallback`, Twilio runs answering-machine detection on the dialled leg and
  * reports the result (after the greeting's beep) so a voicemail can be dropped.
  */
-export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null; amdCallback?: string | null }): string {
+export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null; amdCallback?: string | null; legStatusCallback?: string | null; before?: string }): string {
   const rec = o.recordingCallback
     ? ` record="record-from-answer-dual" recordingStatusCallback="${escapeXml(o.recordingCallback)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
     : "";
   const amd = o.amdCallback
     ? ` machineDetection="DetectMessageEnd" machineDetectionTimeout="20" machineDetectionSpeechEndThreshold="900" machineDetectionSilenceTimeout="3000" amdStatusCallback="${escapeXml(o.amdCallback)}" amdStatusCallbackMethod="POST"`
     : "";
+  // "Call my phone" dialer: the app follows the prospect's leg (ringing, answered, ended) here.
+  const leg = o.legStatusCallback ? ` statusCallback="${escapeXml(o.legStatusCallback)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"` : "";
   return twiml(
-    `<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}>${escapeXml(o.to)}</Number></Dial>`,
+    `${o.before ?? ""}<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}${leg}>${escapeXml(o.to)}</Number></Dial>`,
   );
 }
 

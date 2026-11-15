@@ -8,9 +8,24 @@ export type DialerControls = {
   defaultVoicemailId: string | null;
   aiVoice: boolean; // an ElevenLabs voice is set for AI voicemails
   consent: boolean; // compliance note acknowledged in voicemail settings
+  myPhone?: string | null; // your mobile (masked) for "Call my phone" audio; null = not set
 };
 
 type Mode = "oneclick" | "auto";
+type Audio = "browser" | "phone";
+type BridgeInfo = { id: string; state: "CALLING" | "READY" | "DIALING" | "ENDED"; endedReason?: string };
+type BridgeState = { state: string; id?: string; legKey?: string | null; legPhase?: "connecting" | "ringing" | "live" | "ended"; endedReason?: string };
+
+async function bridgeApi<T>(body: Record<string, unknown>): Promise<T> {
+  const r = await fetch("/api/dialer/bridge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return (await r.json().catch(() => ({ error: "Network error" }))) as T;
+}
+
+async function bridgeState(id?: string): Promise<BridgeState> {
+  return (await fetch(`/api/dialer/bridge${id ? `?b=${id}` : ""}`, { cache: "no-store" }).then((r) => r.json()).catch(() => ({ state: "UNKNOWN" }))) as BridgeState;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type VmMode = "self" | "recorded" | "ai" | "hangup";
 const VM_LABELS: Record<VmMode, string> = {
   self: "I'll leave voicemails myself",
@@ -90,8 +105,18 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   const [amd, setAmd] = useState<string | null>(null);
   const [builderNote, setBuilderNote] = useState<string | null>(null);
   const [builderOn, setBuilderOn] = useState(false);
-  const opts = useRef({ mode, vmMode, vmId, delay });
-  opts.current = { mode, vmMode, vmId, delay };
+  // "Call my phone": Twilio rings your mobile once and every call goes through it.
+  const [audio, setAudio] = useState<Audio>("browser");
+  const [bridge, setBridge] = useState<BridgeInfo | null>(null);
+  const bridgeRef = useRef<BridgeInfo | null>(null);
+  bridgeRef.current = bridge;
+  const legKey = useRef<string | null>(null);
+  const legPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const opts = useRef({ mode, vmMode, vmId, delay, audio });
+  opts.current = { mode, vmMode, vmId, delay, audio };
+  const phoneAudio = Boolean(controls) && audio === "phone";
+  /** The id the server logs this call under: the browser call's sid, or the phone leg's key. */
+  const currentSid = () => (opts.current.audio === "phone" ? legKey.current : call.current?.parameters.CallSid) ?? "";
   const answered = useRef(false);
   const doneRef = useRef(done);
   doneRef.current = done;
@@ -121,6 +146,24 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
 
   useEffect(() => () => device.current?.destroy(), []);
 
+  // Leaving the dialer ends a phone session (so your phone isn't left on an open line).
+  useEffect(
+    () => () => {
+      if (legPoll.current) clearInterval(legPoll.current);
+      const b = bridgeRef.current;
+      if (b && b.state !== "ENDED") void fetch("/api/dialer/bridge", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "end", bridgeId: b.id }) });
+    },
+    [],
+  );
+
+  // Back on the page with your phone still connected (e.g. after a reload): pick the session up.
+  useEffect(() => {
+    if (!controls) return;
+    void bridgeState().then((s) => {
+      if (s.id && (s.state === "READY" || s.state === "CALLING")) setBridge({ id: s.id, state: s.state });
+    });
+  }, [controls]);
+
   useEffect(() => {
     if (!controls) return;
     try {
@@ -129,6 +172,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       if (saved.vmMode) setVmMode(saved.vmMode);
       if (saved.vmId && controls.voicemails.some((v) => v.id === saved.vmId)) setVmId(saved.vmId);
       if (saved.delay) setDelay(saved.delay);
+      if (saved.audio === "phone" && controls.myPhone) setAudio("phone");
     } catch {
       // storage unavailable: defaults
     }
@@ -137,17 +181,17 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   useEffect(() => {
     if (!controls) return;
     try {
-      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay }));
+      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay, audio }));
     } catch {
       // ignore
     }
-  }, [controls, mode, vmMode, vmId, delay]);
+  }, [controls, mode, vmMode, vmId, delay, audio]);
 
   // Live answering-machine result while a call is up.
   useEffect(() => {
     if (!(phase === "ringing" || phase === "live")) return;
     const t = setInterval(async () => {
-      const sid = call.current?.parameters.CallSid;
+      const sid = currentSid();
       if (!sid) return;
       const st = (await fetch(`/api/dialer/state?sid=${sid}`, { cache: "no-store" }).then((r) => r.json()).catch(() => ({}))) as { answeredBy?: string };
       if (st.answeredBy) setAmd(st.answeredBy);
@@ -194,9 +238,8 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
     }
   }
 
-  async function finish(c: Call, index: number) {
+  async function finish(sid: string, index: number) {
     const t = targets[index];
-    const sid = c.parameters.CallSid ?? "";
     setCallSid((x) => x || sid);
     call.current = null;
     // Give Twilio's status and machine-detection callbacks a moment to land.
@@ -291,8 +334,107 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
     sessionRef.current = null;
     setCountdown(null);
     setMode("oneclick");
-    if (phase === "connecting" || phase === "ringing") call.current?.disconnect();
+    if (phase === "connecting" || phase === "ringing") hangUp();
     setSessionNote("Auto-dialer stopped.");
+  }
+
+  /** Ring your phone and wait for you to answer and press 1. */
+  async function connectPhone(): Promise<BridgeInfo | null> {
+    const existing = bridgeRef.current;
+    if (existing && existing.state !== "ENDED" && existing.state !== "CALLING") return existing;
+    let id = existing?.state === "CALLING" ? existing.id : null;
+    if (!id) {
+      const r = await bridgeApi<{ id?: string; error?: string }>({ action: "start" });
+      if (!r.id) {
+        setError(r.error ?? "Couldn't call your phone");
+        return null;
+      }
+      id = r.id;
+      setBridge({ id, state: "CALLING" });
+    }
+    setSessionNote(`Calling ${controls?.myPhone ?? "your phone"}: answer, press 1, then come back to the app (the call stays connected).`);
+    for (let i = 0; i < 60; i++) {
+      const s = await bridgeState(id);
+      if (s.state === "READY" || s.state === "DIALING") {
+        const b: BridgeInfo = { id, state: "READY" };
+        setBridge(b);
+        bridgeRef.current = b;
+        setSessionNote(null);
+        return b;
+      }
+      if (s.state === "ENDED" || s.state === "NONE") {
+        setBridge(null);
+        setSessionNote(null);
+        setError(s.endedReason || "Your phone didn't connect.");
+        return null;
+      }
+      await sleep(1000);
+    }
+    setSessionNote(null);
+    setError("Your phone didn't connect in time. Try again.");
+    void bridgeApi({ action: "end", bridgeId: id });
+    setBridge(null);
+    return null;
+  }
+
+  async function endPhone() {
+    const b = bridgeRef.current;
+    if (!b) return;
+    if (legPoll.current) clearInterval(legPoll.current);
+    await bridgeApi({ action: "end", bridgeId: b.id });
+    setBridge(null);
+    if (phase === "connecting" || phase === "ringing" || phase === "live") setPhase("idle");
+  }
+
+  /** Dial through your phone: the same call (caller ID, recording, voicemail drop), your phone's audio. */
+  async function dialByPhone(index: number, t: DialTarget, n: DialNumber, useAmd: boolean) {
+    const b = await connectPhone();
+    if (!b) {
+      setPhase("idle");
+      return;
+    }
+    const o = opts.current;
+    const r = await bridgeApi<{ key?: string; error?: string }>({ action: "dial", bridgeId: b.id, accountId: t.accountId, contactId: n.contactId ?? "", to: n.phone, ...(useAmd ? { vm: o.vmMode, vmId: o.vmId } : {}) });
+    if (!r.key) {
+      setError(r.error ?? "Couldn't place the call");
+      setPhase("idle");
+      if (r.error?.includes("isn't connected")) setBridge(null);
+      return;
+    }
+    const key = r.key;
+    legKey.current = key;
+    setCallSid(key);
+    let endedAt = 0;
+    let finished = false;
+    if (legPoll.current) clearInterval(legPoll.current);
+    legPoll.current = setInterval(async () => {
+      if (finished) return;
+      const s = await bridgeState(b.id);
+      if (finished) return; // a slower poll already wrapped this call up
+      const done = () => {
+        finished = true;
+        if (legPoll.current) clearInterval(legPoll.current);
+        legPoll.current = null;
+        void finish(key, index);
+      };
+      if (s.state === "ENDED") {
+        setBridge(null);
+        if (s.endedReason) setSessionNote(s.endedReason);
+        return done();
+      }
+      if (s.legKey !== key) return;
+      if (s.legPhase === "ringing") setPhase("ringing");
+      if (s.legPhase === "live") {
+        answered.current = true;
+        setPhase("live");
+      }
+      // The call is over once the server has logged it and your phone is back to waiting.
+      if (s.state === "READY") return done();
+      if (s.legPhase === "ended") {
+        endedAt ||= Date.now();
+        if (Date.now() - endedAt > 8000) done();
+      }
+    }, 1000);
   }
 
   async function getDevice(): Promise<Device> {
@@ -330,6 +472,11 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
     const o = opts.current;
     const useAmd = Boolean(controls) && (o.vmMode !== "self" || o.mode === "auto");
     if (controls && o.vmMode === "ai") void prep(t);
+    if (controls && o.audio === "phone") {
+      legKey.current = null;
+      await dialByPhone(index, t, numberFor(t)!, useAmd);
+      return;
+    }
     try {
       const d = await getDevice();
       const n = numberFor(t)!;
@@ -347,7 +494,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       const end = () => {
         if (ended) return;
         ended = true;
-        void finish(c, index);
+        void finish(c.parameters.CallSid ?? "", index);
       };
       c.on("disconnect", end);
       c.on("cancel", end);
@@ -367,7 +514,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
 
   // The live demo builder (way 3b): moves this call into a conference with the builder agent.
   async function builderAction(remove: boolean) {
-    const sid = call.current?.parameters.CallSid;
+    const sid = call.current?.parameters.CallSid; // browser calls only (hidden in phone mode)
     if (!sid) return;
     setBuilderNote(remove ? "Removing the AI…" : `Adding ${builder}…`);
     const res = (await fetch("/api/dialer/builder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid, remove }) }).then((r) => r.json()).catch(() => ({ ok: false, message: "Network error" }))) as { ok: boolean; message: string };
@@ -376,6 +523,11 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   }
 
   function hangUp() {
+    const b = bridgeRef.current;
+    if (opts.current.audio === "phone" && b) {
+      void bridgeApi({ action: "hangup", bridgeId: b.id }); // your phone stays connected for the next call
+      return;
+    }
     call.current?.disconnect();
   }
 
@@ -423,6 +575,16 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
             ))}
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <select
+              value={audio}
+              onChange={(e) => setAudio(e.target.value as Audio)}
+              className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs"
+              aria-label="Talk through"
+              disabled={busy || Boolean(bridge && bridge.state !== "ENDED")}
+            >
+              <option value="browser">Talk through this device (app or browser)</option>
+              <option value="phone" disabled={!controls.myPhone}>Call my phone first{controls.myPhone ? ` (${controls.myPhone})` : " (add your mobile in Settings)"}</option>
+            </select>
             <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs" aria-label="Voicemail handling" disabled={busy}>
               {(Object.keys(VM_LABELS) as VmMode[]).map((v) => (
                 <option key={v} value={v} disabled={(v === "recorded" && (!controls.voicemails.length || !controls.consent)) || (v === "ai" && (!controls.aiVoice || !controls.consent))}>
@@ -441,6 +603,19 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
               </label>
             ) : null}
           </div>
+          {phoneAudio ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs md:col-span-2">
+              {bridge && bridge.state !== "ENDED" ? (
+                <>
+                  <span className="font-semibold text-emerald-700">● {bridge.state === "CALLING" ? `Calling ${controls.myPhone}…` : `Your phone is connected`}</span>
+                  <span className="text-slate-500">Calls go through it, one after another. Mute and keypad are on your phone.</span>
+                  <button type="button" onClick={() => void endPhone()} className="btn-secondary ml-auto py-1 text-xs">Hang up my phone</button>
+                </>
+              ) : (
+                <span className="text-slate-600">Your phone rings when you start the first call: answer and press 1. It then stays connected for the whole session; prospects see the business number. Best on cell signal or Bluetooth in the truck.</span>
+              )}
+            </div>
+          ) : null}
           {mode === "auto" ? <p className="text-xs text-slate-500 md:col-span-2">Auto-dial calls the next prospect after each call. No-answers and voicemails are logged automatically (with a follow-up task); live conversations still get the wrap-up form, then it continues.</p> : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200 pt-2 md:col-span-2">
             {session ? (
@@ -495,10 +670,14 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
           ) : null}
           {vmMode === "ai" && vmPrep[target.key] ? <p className="mt-1 text-xs text-slate-500"><PrepBadge p={vmPrep[target.key]!} />{vmPrep[target.key]!.script ? <> &ldquo;{vmPrep[target.key]!.script}&rdquo;</> : null}</p> : null}
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" onClick={hangUp} className="btn-danger">Hang up</button>
-            <button type="button" onClick={() => { call.current?.mute(!muted); setMuted(!muted); }} className="btn-secondary">{muted ? "Unmute" : "Mute"}</button>
-            <button type="button" onClick={() => setKeypad(!keypad)} className="btn-secondary">Keypad</button>
-            {builder && phase === "live" && !(amd ?? "").startsWith("machine") ? (
+            <button type="button" onClick={hangUp} className="btn-danger min-h-11 flex-1 md:flex-none">Hang up</button>
+            {phoneAudio ? null : (
+              <>
+                <button type="button" onClick={() => { call.current?.mute(!muted); setMuted(!muted); }} className="btn-secondary">{muted ? "Unmute" : "Mute"}</button>
+                <button type="button" onClick={() => setKeypad(!keypad)} className="btn-secondary">Keypad</button>
+              </>
+            )}
+            {builder && !phoneAudio && phase === "live" && !(amd ?? "").startsWith("machine") ? (
               builderOn
                 ? <button type="button" onClick={() => void builderAction(true)} className="btn-secondary" title="The builder and any live demo leave; you and the prospect stay connected">Remove AI</button>
                 : <button type="button" onClick={() => void builderAction(false)} className="btn" title={`${builder} joins the call, asks about their business, builds their demo receptionist and can connect them to it live. Introduce it first; you can stay on or hang up.`}>Add demo builder</button>

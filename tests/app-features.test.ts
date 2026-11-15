@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_PREFS, clip, inQuietHours, localHour, parsePrefs, safeCrmPath, shouldNotify } from "@/lib/push-rules";
+import { passkeyName, rpFor } from "@/lib/passkey-rules";
+import { landingPath } from "@/lib/login-rules";
+import { bestNumber, dueLabel, endOfLocalDay, tomorrowMorning } from "@/lib/today-rules";
+import { isMapsUrl, nameFromTitle, parseShare } from "@/lib/share-rules";
+import { bridgeIdFromKey, endedReason, isFinalLegStatus, legKey, legPhase, maskPhone, parsePending } from "@/lib/dialer-bridge-rules";
+
+// Fixed-offset zones only (no daylight-saving rules), so results don't depend on the runner's tz data.
+const UTC = "UTC";
+const PST = "Etc/GMT+8"; // UTC-8 all year
+
+describe("phone notifications", () => {
+  it("reads saved preferences and falls back to sensible defaults", () => {
+    expect(parsePrefs("")).toEqual(DEFAULT_PREFS);
+    expect(parsePrefs("not json")).toEqual(DEFAULT_PREFS);
+    const p = parsePrefs(JSON.stringify({ off: ["replies", "bogus"], quietStart: null, quietEnd: null, urgentInQuiet: false, timezone: UTC }));
+    expect(p.off).toEqual(["replies"]);
+    expect(p.quietStart).toBeNull();
+    expect(p.urgentInQuiet).toBe(false);
+    expect(parsePrefs(JSON.stringify({ quietStart: 99 })).quietStart).toBe(21);
+  });
+
+  it("quiet hours wrap past midnight", () => {
+    expect(inQuietHours(22, 21, 7)).toBe(true);
+    expect(inQuietHours(3, 21, 7)).toBe(true);
+    expect(inQuietHours(7, 21, 7)).toBe(false);
+    expect(inQuietHours(12, 21, 7)).toBe(false);
+    expect(inQuietHours(13, 12, 14)).toBe(true);
+    expect(inQuietHours(13, null, 7)).toBe(false);
+    expect(inQuietHours(13, 8, 8)).toBe(false);
+  });
+
+  it("uses the user's time zone", () => {
+    const at = new Date("2026-11-15T06:30:00Z");
+    expect(localHour(at, UTC)).toBe(6);
+    expect(localHour(at, PST)).toBe(22);
+    expect(localHour(at, "Not/AZone")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("holds back all but urgent alerts in quiet hours, and respects switched-off kinds", () => {
+    const prefs = { ...DEFAULT_PREFS, timezone: PST };
+    const night = new Date("2026-11-15T06:30:00Z"); // 10:30pm
+    const day = new Date("2026-11-15T19:00:00Z"); // 11am
+    expect(shouldNotify(prefs, "leads", false, day)).toBe(true);
+    expect(shouldNotify(prefs, "leads", false, night)).toBe(false);
+    expect(shouldNotify(prefs, "lines", true, night)).toBe(true);
+    expect(shouldNotify({ ...prefs, urgentInQuiet: false }, "lines", true, night)).toBe(false);
+    expect(shouldNotify({ ...prefs, off: ["leads"] }, "leads", false, day)).toBe(false);
+  });
+
+  it("keeps text short and only opens CRM pages", () => {
+    expect(clip("a  b\n c", 10)).toBe("a b c");
+    expect(clip("x".repeat(50), 10)).toHaveLength(10);
+    expect(safeCrmPath("/crm/accounts/1")).toBe("/crm/accounts/1");
+    expect(safeCrmPath("https://evil.example/crm")).toBe("/crm");
+    expect(safeCrmPath("/portal")).toBe("/crm/today");
+    expect(safeCrmPath(null)).toBe("/crm/today");
+  });
+});
+
+describe("passkeys and sign-in", () => {
+  it("belongs to the bare domain and accepts www", () => {
+    expect(rpFor("https://headabovedigital.com")).toEqual({ rpID: "headabovedigital.com", origins: ["https://headabovedigital.com", "https://www.headabovedigital.com"] });
+    expect(rpFor("https://www.headabovedigital.com/").rpID).toBe("headabovedigital.com");
+    expect(rpFor("http://localhost:3000")).toEqual({ rpID: "localhost", origins: ["http://localhost:3000"] });
+  });
+
+  it("names a passkey after the device", () => {
+    expect(passkeyName("Mozilla/5.0 (Linux; Android 16; Pixel 10 Pro) AppleWebKit")).toBe("Pixel 10 Pro");
+    expect(passkeyName("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit")).toBe("Android phone");
+    expect(passkeyName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("Mac");
+    expect(passkeyName("")).toBe("Passkey");
+  });
+
+  it("lands staff in the CRM and clients in the portal, never off-site", () => {
+    expect(landingPath("ADMIN", "/crm/health")).toBe("/crm/health");
+    expect(landingPath("REP", "//evil.com")).toBe("/crm");
+    expect(landingPath("REP", "/\\evil.com")).toBe("/crm");
+    expect(landingPath("CLIENT", "/crm")).toBe("/portal");
+    expect(landingPath("CLIENT", "/portal/photos")).toBe("/portal/photos");
+  });
+});
+
+describe("Today screen", () => {
+  const now = new Date("2026-11-15T19:00:00Z"); // 11am at UTC-8
+
+  it("works out today's cut-off and tomorrow morning in the user's zone", () => {
+    expect(endOfLocalDay(now, PST).toISOString()).toBe("2026-11-16T08:00:00.000Z");
+    expect(endOfLocalDay(now, UTC).toISOString()).toBe("2026-11-16T00:00:00.000Z");
+    expect(tomorrowMorning(now, PST).toISOString()).toBe("2026-11-16T17:00:00.000Z");
+    expect(endOfLocalDay(now, "Bad/Zone")).toBeInstanceOf(Date);
+  });
+
+  it("labels follow-ups", () => {
+    expect(dueLabel(new Date("2026-11-13T18:00:00Z"), now, PST)).toEqual({ text: "Overdue 2 days", overdue: true });
+    expect(dueLabel(new Date("2026-11-15T17:00:00Z"), now, PST)).toEqual({ text: "Due now", overdue: true });
+    const later = dueLabel(new Date("2026-11-15T22:30:00Z"), now, PST);
+    expect(later.overdue).toBe(false);
+    expect(later.text).toMatch(/^Due 2:30/);
+  });
+
+  it("calls the main contact first, then the business line", () => {
+    expect(bestNumber("+16045550000", [{ phone: "+17785550001", isPrimary: false }, { phone: "+17785550002", isPrimary: true }])).toBe("+17785550002");
+    expect(bestNumber("+16045550000", [{ phone: null, isPrimary: true }])).toBe("+16045550000");
+    expect(bestNumber(null, [])).toBeNull();
+  });
+});
+
+describe("Share to Head Above", () => {
+  it("reads a Google Maps share", () => {
+    const b = parseShare({ text: "Sea to Sky Auto\n38000 Cleveland Ave, Squamish, BC V8B 0A1\n(604) 555-0199\nhttps://maps.app.goo.gl/AbCd123" });
+    expect(b.name).toBe("Sea to Sky Auto");
+    expect(b.address).toBe("38000 Cleveland Ave, Squamish, BC V8B 0A1");
+    expect(b.city).toBe("Squamish");
+    expect(b.state).toBe("BC");
+    expect(b.phone).toBe("(604) 555-0199");
+    expect(b.mapsUrl).toBe("https://maps.app.goo.gl/AbCd123");
+    expect(b.website).toBeNull();
+  });
+
+  it("reads a Maps share joined with dots, and one with only a name and link", () => {
+    const b = parseShare({ text: "Howe Sound Plumbing · 1200 Main St, Whistler, BC · https://maps.app.goo.gl/x" });
+    expect(b.name).toBe("Howe Sound Plumbing");
+    expect(b.city).toBe("Whistler");
+    const c = parseShare({ title: "Tantalus Roofing", text: "https://maps.app.goo.gl/y" });
+    expect(c.name).toBe("Tantalus Roofing");
+  });
+
+  it("reads a web page shared from Chrome (link in the text)", () => {
+    const b = parseShare({ title: "Brackendale Electric | Licensed Electricians in Squamish", text: "https://www.brackendaleelectric.ca/about" });
+    expect(b.name).toBe("Brackendale Electric");
+    expect(b.website).toBe("https://www.brackendaleelectric.ca/about");
+  });
+
+  it("doesn't treat Facebook or Yelp as the business website", () => {
+    const b = parseShare({ title: "Squamish Glass - Home | Facebook", url: "https://www.facebook.com/squamishglass" });
+    expect(b.website).toBeNull();
+    expect(b.otherUrl).toBe("https://www.facebook.com/squamishglass");
+    expect(b.name).toBe("Squamish Glass");
+  });
+
+  it("doesn't mistake digits in a business name for its phone number", () => {
+    const b = parseShare({ text: "Unit 1234567890 Storage\n1001 Main St, Squamish, BC\nhttps://maps.app.goo.gl/z" });
+    expect(b.name).toBe("Unit 1234567890 Storage");
+    expect(b.phone).toBeNull();
+  });
+
+  it("spots Maps links and cleans titles", () => {
+    expect(isMapsUrl("https://maps.app.goo.gl/x")).toBe(true);
+    expect(isMapsUrl("https://www.google.com/maps/place/x")).toBe(true);
+    expect(isMapsUrl("https://www.google.com/search?q=x")).toBe(false);
+    expect(nameFromTitle("Home - Peak Heating")).toBe("Peak Heating");
+    expect(nameFromTitle("Welcome to Peak Heating")).toBe("Peak Heating");
+  });
+});
+
+describe("Call my phone dialer", () => {
+  it("gives each prospect call its own key", () => {
+    const id = "cmwh5fgsy009k7dbn0gww3uh2";
+    expect(legKey(id, 3)).toBe(`br3_${id}`);
+    expect(bridgeIdFromKey(legKey(id, 3))).toBe(id);
+    expect(bridgeIdFromKey("CA123")).toBeNull();
+  });
+
+  it("follows the prospect's leg", () => {
+    expect(legPhase("queued")).toBe("connecting");
+    expect(legPhase("ringing")).toBe("ringing");
+    expect(legPhase("in-progress")).toBe("live");
+    expect(legPhase("no-answer")).toBe("ended");
+    expect(isFinalLegStatus("completed")).toBe(true);
+    expect(isFinalLegStatus("ringing")).toBe(false);
+  });
+
+  it("explains why the session ended and masks the number", () => {
+    expect(endedReason("no-answer", false)).toMatch(/wasn't answered/);
+    expect(endedReason("completed", false)).toMatch(/before you pressed 1/);
+    expect(endedReason("completed", true)).toBe("Your phone hung up.");
+    expect(maskPhone("+16045550123")).toBe("(604) ···-0123");
+  });
+
+  it("reads a queued call safely", () => {
+    expect(parsePending("")).toBeNull();
+    expect(parsePending("{bad")).toBeNull();
+    expect(parsePending(JSON.stringify({ key: "br1_x", accountId: "a", contactId: null, to: "+16045550123", vm: null, vmId: "" }))?.to).toBe("+16045550123");
+  });
+});

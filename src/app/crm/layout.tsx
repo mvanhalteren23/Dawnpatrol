@@ -21,6 +21,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
   const toReview = await db.account.findMany({ where: { needsReview: true, ...(isAdmin ? {} : { OR: [{ ownerId: session.sub }, { ownerId: null }] }) }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 5 });
   const me = await db.user.findUnique({ where: { id: session.sub }, select: { totpEnabledAt: true } });
   const nav: [string, string, string][] = [
+    ["/crm/today", "Today", "Today"],
     ["/crm", "Dashboard", "Home"],
     ["/crm/accounts", "Accounts", "Accounts"],
     ["/crm/health", "Client health", "Health"],

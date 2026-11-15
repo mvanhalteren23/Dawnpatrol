@@ -40,14 +40,72 @@ model User {
   totpEnabledAt      DateTime?
   totpLastStep       Int? // last code used, so the same code can't be replayed
   recoveryCodes      String    @default("") // JSON array of SHA-256 hashes, each usable once
+  // Phone notifications: which kinds to send and quiet hours (JSON, see push-rules.ts).
+  pushPrefs          String    @default("")
 
   google        GoogleAccount?
   ownedAccounts Account[]      @relation("AccountOwner")
   activities    Activity[]
   prompts       SavedPrompt[]
   imports       ImportJob[]
+  pushSubscriptions PushSubscription[]
+  passkeys      Passkey[]
 
   @@index([phone])
+}
+
+/** A browser or phone (the Android app) that receives push notifications for a CRM user. */
+model PushSubscription {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  device        String    @default("") // e.g. "Android phone", from the browser
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+
+  @@index([userId])
+}
+
+/** A passkey (fingerprint / face / screen lock) for signing in without a password. */
+model Passkey {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique // base64url
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String    @default("") // comma-separated
+  name         String    @default("Passkey")
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+}
+
+/**
+ * "Call my phone first" dialer: one call to the rep's mobile that stays up for the session; each
+ * prospect is dialled from it (caller ID = the business number) and it waits between calls.
+ */
+model DialerBridge {
+  id         String   @id @default(cuid())
+  userId     String
+  phone      String // the rep's mobile (E.164) that was called
+  repCallSid String?  @unique
+  // CALLING (ringing the rep) | READY (rep on the line, waiting) | DIALING (a prospect call is up) | ENDED
+  state      String   @default("CALLING")
+  pending    String   @default("") // JSON: the next prospect to dial
+  legKey     String? // the current prospect call's key (activity externalId "dialer:<legKey>")
+  legSid     String? // Twilio sid of the prospect's leg
+  legStatus  String? // queued | ringing | in-progress | completed | busy | no-answer | failed | canceled
+  dials      Int      @default(0)
+  endedReason String  @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, state])
 }
 
 // ---------------------------------------------------------------------------

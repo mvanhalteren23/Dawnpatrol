@@ -11,7 +11,7 @@ import { BrandMark } from "@/components/site/BrandLogo";
 export type NavItem = [href: string, label: string, short: string];
 
 const TABS: { href: string; label: string; icon: React.ReactNode }[] = [
-  { href: "/crm", label: "Home", icon: <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /> },
+  { href: "/crm/today", label: "Today", icon: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></> },
   { href: "/crm/accounts", label: "Accounts", icon: <><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 9h4a1 1 0 0 1 1 1v11M8 8h3M8 12h3M8 16h3M2 21h20" /></> },
   { href: "/crm/health", label: "Health", icon: <path d="M3 12h4l2-5 4 10 2-5h6" /> },
   { href: "/crm/dialer", label: "Dialer", icon: <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" /> },

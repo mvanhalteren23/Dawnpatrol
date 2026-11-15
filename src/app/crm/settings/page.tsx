@@ -16,6 +16,7 @@ import QRCode from "qrcode";
 import { open } from "@/lib/secret-box";
 import { otpauthUrl } from "@/lib/totp";
 import { TwoStepCard } from "@/components/TwoStepCard";
+import { PhoneAppCard } from "@/components/PhoneAppCard";
 import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
 import { formatDate, safeJson } from "@/lib/utils";
 import { Badge, Field, PageHeader } from "@/components/ui";
@@ -87,6 +88,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <PageHeader title="Settings" subtitle={`Signed in as ${session.email}`} />
         <Flash params={await searchParams} />
         {myGoogleCard}
+        <PhoneAppCard userId={session.sub} />
         {passwordCard}
         {twoStepCard}
       </div>
@@ -114,6 +116,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Settings" />
       <Flash params={await searchParams} />
+
+      <PhoneAppCard userId={session.sub} />
 
       <div className="card flex items-center justify-between gap-3">
         <div>

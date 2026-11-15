@@ -2,12 +2,11 @@
 import { redirect } from "next/navigation";
 import { completeMfaLogin, login } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/session";
+import { landingPath } from "@/lib/login-rules";
 import { str } from "@/lib/utils";
 
 function landing(session: SessionPayload, next: string): never {
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "";
-  if (session.role === "ADMIN" || session.role === "REP") redirect(safeNext.startsWith("/crm") || safeNext.startsWith("/portal") ? safeNext : "/crm");
-  redirect(safeNext.startsWith("/portal") ? safeNext : "/portal");
+  redirect(landingPath(session.role, next));
 }
 
 export async function loginAction(_prev: { error?: string } | undefined, form: FormData) {

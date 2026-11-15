@@ -115,6 +115,8 @@ export async function checkMinuteUsage(r: Receptionist, now = new Date()) {
   const key = `minutes.alert.${r.id}.${month.key}`;
   if (await getSetting(key)) return { minutes, cap, alerted: false };
   await setSetting(key, new Date().toISOString());
+  const { pushForAccount } = await import("./push");
+  await pushForAccount(r.accountId, { category: "billing", title: `${account?.name ?? r.businessName}: ${Math.round((minutes / cap) * 100)}% of minutes used`, body: `${minutes} of ${cap} minutes this month. Extra minutes bill automatically: worth a call about their plan.`, tag: `minutes:${r.id}` });
   const { supportAddress } = await import("./google");
   const to = await supportAddress(); // a billing matter: the support/admin inbox
   if (to) {

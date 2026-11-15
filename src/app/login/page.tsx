@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LoginForm } from "./LoginForm";
+import { PasskeyButton } from "./PasskeyButton";
 import { companyName } from "@/lib/brand";
 import { BrandLogo } from "@/components/site/BrandLogo";
 
@@ -15,7 +16,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <h1 className="text-4xl">Sign in</h1>
           <p className="mt-2 text-sm text-slate-600">Clients: see your calls, reports and receptionist settings. Team: open the CRM.</p>
           {error === "no-account" ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Your login isn&apos;t linked to a business yet. Contact us and we&apos;ll fix it.</p> : null}
-          <div className="mt-8"><LoginForm next={next ?? ""} /></div>
+          <div className="mt-8 space-y-4">
+            <PasskeyButton next={next ?? ""} />
+            <LoginForm next={next ?? ""} />
+          </div>
           <p className="mt-6 text-xs text-slate-500">Forgot your password? Contact us and we&apos;ll reset it.</p>
         </div>
         <Link href="/" className="text-sm text-slate-500">← Back to the website</Link>

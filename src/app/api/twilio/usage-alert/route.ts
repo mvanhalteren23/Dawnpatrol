@@ -11,6 +11,7 @@ export async function POST(req: Request) {
   await alertTeam(
     "Twilio spending alert",
     `Twilio spend today is US$${value.toFixed(2)}, past your alert of US$${limit.toFixed(2)}. Check the call logs for a burst of calls from one number, block it, and look at Twilio → Monitor → Calls.`,
+    { category: "billing", urgent: true, url: "/crm/launch" },
   ).catch((e) => console.error("usage alert failed", e));
   return xml(twiml(""));
 }

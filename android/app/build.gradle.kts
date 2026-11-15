@@ -7,7 +7,7 @@ plugins {
 }
 
 val host: String = (findProperty("twaHost") as String?) ?: "headabovedigital.com"
-val launchUrl = "https://$host/crm"
+val launchUrl = "https://$host/crm/today"
 
 android {
     namespace = "com.headabovedigital.crm"
@@ -29,6 +29,11 @@ android {
             "string",
             "assetStatements",
             "[{\\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], \\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://$host\\\"}}]",
+        )
+        resValue(
+            "string",
+            "shareTarget",
+            "{\\\"action\\\": \\\"https://$host/crm/share\\\", \\\"method\\\": \\\"GET\\\", \\\"enctype\\\": \\\"application/x-www-form-urlencoded\\\", \\\"params\\\": {\\\"title\\\": \\\"title\\\", \\\"text\\\": \\\"text\\\", \\\"url\\\": \\\"url\\\"}}",
         )
         manifestPlaceholders["hostName"] = host
     }

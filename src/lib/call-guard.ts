@@ -148,8 +148,19 @@ export async function resetGuard(receptionistId: string) {
   await db.receptionist.update({ where: { id: receptionistId }, data: { guardTrippedAt: null, guardReason: "" } });
 }
 
-/** Text the administrators' mobiles and email the support address. */
-export async function alertTeam(subject: string, body: string) {
+/**
+ * Text the administrators' mobiles, email the support address and send a phone notification.
+ * Platform problems default to the "lines" notification category (urgent: through quiet hours).
+ */
+export async function alertTeam(subject: string, body: string, push: { category?: import("./push-rules").PushCategory; url?: string; urgent?: boolean; accountId?: string } = {}) {
+  try {
+    const { pushForAccount, pushToAdmins } = await import("./push");
+    const category = push.category ?? "lines";
+    const msg = { category, title: subject, body, url: push.url ?? (category === "lines" ? "/crm/health" : null), urgent: push.urgent ?? category === "lines" };
+    await (push.accountId ? pushForAccount(push.accountId, msg) : pushToAdmins(msg));
+  } catch (e) {
+    console.warn("team alert push failed", e);
+  }
   const admins = await db.user.findMany({ where: { role: "ADMIN", disabled: false, phone: { not: null } }, select: { phone: true } });
   for (const a of admins) await sendSms(a.phone!, `${subject}. ${body}`.slice(0, 600)).catch((e) => console.warn("team alert text failed", e));
   const { supportAddress } = await import("./google");

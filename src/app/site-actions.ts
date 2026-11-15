@@ -53,6 +53,8 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
     (await db.contact.create({ data: { accountId: account.id, firstName: firstName || null, lastName: rest.join(" ") || null, email: email || null, phone, isPrimary: !dup } }));
   const body = [`Trade: ${tradeLabel}`, `Phone: ${phone}`, email ? `Email: ${email}` : null, location ? `Location: ${location}` : null, preferredDate ? `Preferred setup date: ${preferredDate}` : null, followup ? "Also interested in the Follow-Up Agent add-on" : null].filter(Boolean).join("\n");
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "NOTE", direction: "INBOUND", subject: `Website demo request: ${tradeLabel}`, body, source: "website" });
+  const { pushForAccount } = await import("@/lib/push");
+  await pushForAccount(account.id, { category: "leads", title: `Demo request: ${business}`, body: `${name} (${tradeLabel}${location ? `, ${location}` : ""}) asked for a demo on the website. Call ${phone}.`, tag: `lead:${account.id}` });
   await recordActivity({ accountId: account.id, contactId: contact.id, type: "TASK", subject: `Call ${name} to book their demo${preferredDate ? ` (prefers ${preferredDate})` : ""}`, dueAt: addDays(new Date(), 1), source: "website" });
 
   // Grace (the follow-up agent) calls them back within a couple of minutes, 8am-8pm Pacific

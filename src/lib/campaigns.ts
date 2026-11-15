@@ -428,7 +428,7 @@ async function onReply(r: { id: string; accountId: string; email: string; demoRu
   }
   await recordActivity({ accountId: r.accountId, type: "TASK", source: "system", subject: `Reply to ${r.account.name} (campaign reply)`, body: `${text.slice(0, 500)}\n\n${demoNote}`.trim(), dueAt: new Date() });
   const { alertTeam } = await import("./call-guard");
-  await alertTeam(`Campaign reply from ${r.account.name}`, `"${text.slice(0, 200)}" (${r.email}). ${demoNote} ${appUrl()}/crm/accounts/${r.accountId}`.trim()).catch(() => undefined);
+  await alertTeam(`Campaign reply from ${r.account.name}`, `"${text.slice(0, 200)}" (${r.email}). ${demoNote} ${appUrl()}/crm/accounts/${r.accountId}`.trim(), { category: "replies", accountId: r.accountId }).catch(() => undefined);
 }
 
 // --- Recipients --------------------------------------------------------------------

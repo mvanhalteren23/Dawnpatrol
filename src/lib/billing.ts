@@ -384,6 +384,17 @@ async function syncInvoice(inv: Stripe.Invoice) {
   }
 }
 
+/** A card was declined: Stripe retries it, but a quick call usually sorts it before the line is at risk. */
+async function notifyPaymentFailed(inv: Stripe.Invoice) {
+  const customerId = typeof inv.customer === "string" ? inv.customer : inv.customer?.id;
+  if (!customerId) return;
+  const accountId = await accountIdForCustomer(customerId, inv.parent?.subscription_details?.metadata?.accountId);
+  if (!accountId) return;
+  const account = await db.account.findUnique({ where: { id: accountId }, select: { name: true } });
+  const { pushForAccount } = await import("./push");
+  await pushForAccount(accountId, { category: "billing", title: `Payment failed: ${account?.name ?? "a client"}`, body: `$${(inv.amount_due / 100).toFixed(2)} didn't go through${inv.attempt_count ? ` (attempt ${inv.attempt_count})` : ""}. Stripe will retry; a quick call usually sorts it.`, tag: `payfail:${inv.id}` });
+}
+
 export async function handleStripeEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
@@ -405,9 +416,12 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "invoice.created":
       await addOverage(event.data.object).catch((e) => console.error("extra minutes", e));
       break;
+    case "invoice.payment_failed":
+      await syncInvoice(event.data.object);
+      await notifyPaymentFailed(event.data.object).catch((e) => console.warn("payment failed push", e));
+      break;
     case "invoice.finalized":
     case "invoice.paid":
-    case "invoice.payment_failed":
     case "invoice.voided":
     case "invoice.marked_uncollectible":
       await syncInvoice(event.data.object);

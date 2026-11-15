@@ -338,6 +338,8 @@ async function addLead(r: Receptionist, input: BookingInput, label: string, subj
     ? `New account: ${r.name} booked ${label} and created this account from the call. The business is being researched automatically (verified facts only) to fill in the details. Check them and edit as needed.`
     : `${r.name} booked ${label} and matched the caller to this account by ${matchedBy}. Check the match and the contact details.`;
   await db.account.update({ where: { id: account.id }, data: { needsReview: true, reviewReason } });
+  const { pushForAccount } = await import("./push");
+  await pushForAccount(account.id, { category: "leads", title: `${r.name} booked ${created ? "a new lead" : account.name}`, body: `${name}: ${label}`, tag: `lead:${account.id}` });
 
   // New accounts get a fact-only profile; matched ones only if they were never researched.
   const researched = created ? 0 : await db.researchRun.count({ where: { accountId: account.id, kind: "RESEARCH", status: { in: ["DONE", "RUNNING"] } } });

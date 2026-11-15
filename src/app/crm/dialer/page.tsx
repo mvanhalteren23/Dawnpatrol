@@ -7,6 +7,7 @@ import { PROSPECT_STAGES, STAGE_LABELS, type Stage } from "@/lib/constants";
 import { dialerStatus } from "@/lib/dialer";
 import { Notice, PageHeader } from "@/components/ui";
 import { Dialer, type DialTarget, type DialerControls } from "@/components/Dialer";
+import { maskPhone } from "@/lib/dialer-bridge-rules";
 import { VoicemailRecorder } from "@/components/VoicemailRecorder";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Flash } from "@/components/Flash";
@@ -63,6 +64,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
     defaultVoicemailId: vmSettings.defaultId && voicemails.some((v) => v.id === vmSettings.defaultId) ? vmSettings.defaultId : (voicemails[0]?.id ?? null),
     aiVoice: Boolean(vmSettings.voiceId),
     consent: vmSettings.consent,
+    myPhone: await db.user.findUnique({ where: { id: session.sub }, select: { phone: true } }).then((u) => (u?.phone ? maskPhone(u.phone) : null)),
   };
 
   const rows = accounts.map((a) => toDialTarget(a)).filter((t) => t.numbers.length);

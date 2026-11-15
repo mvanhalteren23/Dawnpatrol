@@ -2,19 +2,55 @@
   "name": "Head Above CRM",
   "short_name": "Head Above",
   "id": "/crm",
-  "start_url": "/crm",
+  "start_url": "/crm/today",
   "scope": "/",
   "display": "standalone",
   "background_color": "#1F3B2D",
   "theme_color": "#1F3B2D",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Client health", "url": "/crm/health" },
-    { "name": "Dialer", "url": "/crm/dialer" },
-    { "name": "Accounts", "url": "/crm/accounts" }
-  ]
+    {
+      "name": "Today",
+      "url": "/crm/today"
+    },
+    {
+      "name": "Client health",
+      "url": "/crm/health"
+    },
+    {
+      "name": "Dialer",
+      "url": "/crm/dialer"
+    },
+    {
+      "name": "Add a business",
+      "url": "/crm/share"
+    }
+  ],
+  "share_target": {
+    "action": "/crm/share",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
