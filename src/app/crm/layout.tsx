@@ -16,6 +16,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
   const nav: [string, string, string][] = [
     ["/crm", "Dashboard", "Home"],
     ["/crm/accounts", "Accounts", "Accounts"],
+    ["/crm/health", "Client health", "Health"],
     ["/crm/pipeline", "Pipeline", "Pipeline"],
     ["/crm/team", "Team", "Team"],
     ["/crm/outreach", "Outreach", "Outreach"],
@@ -53,7 +54,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
           </form>
         </div>
       </aside>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3 overflow-x-auto bg-dawn-900 px-4 py-2 text-sm md:hidden">
           {nav.map(([href, , label]) => (
             <a key={href} href={href} className="whitespace-nowrap text-dawn-100 hover:text-dawn-400">{label}</a>
