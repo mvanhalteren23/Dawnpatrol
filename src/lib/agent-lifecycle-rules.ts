@@ -4,25 +4,37 @@
 // copied from their demo ("Promote to production").
 
 export const DEMO_IDLE_DAYS = 30;
+/** Demos built from the website form ("hear it answer as your business") go sooner: most are one-off tries. */
+export const WEBSITE_DEMO_IDLE_DAYS = 14;
 
 /** Deal stages where a prospect's demo is kept however long it sits unused. */
 export const KEEP_DEMO_STAGES = ["ENGAGED", "DEMO", "PROPOSAL", "ONBOARDING"];
 
-export type DemoActivity = { lifecycle: string; createdAt: Date; updatedAt: Date; lastCallAt: Date | null; accountStage: string; promoted: boolean };
+export type DemoActivity = { lifecycle: string; createdAt: Date; updatedAt: Date; lastCallAt: Date | null; accountStage: string; promoted: boolean; fromWebsite?: boolean };
+
+/** How many idle days a demo gets. */
+export function idleDays(d: Pick<DemoActivity, "fromWebsite">): number {
+  return d.fromWebsite ? WEBSITE_DEMO_IDLE_DAYS : DEMO_IDLE_DAYS;
+}
+
+/** Website-built demos are tagged "hear-it" on the account. */
+export function websiteBuilt(accountTags: string | null | undefined): boolean {
+  return (accountTags ?? "").split(",").map((t) => t.trim()).includes("hear-it");
+}
 
 export function lastActive(d: Pick<DemoActivity, "createdAt" | "updatedAt" | "lastCallAt">): Date {
   return new Date(Math.max(d.createdAt.getTime(), d.updatedAt.getTime(), d.lastCallAt?.getTime() ?? 0));
 }
 
 /** When the demo will expire if nothing happens (null: it won't, or isn't a demo). */
-export function demoExpiresAt(d: DemoActivity, days = DEMO_IDLE_DAYS): Date | null {
+export function demoExpiresAt(d: DemoActivity, days = idleDays(d)): Date | null {
   if (d.lifecycle !== "demo") return null;
   // Once promoted, the deal stage no longer protects the demo: the client has their own agent.
   if (!d.promoted && KEEP_DEMO_STAGES.includes(d.accountStage)) return null;
   return new Date(lastActive(d).getTime() + days * 86400_000);
 }
 
-export function shouldExpire(d: DemoActivity, now = new Date(), days = DEMO_IDLE_DAYS): boolean {
+export function shouldExpire(d: DemoActivity, now = new Date(), days = idleDays(d)): boolean {
   const at = demoExpiresAt(d, days);
   return Boolean(at && at.getTime() <= now.getTime());
 }

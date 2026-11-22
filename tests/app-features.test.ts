@@ -248,3 +248,34 @@ describe("website copy", async () => {
     for (const q of ["know it's AI", "transfer", "gets something wrong", "keep my business number", "cancel"]) expect(qs).toContain(q);
   });
 });
+
+describe("demo cost controls", async () => {
+  const { conversationLimits, DEMO_MAX_CALL_MINUTES } = await import("@/lib/call-guard-rules");
+  const { idleDays, shouldExpire, websiteBuilt, WEBSITE_DEMO_IDLE_DAYS, DEMO_IDLE_DAYS } = await import("@/lib/agent-lifecycle-rules");
+  const { DEMO_BUILDS_PER_HOUR } = await import("@/lib/demo-request-rules");
+
+  it("ends demo calls at 5 minutes, and leaves live lines alone", () => {
+    expect(DEMO_MAX_CALL_MINUTES).toBe(5);
+    expect(conversationLimits({ maxCallMinutes: 10, lifecycle: "demo" }).conversation.max_duration_seconds).toBe(300);
+    expect(conversationLimits({ maxCallMinutes: 3, lifecycle: "demo" }).conversation.max_duration_seconds).toBe(180);
+    expect(conversationLimits({ maxCallMinutes: 15, lifecycle: "production" }).conversation.max_duration_seconds).toBe(900);
+    expect(conversationLimits({ maxCallMinutes: 10 }).conversation.max_duration_seconds).toBe(600);
+  });
+
+  it("expires website-built demos after 14 idle days, others after 30", () => {
+    expect(websiteBuilt("website,hear-it,contractors")).toBe(true);
+    expect(websiteBuilt("website,demo")).toBe(false);
+    expect(websiteBuilt(null)).toBe(false);
+    expect(idleDays({ fromWebsite: true })).toBe(WEBSITE_DEMO_IDLE_DAYS);
+    expect(idleDays({})).toBe(DEMO_IDLE_DAYS);
+    const base = { lifecycle: "demo", createdAt: new Date("2026-11-01"), updatedAt: new Date("2026-11-01"), lastCallAt: null, accountStage: "PROSPECT", promoted: false };
+    const day20 = new Date("2026-11-21");
+    expect(shouldExpire({ ...base, fromWebsite: true }, day20)).toBe(true);
+    expect(shouldExpire(base, day20)).toBe(false);
+    expect(shouldExpire({ ...base, fromWebsite: true, accountStage: "DEMO" }, day20)).toBe(false);
+  });
+
+  it("builds at most 6 website demos an hour", () => {
+    expect(DEMO_BUILDS_PER_HOUR).toBe(6);
+  });
+});

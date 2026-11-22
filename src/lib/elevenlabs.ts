@@ -420,7 +420,7 @@ export function agentConfig(
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
       // Call protections: maximum call length and hang-up on silence (call-guard-rules.ts).
-      ...conversationLimits(r as { maxCallMinutes?: number; silenceHangupSeconds?: number }),
+      ...conversationLimits(r as { maxCallMinutes?: number; silenceHangupSeconds?: number; lifecycle?: string }),
       agent: {
         first_message: house ? "{{opening}}" : greeting,
         language: r.language,

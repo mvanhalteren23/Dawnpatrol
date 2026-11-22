@@ -15,6 +15,7 @@ export const TASKS = {
   kb_draft: { label: "Knowledge base from website", web: true, help: "Read a client's website and draft receptionist knowledge." },
   demo_research: { label: "Demo agent research", web: true, help: "Deep research on a prospect (their whole website, Google profile and reviews, nearby competitors) that builds their demo agent." },
   extraction: { label: "Structured fields", web: false, help: "Turn a research report into fit score, contacts, prospects or KB entries." },
+  demo_extraction: { label: "Demo agent profile", web: false, help: "Turns demo research into the demo agent's profile and knowledge. Runs for every demo built (including from the website form), so it uses the cheaper model (Gemini Flash when set up)." },
   outreach: { label: "Outreach emails", web: false, help: "Draft personalised first-touch emails." },
   campaign_line: { label: "Campaign personal lines", web: false, help: "One line per cold email from the prospect's website. Runs hundreds of times, so it uses the cheaper model (Gemini Flash when set up)." },
   caller_summary: { label: "Caller summaries", web: false, help: "Texts and emails sent to callers after a call." },

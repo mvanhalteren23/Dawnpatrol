@@ -6,13 +6,13 @@ import { recordActivity } from "./outreach";
 import { nextFreeExtension } from "./twilio";
 import { safeJson } from "./utils";
 import { recordKbChange } from "./kb-history";
-import { demoExpiresAt, promotedSettings, shouldExpire, type DemoActivity } from "./agent-lifecycle-rules";
+import { demoExpiresAt, idleDays, promotedSettings, shouldExpire, websiteBuilt, type DemoActivity } from "./agent-lifecycle-rules";
 
 // Demo vs production agents (rules in agent-lifecycle-rules.ts): the daily cron expires idle
 // demos, an expired demo can be revived, and a signed client's demo is promoted to a fresh
 // production agent.
 
-type DemoRow = { id: string; lifecycle: string; createdAt: Date; updatedAt: Date; account: { stage: string } };
+type DemoRow = { id: string; lifecycle: string; createdAt: Date; updatedAt: Date; account: { stage: string; tags?: string | null } };
 
 async function activityFor(demos: DemoRow[]): Promise<Map<string, DemoActivity>> {
   const ids = demos.map((d) => d.id);
@@ -22,7 +22,7 @@ async function activityFor(demos: DemoRow[]): Promise<Map<string, DemoActivity>>
   ]);
   const lastCall = new Map(calls.map((c) => [c.receptionistId, c._max.startedAt]));
   const wasPromoted = new Set(promoted.map((p) => p.promotedFromId));
-  return new Map(demos.map((d) => [d.id, { lifecycle: d.lifecycle, createdAt: d.createdAt, updatedAt: d.updatedAt, lastCallAt: lastCall.get(d.id) ?? null, accountStage: d.account.stage, promoted: wasPromoted.has(d.id) }]));
+  return new Map(demos.map((d) => [d.id, { lifecycle: d.lifecycle, createdAt: d.createdAt, updatedAt: d.updatedAt, lastCallAt: lastCall.get(d.id) ?? null, accountStage: d.account.stage, promoted: wasPromoted.has(d.id), fromWebsite: websiteBuilt(d.account.tags) }]));
 }
 
 /** When each demo will expire if unused (null = kept), for the CRM pages. */
@@ -67,16 +67,16 @@ export async function expireDemo(id: string, reason: string) {
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: `Demo receptionist expired (${r.name})`, body: `${reason} Its settings and knowledge are kept in the CRM: open it and click Revive demo to bring it back.` });
 }
 
-/** Daily: expire demos idle for 30 days (unless the deal is still moving). */
+/** Daily: expire demos idle for 30 days, 14 for website-built ones (unless the deal is still moving). */
 export async function expireIdleDemos(now = new Date()): Promise<{ expired: string[]; errors: string[] }> {
-  const demos = await db.receptionist.findMany({ where: { lifecycle: "demo" }, select: { id: true, name: true, lifecycle: true, createdAt: true, updatedAt: true, account: { select: { stage: true } } } });
+  const demos = await db.receptionist.findMany({ where: { lifecycle: "demo" }, select: { id: true, name: true, lifecycle: true, createdAt: true, updatedAt: true, account: { select: { stage: true, tags: true } } } });
   const acts = await activityFor(demos);
   const expired: string[] = [];
   const errors: string[] = [];
   for (const d of demos) {
     if (!shouldExpire(acts.get(d.id)!, now)) continue;
     try {
-      await expireDemo(d.id, "No calls or changes for 30 days.");
+      await expireDemo(d.id, `No calls or changes for ${idleDays(acts.get(d.id)!)} days.`);
       expired.push(d.id);
     } catch (err) {
       errors.push(`${d.id}: ${(err as Error).message}`);

@@ -2,7 +2,7 @@
 // own demo receptionist and texts them the number to call.
 
 /** At most this many website demo builds an hour (each one costs research and voice setup). */
-export const DEMO_BUILDS_PER_HOUR = 12;
+export const DEMO_BUILDS_PER_HOUR = 6;
 /** One build per phone number a day. */
 export const DEMO_BUILDS_PER_PHONE_PER_DAY = 1;
 

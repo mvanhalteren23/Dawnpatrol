@@ -13,6 +13,9 @@ export type LineLimits = { maxConcurrentCalls: number; callerDailyCalls: number;
 
 /** The demo line's defaults (set on the company receptionist; editable on its page). */
 export const DEMO_LINE_LIMITS: LineLimits = { maxConcurrentCalls: 2, callerDailyCalls: 6, callerDailyMinutes: 20 };
+
+/** Demo agents end the call at this length (a demo rarely needs more; voice minutes cost money). */
+export const DEMO_MAX_CALL_MINUTES = 5;
 /** Callers who booked with the line in this many days skip the per-caller limits. */
 export const TRUST_BOOKERS_DAYS = 90;
 /** Withheld/anonymous callers share one allowance per line. */
@@ -97,9 +100,10 @@ export function callableLineType(type: string | null | undefined): boolean {
 }
 
 /** The ElevenLabs settings for 1 and 2. */
-export function conversationLimits(o: { maxCallMinutes?: number | null; silenceHangupSeconds?: number | null }) {
+export function conversationLimits(o: { maxCallMinutes?: number | null; silenceHangupSeconds?: number | null; lifecycle?: string | null }) {
+  const minutes = clampGuard("maxCallMinutes", o.maxCallMinutes ?? 10, 10);
   return {
-    conversation: { max_duration_seconds: clampGuard("maxCallMinutes", o.maxCallMinutes ?? 10, 10) * 60 },
+    conversation: { max_duration_seconds: (o.lifecycle === "demo" ? Math.min(minutes, DEMO_MAX_CALL_MINUTES) : minutes) * 60 },
     turn: { silence_end_call_timeout: clampGuard("silenceHangupSeconds", o.silenceHangupSeconds ?? 30, 30) },
   };
 }

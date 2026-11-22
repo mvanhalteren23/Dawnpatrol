@@ -163,7 +163,7 @@ Notes we already have: ${o.notes || "none"}`,
     { maxSearches: 8, maxFetches: 15 },
   );
   const ex = await structured(
-    "extraction",
+    "demo_extraction",
     DemoProfileSchema,
     `Turn this research into a structured profile for building the business's AI receptionist. Keep facts as written. A price's priceSource is own_website only when the business itself publishes it (its site or Google profile).
 For "assumed": list only things a caller would likely ask that the research did NOT find (e.g. hours, service area, booking, payment methods, warranty, emergencies), each with a typical answer for this trade that promises nothing specific and never includes a price. Leave it empty for anything the research found.
