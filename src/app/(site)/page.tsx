@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { INDUSTRIES, PRICES, PRICING } from "@/lib/site-content";
+import { INDUSTRIES, PRICE_LABEL, PRICING } from "@/lib/site-content";
 import { Price } from "@/components/site/Currency";
 import { DemoButton } from "@/components/site/Demo";
 import { DispatchSimulator } from "@/components/site/DispatchSimulator";
@@ -9,12 +9,14 @@ import { OnboardingBanner, PricingSection } from "@/components/site/Pricing";
 import { Eyebrow, liveDemo } from "@/components/site/Sections";
 import { CallScene } from "@/components/site/CallScene";
 import { Reveal } from "@/components/site/Reveal";
+import { HearItForm } from "@/components/site/HearItForm";
+import { ConnectsAndData, FaqSection, ResultsPreview, ServicesSection } from "@/components/site/TrustSections";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Head Above Digital | AI Voice Receptionist for the Trades",
-  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops and local storefronts. Answers every call, books the job and texts you the details. From CA$${PRICES.CAD.monthly} (US$${PRICES.USD.monthly}) a month with ${PRICING.includedMinutes} minutes.`,
+  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops and local storefronts. Answers every call, books the job and texts you the details. From ${PRICE_LABEL} with ${PRICING.includedMinutes} minutes.`,
   alternates: { canonical: "/" },
 };
 
@@ -34,19 +36,20 @@ export default async function Home() {
       <section className="border-b-4 border-[#173022] bg-[#1F3B2D] py-14 text-[#EFE6D4] lg:py-20">
         <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-12 lg:px-8">
           <div className="space-y-6 lg:col-span-7">
-            <Eyebrow dark>Voice AI for the trades • 24/7 dispatch &amp; booking</Eyebrow>
+            <Eyebrow dark>Voice AI for trades, shops &amp; storefronts • 24/7 answering &amp; booking</Eyebrow>
             <h1 style={{ lineHeight: 0.92 }} className="font-condensed-800 text-5xl text-[#EFE6D4] sm:text-6xl lg:text-[72px]">Every call answered, even when you&apos;re on the tools.</h1>
             <p className="max-w-2xl text-lg font-medium leading-[28px] text-[#EFE6D4] sm:text-[18px]">
               When you are under a sink, under a hood, or ringing up a line of customers, missed calls go straight to the next shop on Google. Head Above Digital answers every call, books the job into your calendar, and texts you the address—while routing parts suppliers straight to your counter.
             </p>
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <DemoButton>Book a demo</DemoButton>
+              <a href="#hear-it" className="inline-flex h-[48px] items-center rounded-[12px] border-2 border-[#D8B47A] px-6 text-sm font-semibold text-[#D8B47A] hover:no-underline">Hear it as your business</a>
               <a href="#dispatch-simulator" className="inline-flex h-[48px] items-center rounded-[12px] border-2 border-[#EFE6D4] px-6 text-sm font-semibold text-[#EFE6D4] hover:no-underline">Hear a sample call</a>
             </div>
             {demo ? <p className="text-sm text-[#EFE6D4]/85">Or call our reception to hear how our AI receptionists handle calls: <a href={`tel:${demo.tel}`} className="font-semibold text-[#D8B47A]">{demo.label}</a></p> : null}
             <div className="grid max-w-xl grid-cols-3 gap-4 border-t border-[#173022] pt-4">
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">24/7</div><div className="text-xs text-[#EFE6D4]">Every call picked up, no voicemail</div></div>
-              <div><div className="font-condensed-800 text-2xl text-[#D8B47A]"><Price kind="monthly" /> / MO</div><div className="text-xs text-[#EFE6D4]">{PRICING.includedMinutes} call minutes included</div></div>
+              <div><div className="font-condensed-800 text-2xl text-[#D8B47A]"><Price kind="monthly" /> / MO</div><div className="text-xs text-[#EFE6D4]">{PRICING.includedMinutes} call minutes included, plus tax</div></div>
               <div><div className="font-condensed-800 text-2xl text-[#D8B47A]">ZERO TECH</div><div className="text-xs text-[#EFE6D4]">We set it up &amp; support by phone</div></div>
             </div>
           </div>
@@ -111,8 +114,13 @@ export default async function Home() {
       </section>
 
       <DispatchSimulator />
+      <HearItForm demoLine={demo?.label ?? null} />
       <FollowupAddon />
-      <PricingSection tierName="All-Trades Pro Plan" />
+      <ResultsPreview />
+      <PricingSection />
+      <ServicesSection />
+      <ConnectsAndData />
+      <FaqSection />
       <OnboardingBanner />
     </>
   );

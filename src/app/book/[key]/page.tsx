@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Book a time", robots: { index: false
 
 // The public booking page a client's customers get by text (rescue, reschedule, no-show): pick an
 // open time from the business's calendar and book it.
-export default async function BookPage({ params, searchParams }: { params: Promise<{ key: string }>; searchParams: Promise<{ error?: string; r?: string }> }) {
+export default async function BookPage({ params, searchParams }: { params: Promise<{ key: string }>; searchParams: Promise<{ error?: string; r?: string; trade?: string }> }) {
   const { key } = await params;
   const sp = await searchParams;
   const r = await db.receptionist.findUnique({ where: { bookingKey: key } });
@@ -60,6 +60,16 @@ export default async function BookPage({ params, searchParams }: { params: Promi
               <legend className="sr-only">Your details</legend>
               <label className="text-sm font-semibold">Name<input name="name" required maxLength={120} autoComplete="name" className="mt-1 block w-full rounded-lg border border-[#6B5A43] px-3 py-2 font-normal" /></label>
               <label className="text-sm font-semibold">Mobile number<input name="phone" required type="tel" maxLength={40} autoComplete="tel" className="mt-1 block w-full rounded-lg border border-[#6B5A43] px-3 py-2 font-normal" /></label>
+              {r.bookingAddsToCrm && !sp.r ? (
+                <>
+                  <label className="text-sm font-semibold">Business name<input name="business" required maxLength={160} autoComplete="organization" className="mt-1 block w-full rounded-lg border border-[#6B5A43] px-3 py-2 font-normal" /></label>
+                  <label className="text-sm font-semibold">Type of business
+                    <select name="businessType" defaultValue={sp.trade === "mechanics" ? "Auto repair" : sp.trade === "retail" ? "Store / salon" : "Contractor / trade"} className="mt-1 block w-full rounded-lg border border-[#6B5A43] bg-white px-3 py-2 font-normal">
+                      {["Contractor / trade", "Auto repair", "Store / salon", "Other"].map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </label>
+                </>
+              ) : null}
               <label className="text-sm font-semibold sm:col-span-2">Email (optional, for a calendar invite)<input name="email" type="email" maxLength={200} autoComplete="email" className="mt-1 block w-full rounded-lg border border-[#6B5A43] px-3 py-2 font-normal" /></label>
               <p className="text-xs text-[#6B5A43] sm:col-span-2">We&apos;ll text you a confirmation and a reminder the day before. Reply STOP to opt out.</p>
             </fieldset>

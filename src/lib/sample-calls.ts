@@ -61,10 +61,15 @@ async function generate(trade: TradeKey, scenario: Scenario): Promise<Buffer> {
   throw last;
 }
 
-/** The stored recording for the website. Visitors never trigger a (paid) generation. */
+/**
+ * The stored recording for the website. Visitors never trigger a (paid) generation. A recording of
+ * an older script isn't played (the words on the page and in the audio must match), until it's
+ * re-recorded from Settings.
+ */
 export async function sampleAudio(trade: TradeKey, scenario: Scenario): Promise<{ data: Buffer; mime: string } | null> {
   const stored = await db.sampleAudio.findUnique({ where: { key: `${trade}:${scenario}` } });
-  return stored ? { data: Buffer.from(stored.data), mime: stored.mime } : null;
+  if (!stored || stored.hash !== sampleHash(trade, scenario)) return null;
+  return { data: Buffer.from(stored.data), mime: stored.mime };
 }
 
 export type SampleRunResult = { key: string; ok: boolean; note: string };

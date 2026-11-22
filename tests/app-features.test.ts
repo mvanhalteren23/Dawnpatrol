@@ -185,3 +185,66 @@ describe("Call my phone dialer", () => {
     expect(parsePending(JSON.stringify({ key: "br1_x", accountId: "a", contactId: null, to: "+16045550123", vm: null, vmId: "" }))?.to).toBe("+16045550123");
   });
 });
+
+describe("Hear it answer as your business", async () => {
+  const { cleanWebsite, demoDelayedText, demoReadyText, demoRequestProblem } = await import("@/lib/demo-request-rules");
+  const ok = { name: "Dana Lee", business: "Atwell Peak Contracting", website: "atwellpeak.ca", city: "", phone: "604 555 0199", consent: true };
+
+  it("accepts website addresses as people type them", () => {
+    expect(cleanWebsite("atwellpeak.ca")).toBe("https://atwellpeak.ca");
+    expect(cleanWebsite("http://www.atwellpeak.ca/about")).toBe("http://www.atwellpeak.ca/about");
+    expect(cleanWebsite("not a site")).toBeNull();
+    expect(cleanWebsite("")).toBeNull();
+  });
+
+  it("needs a business, a name, a mobile, a website or town, and consent", () => {
+    expect(demoRequestProblem(ok, true)).toBeNull();
+    expect(demoRequestProblem({ ...ok, website: "", city: "Squamish" }, true)).toBeNull();
+    expect(demoRequestProblem({ ...ok, website: "", city: "" }, true)).toMatch(/website, or at least your town/);
+    expect(demoRequestProblem({ ...ok, website: "nope nope" }, true)).toMatch(/website address/);
+    expect(demoRequestProblem(ok, false)).toMatch(/mobile number/);
+    expect(demoRequestProblem({ ...ok, consent: false }, true)).toMatch(/Tick the box/);
+    expect(demoRequestProblem({ ...ok, business: " " }, true)).toMatch(/business name/);
+  });
+
+  it("texts the number and extension, with an opt-out", () => {
+    const t = demoReadyText({ firstName: "Dana Lee", business: "Atwell Peak Contracting", agent: "Ava", number: "(778) 650-4870", extension: "142" });
+    expect(t).toMatch(/^Hi Dana, /);
+    expect(t).toContain("(778) 650-4870");
+    expect(t).toContain("extension 142");
+    expect(t).toContain("Reply STOP");
+    expect(demoDelayedText("", "Atwell Peak")).toMatch(/^Hi, .*Reply STOP/);
+  });
+});
+
+describe("website copy", async () => {
+  const { INDUSTRIES, PLAN_NAME } = await import("@/lib/site-content");
+  const { GUIDES } = await import("@/lib/seo");
+  const { FAQ } = await import("@/lib/site-faq");
+
+  it("labels every price in search snippets and keeps one plan name", () => {
+    for (const ind of Object.values(INDUSTRIES)) {
+      expect(ind.seo.description).toMatch(/CA\$\d+\/month \(US\$\d+\)/);
+      expect(ind.seo.description).not.toMatch(/(^|\s)\$\d/);
+    }
+    expect(PLAN_NAME).toBe("Receptionist Plan");
+  });
+
+  it("speaks to stores and salons on the retail page, not the trades", () => {
+    const r = INDUSTRIES.retail;
+    const text = JSON.stringify([r.painHeading, r.stepsHeading, r.plan, r.footerTagline, r.steps, r.heroSub]);
+    expect(text).not.toMatch(/tools|sub-trade|booked job|trade calls|for the trades/i);
+    expect(r.heroSub).toMatch(/salons/);
+  });
+
+  it("uses invented addresses in the samples", () => {
+    expect(JSON.stringify(INDUSTRIES.contractors.simulation)).not.toMatch(/38030|7th Ave/);
+  });
+
+  it("has the new guides and the FAQ owners asked for", () => {
+    for (const slug of ["hvac-after-hours-emergency-calls", "storm-week-call-spikes", "winter-tire-season-booking", "voicemail-greeting-script"]) expect(GUIDES.some((g) => g.slug === slug)).toBe(true);
+    expect(new Set(GUIDES.map((g) => g.slug)).size).toBe(GUIDES.length);
+    const qs = FAQ.map((f) => f.q).join(" | ");
+    for (const q of ["know it's AI", "transfer", "gets something wrong", "keep my business number", "cancel"]) expect(qs).toContain(q);
+  });
+});

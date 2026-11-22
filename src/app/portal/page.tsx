@@ -29,10 +29,17 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
       <h1 className="mb-6">Welcome back</h1>
       {!receptionist ? <Empty>Your receptionist is being set up by the {await companyName()} team. You&apos;ll see calls here as soon as it goes live.</Empty> : (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className={`mb-6 grid grid-cols-2 gap-4 ${account.avgJobValueCents ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
             <Stat label="Calls answered (30d)" value={calls} sub="Every call picked up, 24/7" />
             <Stat label="Appointments booked" value={outcome.BOOKED ?? 0} />
             <Stat label="Leads captured" value={captured} sub="booked + messages + transfers" />
+            {account.avgJobValueCents ? (
+              <Stat
+                label="Est. revenue from bookings"
+                value={`$${Math.round(((outcome.BOOKED ?? 0) * account.avgJobValueCents) / 100).toLocaleString("en-CA")}`}
+                sub={`${outcome.BOOKED ?? 0} × $${Math.round(account.avgJobValueCents / 100).toLocaleString("en-CA")} average job`}
+              />
+            ) : null}
             <Stat label="Needs your follow-up" value={followUps.length} />
           </div>
           <div className="card mb-6 flex flex-wrap items-center justify-between gap-4">

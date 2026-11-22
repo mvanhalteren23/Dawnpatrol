@@ -6,6 +6,8 @@ import { OnboardingBanner, PricingSection } from "./Pricing";
 import { Eyebrow, liveDemo } from "./Sections";
 import { CallScene } from "./CallScene";
 import { Reveal } from "./Reveal";
+import { HearItForm } from "./HearItForm";
+import { ConnectsAndData, FaqSection, ResultsPreview } from "./TrustSections";
 
 export type LocalCopy = { h1: string; townName: string; region: string; areaCodes: string; intro: string; local: string; faq: { q: string; a: string }[] };
 
@@ -28,6 +30,7 @@ export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: 
               {demo ? (
                 <a href={`tel:${demo.tel}`} className="inline-flex min-h-[48px] items-center rounded-[12px] border-2 border-[#EFE6D4] px-6 py-2 text-left text-sm font-semibold text-[#EFE6D4] hover:no-underline">Call our reception to hear how our AI receptionists handle calls: {demo.label}</a>
               ) : null}
+              <a href="#hear-it" className="text-sm font-semibold text-[#D8B47A] underline-offset-4 hover:underline">Hear it as your business</a>
               <a href="#dispatch-simulator" className="text-sm font-semibold text-[#D8B47A] underline-offset-4 hover:underline">Hear a sample call</a>
             </div>
           </div>
@@ -40,7 +43,7 @@ export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mb-10">
           <Eyebrow>Key pain points solved</Eyebrow>
-          <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">Stop dropping tools to answer the phone.</h2>
+          <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">{ind.painHeading}</h2>
         </div>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {ind.painPoints.map((p, i) => (
@@ -78,7 +81,7 @@ export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: 
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10">
             <Eyebrow dark>How it works</Eyebrow>
-            <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#EFE6D4] sm:text-[48px]">Four steps from first ring to booked job.</h2>
+            <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#EFE6D4] sm:text-[48px]">{ind.stepsHeading}</h2>
           </div>
           <ol className="grid gap-6 md:grid-cols-4">
             {ind.steps.map((s, i) => (
@@ -110,8 +113,12 @@ export async function IndustryPage({ trade, local }: { trade: TradeKey; local?: 
       </section>
 
       <DispatchSimulator initialTrade={trade} />
+      <HearItForm trade={trade} demoLine={demo?.label ?? null} />
       <FollowupAddon trade={trade} />
-      <PricingSection tierName={ind.tierName} trade={trade} />
+      <ResultsPreview />
+      <PricingSection trade={trade} />
+      <ConnectsAndData />
+      <FaqSection local={local?.faq} />
       <OnboardingBanner trade={trade} />
     </>
   );

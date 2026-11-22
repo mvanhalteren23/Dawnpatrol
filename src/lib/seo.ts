@@ -278,6 +278,136 @@ export const GUIDES: Guide[] = [
       { q: "Is there a contract?", a: "No. You're billed monthly from the day you sign up and can cancel any time; it ends at the end of the month you've paid for." },
     ],
   },
+  {
+    slug: "hvac-after-hours-emergency-calls",
+    title: "After-Hours Emergency Calls for HVAC: How to Handle Them Without Answering Every One Yourself",
+    description: "Which after-hours heating and cooling calls are real emergencies, what to ask, and how to cover nights and weekends without burning out.",
+    updated: "2026-11-22",
+    sections: [
+      { h: "Why after-hours calls matter so much", p: [
+        "A furnace that quits on a January night is the call a homeowner remembers. Whoever answers it often keeps that customer for years: the maintenance plan, the replacement quote, the referral. When the call goes to voicemail, they keep dialling until someone picks up.",
+        "But not every after-hours call is an emergency, and answering every one yourself is how owners burn out. The goal is simple: catch the real emergencies fast, book everything else for the morning, and lose none of them.",
+      ] },
+      { h: "Decide what counts as an emergency", p: [
+        "Write it down before the season starts. Most HVAC companies treat these as urgent: no heat when it's below freezing, especially with young children, elderly people or anyone unwell in the home; no heat with a risk of frozen pipes; and no cooling during an extreme heat warning for vulnerable people.",
+        "Safety calls come first and need a different answer. If someone smells gas, they should leave the building straight away, without using light switches or phones inside, and call the gas utility's emergency line (FortisBC in most of BC) or 911 from outside. If a carbon monoxide alarm is going off, they should get everyone outside and call 911. Whoever answers your phone, person or AI, should say exactly that before anything else.",
+        "Everything else (a noisy furnace that still heats, a thermostat question, a quote for a heat pump) can be booked for the next business day.",
+      ] },
+      { h: "The questions to ask on every after-hours call", p: [
+        "Is the heat (or cooling) completely off, or just not keeping up? How cold is it inside right now? Is anyone in the home at higher risk? What equipment is it, and roughly how old? Is there an error code or a flashing light? What's the address and the best number to reach you?",
+        "Those answers let you decide in seconds whether to roll a truck tonight, call them back at 7 am, or book a regular visit.",
+      ] },
+      { h: "Set your after-hours rules and say them up front", p: [
+        "If you charge an after-hours or emergency call-out fee, tell callers before you book. People accept a fee they were told about; they argue with one they weren't.",
+        "If you share on-call duty with another tech, keep the rotation where whoever answers your phone can see it, so emergencies go to the right cell.",
+      ] },
+      { h: "How an AI receptionist covers nights and weekends", p: [
+        "An AI receptionist answers every after-hours call in your company's name, gives the safety instructions word for word, asks your triage questions, and follows your rules: true emergencies are put through to the on-call cell, and everything else is booked for the morning with a text confirmation to the caller.",
+        "You get a text summary of each call, so you wake up to a list of booked jobs instead of a voicemail box to work through.",
+      ] },
+    ],
+    faq: [
+      { q: "Can the receptionist decide what's an emergency?", a: "It follows the rules you set: for example, no heat below freezing goes to the on-call tech, and a noisy furnace is booked for the morning. Anything it isn't sure about can go to you." },
+      { q: "Should I charge an after-hours fee?", a: "Many HVAC companies do. Whatever you decide, say it on the call before booking so there are no surprises on the invoice." },
+    ],
+  },
+  {
+    slug: "storm-week-call-spikes",
+    title: "Storm Week: How to Handle a Spike in Calls Without Losing Customers",
+    description: "For roofers, restoration companies, tree services and plumbers: how to get through the calls that come after a big storm or a cold snap.",
+    updated: "2026-11-22",
+    sections: [
+      { h: "What a storm week looks like", p: [
+        "A windstorm, an atmospheric river or a hard freeze can bring a month of calls in two days. The phone rings while you're on a roof, the voicemail box fills up by noon, and the callers you don't reach book whoever answers first.",
+        "Most of those callers aren't emergencies. But you can't tell which ones are until somebody talks to them.",
+      ] },
+      { h: "Sort calls into three groups", p: [
+        "Urgent: active water coming in, a tree on a house or a car, no heat with frozen pipes, anything unsafe. These need a call back within the hour or a crew today.",
+        "Soon: damage that's stable for now, such as missing shingles with no leak, or a tree down in the yard. Book these in order over the next days and tell the customer when to expect you.",
+        "Later: inspections, insurance quotes and general questions. Book them when the rush has passed, and say so honestly.",
+      ] },
+      { h: "Things to set up before the next storm", p: [
+        "A short storm script: the questions you need answered (address, what's damaged, is water coming in, is anyone at risk, is there an insurance claim) and what you can promise about timing.",
+        "A way for customers to send photos by text. A picture of the ceiling stain or the fallen tree tells you more in five seconds than five minutes on the phone.",
+        "A list of who to call for what you don't do, such as the tree service, the electrician or the restoration company, so you can point callers somewhere useful.",
+        "A plan for updates: a quick text telling a customer where they are in the queue keeps them from calling three more companies.",
+      ] },
+      { h: "Where an AI receptionist helps most", p: [
+        "It answers every call at once, so nobody gets a busy signal or a full voicemail box. It asks your storm questions, marks the urgent ones, texts you each summary, and books the rest into open times or takes their details for the queue. Customers can text photos to the same number.",
+        `On Head Above Digital's plan, a busy month doesn't stop your line: past your ${PRICING.includedMinutes} included minutes, extra minutes are added in ${PRICING.blockMinutes}-minute blocks, and you get a heads-up at 75%.`,
+      ] },
+    ],
+    faq: [
+      { q: "Can it handle ten calls at the same time?", a: "Yes. Each call is answered on its own, so a rush of calls doesn't mean busy signals." },
+      { q: "What if a caller has an emergency during the rush?", a: "You decide what counts as urgent. Those calls can be put straight through to your cell, or flagged and texted to you at once." },
+    ],
+  },
+  {
+    slug: "winter-tire-season-booking",
+    title: "Winter Tire Season: How Auto Shops Can Book the Rush Without Living on the Phone",
+    description: "How BC auto shops can get through the fall tire-change rush: when it starts, what customers ask, and how to keep the bays full and the phone answered.",
+    updated: "2026-11-22",
+    sections: [
+      { h: "Why the rush is so concentrated", p: [
+        "In BC, winter tires (marked with the mountain-snowflake symbol or M+S, with at least 3.5 mm of tread) or chains are required on most designated highways from October 1 to March 31, and on some routes until April 30. DriveBC lists which highways are covered. That gives most drivers the same deadline, and the first snowfall sends everyone who waited to the phone at once.",
+        "Every one of those calls is a booking you want. The problem is the time it takes: the same five questions, all day, while the bays are full.",
+      ] },
+      { h: "Open bookings early and say so", p: [
+        "Start taking tire-change bookings in early September. Put it on your website, your Google Business Profile and your voicemail greeting: \"Winter tire changes are booking now for October.\"",
+        "Text last season's tire customers who've agreed to hear from you (and only them), with a link to book. They're the easiest bookings of the year.",
+      ] },
+      { h: "Have answers ready for what everyone asks", p: [
+        "How much is a swap on rims versus mounting and balancing? How long does it take, and can I wait? Do you store tires, and what does that cost? Do you have my size in stock? Do I need an appointment, or can I drop in? What about my tire pressure sensors?",
+        "Write the answers down once. Whoever answers the phone (you, your service writer or an AI receptionist) can then answer in seconds instead of walking to the counter to check.",
+      ] },
+      { h: "Keep the schedule full and the no-shows low", p: [
+        "Book in fixed slots so the bays never sit empty and never stack up. Text a confirmation when you book and a reminder the day before; most no-shows are people who forgot.",
+        "Keep a short list of customers who'd take an earlier slot, and fill cancellations from it.",
+      ] },
+      { h: "How an AI receptionist helps in October", p: [
+        "It answers every call during the rush, including evenings and weekends when many people finally get around to it. It answers your tire questions from your price list, books into open slots, texts confirmations and reminders, and sends parts and supplier calls straight to your counter.",
+      ] },
+    ],
+    faq: [
+      { q: "Can customers book a tire change without calling?", a: "Yes. Customers can get a text with a booking link to pick an open time, and the AI receptionist can book them on the phone too." },
+      { q: "Can it check whether a tire is in stock?", a: "It answers from what you've told it. Most shops have it take the size and vehicle and pass stock questions to the service desk." },
+    ],
+  },
+  {
+    slug: "voicemail-greeting-script",
+    title: "What to Say on Your Business Voicemail Greeting (With Examples)",
+    description: "Short, clear voicemail greeting scripts for trades, auto shops, stores and salons, and how to get more callers to leave a message or book.",
+    updated: "2026-11-22",
+    sections: [
+      { h: "What a good greeting does", p: [
+        "Most callers who reach voicemail hang up without leaving a message. A good greeting won't stop that entirely, but it gives callers a reason to stay: they know they've reached the right business, they know when you'll call back, and they know a faster way to get what they need.",
+        "Keep it under 20 seconds. Say your business name first. Then say when they'll hear back, what to leave, and any faster option.",
+      ] },
+      { h: "A greeting for contractors and trades", p: [
+        "\"You've reached Atwell Peak Contracting. We're on a job site right now. Leave your name, address and a quick description of the work, and we'll call you back today. For a faster reply, text this number a photo of the job.\"",
+      ] },
+      { h: "A greeting for auto shops", p: [
+        "\"Thanks for calling Sea-to-Sky Auto. We're with a customer in the bay. Leave your name, your vehicle's year, make and model, and what it's doing, and we'll call you back within the hour during business hours. You can also book online from our website.\"",
+      ] },
+      { h: "A greeting for stores and salons", p: [
+        "\"Hi, you've reached Garibaldi Outdoor. We're open 9 to 6, Monday to Saturday. Leave a message and we'll call you back, or book a fitting any time from our website.\"",
+      ] },
+      { h: "Mistakes to avoid", p: [
+        "Don't promise a callback time you can't keep. \"Within the hour\" only works if you call back within the hour.",
+        "Don't leave an old greeting up: holiday hours from last December tell callers nobody's minding the business.",
+        "Don't read out a long list of options. Callers remember one thing, so make it the most useful one.",
+        "If you have an after-hours emergency line, say it clearly and slowly, and say what counts as an emergency.",
+      ] },
+      { h: "When voicemail isn't enough", p: [
+        "If you're losing jobs to voicemail every week, a better greeting only goes so far. An AI receptionist answers instead: it greets callers in your business's name, answers their questions, books the appointment and texts you a summary, so callers never hear a voicemail at all.",
+        `Head Above Digital's AI receptionist is CA$${m} a month plus GST/HST, with ${PRICING.includedMinutes} minutes included and no setup fee.`,
+      ] },
+    ],
+    faq: [
+      { q: "Should I give my cell number in my voicemail greeting?", a: "Only if you're happy to get those calls at any hour. Most owners give a text option or a booking link instead." },
+      { q: "How often should I update my greeting?", a: "Whenever your hours change, before every holiday, and at the start of your busy season." },
+    ],
+  },
 ];
 
 export function guideBySlug(slug: string): Guide | null {

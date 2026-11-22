@@ -69,12 +69,10 @@ describe("company receptionist prompt", () => {
 });
 
 describe("website currency", () => {
-  it("shows USD to US visitors and CAD to everyone else, with both price lists", async () => {
-    const { currencyForCountry, formatMoney, PRICES } = await import("@/lib/site-content");
-    expect(currencyForCountry("US")).toBe("USD");
-    expect(currencyForCountry("us")).toBe("USD");
-    expect(currencyForCountry("CA")).toBe("CAD");
-    expect(currencyForCountry(null)).toBe("CAD");
+  it("shows Canadian dollars first, with both price lists labelled", async () => {
+    const { DEFAULT_CURRENCY, formatMoney, PRICES, PRICE_LABEL } = await import("@/lib/site-content");
+    expect(DEFAULT_CURRENCY).toBe("CAD");
+    expect(PRICE_LABEL).toBe(`CA$${PRICES.CAD.monthly}/month (US$${PRICES.USD.monthly})`);
     expect(PRICES.CAD).toMatchObject({ monthly: 139, blockPrice: 25 });
     expect(PRICES.USD).toMatchObject({ monthly: 109, blockPrice: 19 });
     expect(formatMoney("USD", 3600)).toBe("US$3,600");

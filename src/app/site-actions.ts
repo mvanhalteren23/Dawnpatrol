@@ -87,3 +87,85 @@ export async function submitDemoRequest(_prev: DemoRequestState | undefined, for
   });
   return { ok: true, name, phone, business, callback, caller: grace?.name };
 }
+
+// --- "Hear it answer as your business" ---------------------------------------------------
+// A prospect gives their business and mobile; we research the business, build a demo receptionist
+// in its name and text them the demo number and extension (usually within 15 minutes). Each build
+// costs AI research and voice setup, so: honeypot, time on page, consent, one per phone a day and
+// a cap per hour.
+
+export type PersonalDemoState = { ok?: boolean; error?: string; name?: string; business?: string; phone?: string; ready?: boolean };
+
+export async function requestPersonalDemo(_prev: PersonalDemoState | undefined, form: FormData): Promise<PersonalDemoState> {
+  if (field(form, "company_website", 200)) return { ok: true };
+  const started = Number(form.get("started") ?? 0);
+  if (!started || Date.now() - started < 3000) return { error: "Please take a moment to fill in the form, then send it again." };
+  const { cleanWebsite, demoRequestProblem, DEMO_BUILDS_PER_HOUR, DEMO_BUILDS_PER_PHONE_PER_DAY } = await import("@/lib/demo-request-rules");
+  const { dialableNumber } = await import("@/lib/twilio");
+  const { normalizeDomain } = await import("@/lib/utils");
+  const name = field(form, "name", 120);
+  const business = field(form, "business", 160);
+  const websiteRaw = field(form, "website", 300);
+  const city = field(form, "city", 120);
+  const phoneRaw = field(form, "phone", 40);
+  const trade: TradeKey = TRADE_KEYS.find((k) => k === form.get("trade")) ?? "contractors";
+  const tradeLabel = INDUSTRIES[trade].tabLabel;
+  const phone = dialableNumber(phoneRaw);
+  const problem = demoRequestProblem({ name, business, website: websiteRaw, city, phone: phoneRaw, consent: form.get("consent") === "on" }, Boolean(phone));
+  if (problem || !phone) return { error: problem ?? "Add your mobile number." };
+  const website = cleanWebsite(websiteRaw);
+
+  const hourAgo = new Date(Date.now() - 3600_000);
+  const dayAgo = new Date(Date.now() - 24 * 3600_000);
+  const [lastHour, samePhone] = await Promise.all([
+    db.researchRun.count({ where: { kind: "DEMO_RESEARCH", createdAt: { gte: hourAgo }, input: { contains: '"textTo"' } } }),
+    db.researchRun.count({ where: { kind: "DEMO_RESEARCH", createdAt: { gte: dayAgo }, input: { contains: `"textTo":"${phone}"` } } }),
+  ]);
+  if (samePhone >= DEMO_BUILDS_PER_PHONE_PER_DAY) return { error: "We're already building a demo for this number. Watch for our text, or call our line to hear one now." };
+  if (lastHour >= DEMO_BUILDS_PER_HOUR) return { error: "We're building a lot of demos right now. Please try again in an hour, or book a demo time instead." };
+
+  const reviewReason = `Asked on the website to hear their own receptionist (${tradeLabel}). Their demo is being built and texted to them: call them once it's ready.`;
+  const domain = normalizeDomain(website);
+  const dup = await findDuplicateAccount({ domain, phone, name: business, city: city || null });
+  const account = dup
+    ? await db.account.update({ where: { id: dup.id }, data: { needsReview: true, reviewReason } })
+    : await db.account.create({
+        data: { name: business, domain, website, phone, city: city || null, industry: tradeLabel, source: "inbound", tags: `website,hear-it,${trade}`, needsReview: true, reviewReason },
+      });
+  const [firstName, ...rest] = name.split(/\s+/);
+  const contact =
+    (await db.contact.findFirst({ where: { accountId: account.id, phone } })) ??
+    (await db.contact.create({ data: { accountId: account.id, firstName: firstName || null, lastName: rest.join(" ") || null, phone, isPrimary: !dup } }));
+  await recordActivity({
+    accountId: account.id,
+    contactId: contact.id,
+    type: "NOTE",
+    direction: "INBOUND",
+    subject: "Website: hear it answer as your business",
+    body: [`Trade: ${tradeLabel}`, `Mobile: ${phone}`, website ? `Website: ${website}` : null, city ? `Town: ${city}` : null, "Agreed to be texted the demo number and followed up with."].filter(Boolean).join("\n"),
+    source: "website",
+  });
+  await recordActivity({ accountId: account.id, contactId: contact.id, type: "TASK", subject: `Call ${name} after they've heard their demo`, dueAt: addDays(new Date(), 1), source: "website" });
+
+  // A demo agent built for them before: text it straight away.
+  const existing = await db.receptionist.findFirst({ where: { accountId: account.id, lifecycle: "demo", demoExtension: { not: null }, elevenLabsAgentId: { not: null } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (existing) {
+    const { textDemoReady } = await import("@/lib/demo-research");
+    const sent = await textDemoReady(account.id, existing.id, { textTo: phone, textName: name }).catch(() => false);
+    return { ok: true, name, business, phone, ready: sent };
+  }
+
+  let runId: string;
+  try {
+    const { startDemoResearch } = await import("@/lib/demo-research");
+    runId = await startDemoResearch(account.id, { receptionistId: null, createdById: account.ownerId ?? null, googleUserId: null, bookingEnabled: false, agentName: "Ava", textTo: phone, textName: name });
+  } catch (e) {
+    console.error("personal demo start", e);
+    return { error: "Something went wrong on our side. Please book a demo time instead and we'll set it up with you." };
+  }
+  after(async () => {
+    const { executeDemoResearch } = await import("@/lib/demo-research");
+    await executeDemoResearch(runId);
+  });
+  return { ok: true, name, business, phone };
+}

@@ -30,7 +30,10 @@ export async function bookFromLink(key: string, form: FormData) {
   const old = replaces ? await db.booking.findUnique({ where: { id: replaces }, select: { receptionistId: true, customerPhone: true } }) : null;
   // Only the customer who made a booking can move it.
   const replacesId = old && old.receptionistId === r.id && old.customerPhone === phone ? replaces : undefined;
-  const res = await book(r, { start_iso: slot, caller_name: name, caller_phone: phone, caller_email: email.includes("@") ? email : undefined, summary_method: "text", source: "link", replaces_id: replacesId, notes: "Booked from the online booking link." });
+  // Our own demo calendar asks for the business too, so the CRM lead has it.
+  const business = field(form, "business", 160);
+  const businessType = field(form, "businessType", 60);
+  const res = await book(r, { start_iso: slot, caller_name: name, caller_phone: phone, caller_email: email.includes("@") ? email : undefined, summary_method: "text", source: "link", replaces_id: replacesId, notes: "Booked from the online booking link.", ...(r.bookingAddsToCrm && business ? { business_name: business, business_type: businessType || undefined } : {}) });
   if (!res.booked) back(res.message.includes("taken") ? "Sorry, that time was just taken. Please pick another." : "That time can't be booked any more. Please pick another.");
   // The page promises a confirmation text: send one if the receptionist's own confirmations are off.
   if (res.confirmation === "none") {

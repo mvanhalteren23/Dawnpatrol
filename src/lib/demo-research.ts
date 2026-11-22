@@ -8,7 +8,9 @@ import { DEMO_RESEARCH_TAG, profileReport, profileToBranding, profileToKnowledge
 // Demo agent research (Research card on an account): deep research on the prospect that builds
 // their demo agent, or refreshes an existing one. Rules live in demo-research-rules.ts.
 
-type Input = { receptionistId: string | null; createdById: string | null; googleUserId: string | null; bookingEnabled: boolean; agentName: string };
+// textTo/textName: a prospect who asked on the website to hear their business answered; they get
+// the demo number and extension by text when it's built.
+type Input = { receptionistId: string | null; createdById: string | null; googleUserId: string | null; bookingEnabled: boolean; agentName: string; textTo?: string; textName?: string };
 
 /** Queue a run; the caller runs executeDemoResearch after responding. */
 export async function startDemoResearch(accountId: string, o: Input): Promise<string> {
@@ -51,10 +53,40 @@ export async function executeDemoResearch(runId: string) {
         finishedAt: new Date(),
       },
     });
+    if (o.textTo) await textDemoReady(account.id, receptionistId, o).catch((e) => console.error("demo ready text", e));
   } catch (err) {
     console.error(`demo research ${runId} failed`, err);
     await db.researchRun.update({ where: { id: runId }, data: { status: "FAILED", error: (err as Error).message?.slice(0, 2000) ?? String(err), finishedAt: new Date() } });
+    if (o.textTo) await demoBuildFailed(account.id, account.name, o, err).catch((e) => console.error("demo failed follow-up", e));
   }
+}
+
+/** Text the prospect how to hear their receptionist: the demo line and their extension. */
+export async function textDemoReady(accountId: string, receptionistId: string, o: Pick<Input, "textTo" | "textName">): Promise<boolean> {
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { name: true, businessName: true, demoExtension: true, elevenLabsAgentId: true } });
+  const { demoLineConfig, formatPhone } = await import("./demo-line");
+  const { number } = await demoLineConfig();
+  if (!o.textTo || !number || !r.demoExtension || !r.elevenLabsAgentId) {
+    await demoBuildFailed(accountId, r.businessName, o, new Error(!number ? "No demo line is set up" : "The demo agent isn't on the phone system yet"));
+    return false;
+  }
+  const { demoReadyText } = await import("./demo-request-rules");
+  const { sendSms } = await import("./twilio");
+  await sendSms(o.textTo, demoReadyText({ firstName: o.textName ?? "", business: r.businessName, agent: r.name, number: formatPhone(number), extension: r.demoExtension }));
+  await recordActivity({ accountId, type: "SMS", direction: "OUTBOUND", source: "system", subject: "Demo number texted", body: `Texted ${o.textTo}: call ${formatPhone(number)}, extension ${r.demoExtension}, to hear ${r.name} answer for ${r.businessName}.` });
+  const { pushForAccount } = await import("./push");
+  await pushForAccount(accountId, { category: "leads", title: `Demo ready: ${r.businessName}`, body: `${o.textName || "The prospect"} was texted the demo number. A good time to call them.`, tag: `lead:${accountId}` });
+  return true;
+}
+
+/** The build didn't work: tell the prospect we'll call, and tell the team to finish it by hand. */
+async function demoBuildFailed(accountId: string, business: string, o: Pick<Input, "textTo" | "textName">, err: unknown) {
+  const { sendSms } = await import("./twilio");
+  const { demoDelayedText } = await import("./demo-request-rules");
+  if (o.textTo) await sendSms(o.textTo, demoDelayedText(o.textName ?? "", business)).catch((e) => console.error("demo delayed text", e));
+  const { alertTeam } = await import("./call-guard");
+  const { appUrl } = await import("./app-url");
+  await alertTeam(`Website demo needs you: ${business}`, `The automatic demo build didn't finish (${String((err as Error)?.message ?? err).slice(0, 160)}). ${o.textName || "The prospect"} (${o.textTo}) was told we'll call. ${appUrl()}/crm/accounts/${accountId}`, { category: "leads", accountId, urgent: false });
 }
 
 /** Create the demo agent (or reuse the chosen one), load the research into it, and sync. */

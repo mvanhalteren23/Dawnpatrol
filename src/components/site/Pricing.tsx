@@ -1,14 +1,18 @@
 "use client";
 import { useState } from "react";
-import { FOLLOWUP_ADDON_PRICE, formatMoney, PRICES, PRICING, type TradeKey } from "@/lib/site-content";
+import { FOLLOWUP_ADDON_PRICE, formatMoney, INDUSTRIES, PLAN_NAME, PRICES, PRICING, type TradeKey } from "@/lib/site-content";
 import { CurrencyToggle, useCurrency } from "./Currency";
 import { DemoButton } from "./Demo";
 
 const CHECK = <span className="font-bold text-[#D8B47A]" aria-hidden="true">✓</span>;
 
-export function PricingSection({ tierName, trade }: { tierName: string; trade?: TradeKey }) {
+// The home page speaks to every business type; each industry page uses its own wording.
+const GENERAL_PLAN = { callsNote: "about 100 to 130 typical calls for a trade or shop, more for a store or salon", routing: { title: "Supplier & delivery routing", desc: "parts drivers, couriers and sub-trades go straight to your counter, back room or mobile." }, valueLabel: "Your average job, repair or sale", avgValue: 450 };
+
+export function PricingSection({ trade }: { trade?: TradeKey }) {
+  const plan = trade ? INDUSTRIES[trade].plan : GENERAL_PLAN;
   const [extraBlocks, setExtraBlocks] = useState(0);
-  const [avgJobValue, setAvgJobValue] = useState(450);
+  const [avgJobValue, setAvgJobValue] = useState(plan.avgValue);
   const totalMinutes = PRICING.includedMinutes + extraBlocks * PRICING.blockMinutes;
   const { currency } = useCurrency();
   const price = PRICES[currency];
@@ -19,8 +23,8 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
     <section id="pricing" className="mx-auto max-w-7xl scroll-mt-24 px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-10 max-w-3xl">
         <div style={{ letterSpacing: "0.2em" }} className="font-condensed-700 mb-2 text-sm uppercase text-[#A87A33]">Simple, transparent pricing</div>
-        <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed job.</h2>
-        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no contract: billed monthly, cancel any time. Prices in {price.name}{currency === "CAD" ? ", plus GST/HST" : ""}.</p>
+        <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed {trade === "retail" ? "customer" : "job"}.</h2>
+        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no contract: billed monthly, cancel any time. All prices in {price.name} ({price.symbol}){currency === "CAD" ? ", plus GST/HST" : ""}.</p>
         <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-[#6B5A43]"><span>Show prices in</span><CurrencyToggle /></div>
       </div>
 
@@ -28,26 +32,26 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
         <div className="space-y-6 rounded-[20px] border-2 border-[#173022] bg-[#1F3B2D] p-8 text-[#EFE6D4] lg:col-span-7">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#173022] pb-6">
             <div>
-              <span className="rounded-[6px] bg-[#D8B47A] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#1F3B2D]">{tierName}</span>
+              <span className="rounded-[6px] bg-[#D8B47A] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#1F3B2D]">{PLAN_NAME}</span>
               <h3 className="font-condensed-800 mt-3 text-3xl text-[#EFE6D4] sm:text-4xl">24/7 AI Receptionist &amp; Lead Dispatch</h3>
             </div>
             <div className="text-left sm:text-right">
               <div className="font-condensed-800 text-5xl text-[#D8B47A]">{money(price.monthly)}</div>
-              <div className="text-xs font-medium text-[#EFE6D4]/80">per month • {PRICING.includedMinutes} mins included</div>
+              <div className="text-xs font-medium text-[#EFE6D4]/80">{price.name} per month • {PRICING.includedMinutes} mins included</div>
             </div>
           </div>
           <ul className="space-y-3 text-base text-[#EFE6D4]">
-            <li className="flex items-start gap-3">{CHECK}<span><strong>{PRICING.includedMinutes} call minutes included</strong> every month (~100 to 130 typical trade calls).</span></li>
+            <li className="flex items-start gap-3">{CHECK}<span><strong>{PRICING.includedMinutes} call minutes included</strong> every month ({plan.callsNote}).</span></li>
             <li className="flex items-start gap-3">{CHECK}<span><strong>Predictable {PRICING.blockMinutes}-minute add-on blocks</strong> at {money(price.blockPrice)} if your busy season spikes.</span></li>
             <li className="flex items-start gap-3">{CHECK}<span><strong>Instant SMS confirmations</strong> to clients and live lead text summaries to you.</span></li>
-            <li className="flex items-start gap-3">{CHECK}<span><strong>Smart supplier &amp; sub-trade routing</strong> straight to your parts desk or mobile.</span></li>
+            <li className="flex items-start gap-3">{CHECK}<span><strong>{plan.routing.title}:</strong> {plan.routing.desc}</span></li>
             <li className="flex items-start gap-3">{CHECK}<span><strong>White-glove onboarding &amp; direct phone support</strong> whenever you need changes.</span></li>
           </ul>
           <a href="#follow-up-agent" className="flex items-center justify-between gap-4 rounded-[12px] border border-[#6B5A43] bg-[#173022] p-4 text-sm text-[#EFE6D4] hover:border-[#D8B47A] hover:no-underline">
-            <span><strong className="text-[#D8B47A]">Add-on: Follow-Up Agent.</strong> Calls every website lead back within minutes and books the job.</span>
+            <span><strong className="text-[#D8B47A]">Add-on: Follow-Up Agent.</strong> Calls every website lead back within minutes and books {trade === "retail" ? "the appointment" : "the job"}.</span>
             <span className="font-condensed-700 shrink-0 text-lg text-[#D8B47A]">{FOLLOWUP_ADDON_PRICE ? `+${money(FOLLOWUP_ADDON_PRICE[currency])}/mo` : "Ask us →"}</span>
           </a>
-          <DemoButton trade={trade} className="w-full px-8 sm:w-auto">Start with {tierName}</DemoButton>
+          <DemoButton trade={trade} className="w-full px-8 sm:w-auto">Start with the {PLAN_NAME}</DemoButton>
         </div>
 
         <div className="space-y-6 rounded-[20px] border-2 border-[#1F3B2D] bg-[#EFE6D4] p-6 sm:p-8 lg:col-span-5">
@@ -61,13 +65,13 @@ export function PricingSection({ tierName, trade }: { tierName: string; trade?: 
               <input type="range" min={0} max={5} value={extraBlocks} onChange={(e) => setExtraBlocks(Number(e.target.value))} className="w-full cursor-pointer accent-[#1F3B2D]" />
             </label>
             <label className="block">
-              <span className="mb-1 flex justify-between text-sm font-semibold"><span>Your average job / repair value:</span><span>{money(avgJobValue)}</span></span>
-              <input type="range" min={150} max={2500} step={50} value={avgJobValue} onChange={(e) => setAvgJobValue(Number(e.target.value))} className="w-full cursor-pointer accent-[#1F3B2D]" />
+              <span className="mb-1 flex justify-between text-sm font-semibold"><span>{plan.valueLabel}:</span><span>{money(avgJobValue)}</span></span>
+              <input type="range" min={50} max={2500} step={10} value={avgJobValue} onChange={(e) => setAvgJobValue(Number(e.target.value))} className="w-full cursor-pointer accent-[#1F3B2D]" />
             </label>
           </div>
           <div className="space-y-2 rounded-[12px] bg-[#173022] p-5 text-[#EFE6D4]">
             <div className="flex items-center justify-between text-sm"><span>Estimated monthly plan:</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#D8B47A]">{money(monthly)} / mo</span></div>
-            <div className="flex items-center justify-between border-t border-[#1F3B2D] pt-2 text-sm"><span>If we save just 2 missed jobs a week:</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#EFE6D4]">+{money(avgJobValue * 8)} / mo</span></div>
+            <div className="flex items-center justify-between border-t border-[#1F3B2D] pt-2 text-sm"><span>If we save just 2 missed {trade === "retail" ? "sales or appointments" : trade === "mechanics" ? "repairs" : "jobs"} a week:</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#EFE6D4]">+{money(avgJobValue * 8)} / mo</span></div>
           </div>
           <p className="text-xs text-[#6B5A43]">An estimate to help you decide, not a guarantee. Your dashboard shows your real minutes every month.</p>
         </div>

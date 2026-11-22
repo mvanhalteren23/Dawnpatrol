@@ -21,6 +21,24 @@ async function liveDemoFromDb(): Promise<{ tel: string; label: string } | null> 
   return { tel: ext ? `${demo.number},,${ext}` : demo.number, label: `${formatPhone(demo.number)}${ext ? `, ext. ${ext}` : ""}` };
 }
 
-export function Eyebrow({ children, dark = false }: { children: React.ReactNode; dark?: boolean }) {
-  return <div style={{ letterSpacing: "0.2em" }} className={`font-condensed-700 mb-2 text-sm uppercase ${dark ? "text-[#D8B47A]" : "text-[#A87A33]"}`}>{children}</div>;
+/**
+ * Where "Book a demo" sends people: our own receptionist's online booking page (pick a time on our
+ * calendar), or null while online booking is off (the call-back form is used instead).
+ */
+export async function demoBookingPath(): Promise<string | null> {
+  try {
+    const r = await db.receptionist.findFirst({
+      where: { bookingAddsToCrm: true, bookingEnabled: true, lifecycle: "production", agentType: "inbound" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, bookingKey: true },
+    });
+    if (!r) return null;
+    const { ensureBookingKey } = await import("@/lib/customer-texts");
+    return `/book/${await ensureBookingKey(r)}`;
+  } catch (err) {
+    console.warn("demo booking link lookup failed", err);
+    return null;
+  }
 }
+
+export { Eyebrow } from "./Eyebrow";

@@ -1,4 +1,4 @@
-// Public website content (Brand Kit, October 2026: "Voice AI for the trades"). The copy follows
+// Public website content (Brand Kit, October 2026). The copy follows
 // the approved design; claims are kept to what the product does today.
 
 export const BRAND = {
@@ -21,14 +21,18 @@ export const PRICES: Record<Currency, { monthly: number; blockPrice: number; sym
   USD: { monthly: 109, blockPrice: 19, symbol: "US$", name: "US dollars" },
 };
 
-/** The currency a visitor sees first: USD in the United States, CAD everywhere else. */
-export function currencyForCountry(country: string | null | undefined): Currency {
-  return country?.trim().toUpperCase() === "US" ? "USD" : "CAD";
-}
+/** Everyone sees Canadian dollars first (our market is Canada); US visitors can switch to US$. */
+export const DEFAULT_CURRENCY: Currency = "CAD";
+
+/** The one plan: the same on every page. */
+export const PLAN_NAME = "Receptionist Plan";
 
 export function formatMoney(currency: Currency, amount: number): string {
   return `${PRICES[currency].symbol}${amount.toLocaleString("en-US")}`;
 }
+
+/** The plan price for text that can't switch currency (page titles, search snippets). */
+export const PRICE_LABEL = `CA$${PRICES.CAD.monthly}/month (US$${PRICES.USD.monthly})`;
 
 /** The Follow-Up Agent add-on's monthly price in each currency; null shows "ask us" until it's set. */
 export const FOLLOWUP_ADDON_PRICE: Record<Currency, number> | null = { CAD: 59, USD: 45 };
@@ -54,10 +58,14 @@ export type Industry = {
   heroTitle: string;
   heroSub: string;
   primaryCta: string;
-  tierName: string;
   trustBadges: string[];
+  painHeading: string;
   painPoints: { title: string; desc: string }[];
+  stepsHeading: string;
   steps: { step: string; action: string; outcome: string }[];
+  /** Plan card lines that differ by business type. */
+  plan: { callsNote: string; routing: { title: string; desc: string }; valueLabel: string; avgValue: number };
+  footerTagline: string;
   featuresTitle: string;
   features: { title: string; desc: string }[];
   simulation: Record<Scenario, SampleCall>;
@@ -75,8 +83,11 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     heroSub:
       "Head Above Digital gives general contractors, plumbers, electricians, and roofers a 24/7 AI receptionist that answers every call, books the estimate, and texts you the address—so you can stay on the tools.",
     primaryCta: "Book a Live Demo",
-    tierName: "Trade Pro Tier",
     trustBadges: ["Zero Missed Calls", "Hands-Free Lead Capture", "Built for Field Work"],
+    painHeading: "Stop dropping tools to answer the phone.",
+    stepsHeading: "Four steps from first ring to booked job.",
+    plan: { callsNote: "about 100 to 130 typical trade calls", routing: { title: "Supplier & sub-trade routing", desc: "straight to your mobile, so job-site calls never wait behind price shoppers." }, valueLabel: "Your average job value", avgValue: 450 },
+    footerTagline: "Voice AI for contractors and the trades. Every call answered, every job booked.",
     painPoints: [
       { title: "No More Pausing the Job", desc: "Stop shutting off saws or climbing down scaffolding just to answer price shoppers. The AI handles inquiries naturally and books qualified estimates." },
       { title: "24/7 After-Hours Lead Capture", desc: "Emergency leak, heating failure, or weekend storm damage calls get answered instantly, stopping clients from calling the next contractor on Google." },
@@ -105,11 +116,11 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
           { speaker: "AI Dispatcher", text: "Thanks for calling Atwell Peak Contracting. The crew is on a job site right now, but I can book an estimate or get a message to the foreman. How can I help?" },
           { speaker: "Caller", text: "Hi, we need a 200-amp panel upgrade and an EV charger installed in our garage. Looking to get a quote." },
           { speaker: "AI Dispatcher", text: "We handle 200-amp upgrades every week. What is the street address, and does Thursday at 8:00 AM or Friday at 3:30 PM work for a 20-minute site walkthrough?" },
-          { speaker: "Caller", text: "38030 7th Ave. Thursday at 8:00 AM works great." },
+          { speaker: "Caller", text: "4 Fernhollow Lane. Thursday at 8:00 AM works great." },
           { speaker: "AI Dispatcher", text: "You are locked in for Thursday at 8:00 AM. I just texted you the confirmation details." },
         ],
-        smsToOwner: "NEW ESTIMATE BOOKED: 200A Panel + EV Charger | Address: 38030 7th Ave | Slot: Thu 8:00 AM | Caller: Mark (604-555-0192)",
-        smsToClient: "Confirmed: Atwell Peak Contracting will be at 38030 7th Ave on Thu at 8:00 AM for your panel & EV charger estimate. Reply to this text if you need to change the time.",
+        smsToOwner: "NEW ESTIMATE BOOKED: 200A Panel + EV Charger | Address: 4 Fernhollow Lane | Slot: Thu 8:00 AM | Caller: Mark (604-555-0192)",
+        smsToClient: "Confirmed: Atwell Peak Contracting will be at 4 Fernhollow Lane on Thu at 8:00 AM for your panel & EV charger estimate. Reply to this text if you need to change the time.",
       },
       supplier: {
         caller: "Wholesale Electrical Supply — Delivery Driver",
@@ -126,7 +137,7 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     },
     seo: {
       title: "AI Voice Receptionist for Contractors & Trades",
-      description: "24/7 AI voice receptionist and lead management for contractors, electricians, plumbers and roofers. Books estimates into your calendar and texts you every lead. $139/month.",
+      description: `24/7 AI voice receptionist and lead management for contractors, electricians, plumbers and roofers. Books estimates into your calendar and texts you every lead. From ${PRICE_LABEL}.`,
     },
   },
   mechanics: {
@@ -139,8 +150,11 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     heroSub:
       "Head Above Digital gives auto shops a 24/7 AI receptionist that answers every call, logs vehicle year/make/model, books bay drop-offs, and sends parts suppliers straight to the counter.",
     primaryCta: "Book a Shop Demo",
-    tierName: "Auto Pro Tier",
     trustBadges: ["No More Dropping Tools", "Year / Make / Model Intake", "Parts Counter Routing"],
+    painHeading: "Stop climbing out from under the hoist to answer the phone.",
+    stepsHeading: "Four steps from first ring to booked bay.",
+    plan: { callsNote: "about 100 to 130 typical shop calls", routing: { title: "Parts supplier routing", desc: "NAPA, Lordco and wholesale drivers go straight to your parts counter or mobile." }, valueLabel: "Your average repair order", avgValue: 450 },
+    footerTagline: "Voice AI for auto repair shops. Every call answered, every bay booked.",
     painPoints: [
       { title: "No More Dropping Tools", desc: "Stop wiping grease off your hands or climbing out from under a hoist just to answer routine pricing, oil change, or scheduling questions." },
       { title: "24/7 Appointment Booking", desc: "Capture after-hours breakdowns and service requests directly into your shop calendar without lifting a finger." },
@@ -156,7 +170,7 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     featuresTitle: "Features Built for Auto Shops",
     features: [
       { title: "Intelligent Supplier Filtering", desc: "Parts delivery drivers and wholesale suppliers skip the customer booking questions and transfer straight to the back office or parts desk." },
-      { title: "Every Call Summarised", desc: "Recordings, transcripts and a short summary of every call in your dashboard, with weekly and monthly reports emailed to you." },
+      { title: "Every Call Summarised", desc: "A transcript and a short summary of every call in your dashboard, with weekly and monthly reports emailed to you." },
       { title: "Calendar Booking", desc: "Books drop-offs into your Google Calendar with the vehicle year/make/model and the work requested." },
       { title: "Dedicated Phone Support for Setup & Adjustments", desc: "White-glove onboarding and continuous updates. Adjust operating hours, bay availability, or routing rules with a quick phone call." },
     ],
@@ -190,7 +204,7 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     },
     seo: {
       title: "AI Receptionist for Auto Repair Shops & Mechanics",
-      description: "24/7 AI voice receptionist for auto repair shops. Logs year/make/model, books bay drop-offs, routes parts suppliers and texts customers a confirmation. $139/month.",
+      description: `24/7 AI voice receptionist for auto repair shops. Logs year/make/model, books bay drop-offs, routes parts suppliers and texts customers a confirmation. From ${PRICE_LABEL}.`,
     },
   },
   retail: {
@@ -201,23 +215,26 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     eyebrow: "Voice AI for storefronts, salons & local shops",
     heroTitle: "Ringing phones while serving customers in line? Never miss another sale.",
     heroSub:
-      "Head Above Digital gives local storefronts, specialty shops, and service counters a 24/7 AI receptionist that answers routine questions, books consultations, and routes delivery couriers—so your team stays focused on the customer standing in front of them.",
+      "Head Above Digital gives storefronts, salons, specialty shops and service counters a 24/7 AI receptionist that answers routine questions, books appointments and consultations, and routes delivery couriers—so your team stays focused on the customer standing in front of them.",
     primaryCta: "Book a Storefront Demo",
-    tierName: "Storefront Pro Tier",
     trustBadges: ["Zero Line Interruptions", "24/7 Front Desk AI", "Hands-Free SMS Booking"],
+    painHeading: "Stop leaving the customer in front of you to answer the phone.",
+    stepsHeading: "Four steps from first ring to booked appointment.",
+    plan: { callsNote: "about 150 to 250 typical store and salon calls, which tend to be short", routing: { title: "Courier & supplier routing", desc: "deliveries and distributor reps go straight to the back room or your mobile." }, valueLabel: "Your average sale or appointment", avgValue: 120 },
+    footerTagline: "Voice AI for storefronts, salons and local shops. Every call answered, every appointment booked.",
     painPoints: [
       { title: "In-Store Interruption Overload", desc: "Stop walking away from the register or a paying customer just to answer repetitive phone questions about directions, parking, or store hours." },
       { title: "After-Hours Revenue Loss", desc: "Customers call in the evening and on weekends. Instead of hitting voicemail, calls are answered right away—booking appointments and taking messages." },
-      { title: "Automated Appointment & Fitting Booking", desc: "Books private consultations, fitting sessions, repair drop-offs, or service slots straight into your calendar." },
+      { title: "Appointment Booking for Salons & Shops", desc: "Books haircuts and colour appointments, consultations, fittings, repair drop-offs or service slots straight into your calendar." },
       { title: "Vendor vs. Shopper Smart Triage", desc: "Tells everyday shoppers apart from freight couriers, distributor reps, and stock deliveries—routing shipments straight to the back room." },
     ],
     steps: [
       { step: "Step 1: Instant Intake", action: "24/7 natural conversational pickup", outcome: "Zero dropped calls or abandoned inquiries during busy Saturday rushes or after closing." },
       { step: "Step 2: Intelligent Triage & Scheduling", action: "FAQ answers & appointment booking", outcome: "Answers store hours, location, and store policies while booking consultation slots directly to your calendar." },
       { step: "Step 3: Instant SMS Confirmation", action: "Automated text message notification", outcome: "Caller immediately receives SMS appointment details and parking instructions; the manager gets a call summary." },
-      { step: "Step 4: Tailored White-Glove Onboarding", action: "Custom storefront configuration", outcome: "We write your call scripts, connect your calendar, and handle phone routing for you." },
+      { step: "Step 4: Tailored White-Glove Onboarding", action: "Custom store or salon setup", outcome: "We write your call scripts, connect your calendar, and handle phone routing for you." },
     ],
-    featuresTitle: "Storefront-Specific Capabilities",
+    featuresTitle: "Built for Storefronts & Salons",
     features: [
       { title: "Instant SMS Confirmations", desc: "Texts customers booking confirmations, store directions, and arrival instructions the second they hang up." },
       { title: "Caller Follow-Up Texts", desc: "Every caller can get a short text recap of what was agreed, so nobody leaves a call unsure what happens next." },
@@ -237,7 +254,7 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
           { speaker: "AI Dispatcher", text: "You are booked for Saturday at 11:00 AM, Sarah. I just texted you a confirmation and parking details." },
         ],
         smsToOwner: "NEW STORE BOOKING: Custom Boot Fitting (45m) | Slot: Sat 11:00 AM | Customer: Sarah (604-555-0174)",
-        smsToClient: "Confirmed: Custom Boot Fitting at Garibaldi Outdoor this Saturday at 11:00 AM. Free customer parking is behind the building off Cleveland Ave.",
+        smsToClient: "Confirmed: Custom Boot Fitting at Garibaldi Outdoor this Saturday at 11:00 AM. Free customer parking is behind the building.",
       },
       supplier: {
         caller: "Freight Courier — Pallet Delivery",
@@ -254,7 +271,7 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
     },
     seo: {
       title: "AI Receptionist for Retail Stores & Small Businesses",
-      description: "24/7 AI voice receptionist for storefronts, salons and local shops. Answers store hours and questions, books appointments, routes deliveries and texts confirmations. $139/month.",
+      description: `24/7 AI voice receptionist for storefronts, salons and local shops. Answers store hours and questions, books appointments, routes deliveries and texts confirmations. From ${PRICE_LABEL}.`,
     },
   },
 };
@@ -290,10 +307,10 @@ export const CALL_SCENES: Record<TradeKey, { business: string; setting: string; 
     lines: [
       { speaker: "Caller", text: "Hi, I've got a leak around my skylight. Can someone take a look?" },
       { speaker: "AI Dispatcher", text: "We can. Is Thursday at 8:00 AM good for a site visit? What's the address?" },
-      { speaker: "Caller", text: "Thursday works. 1420 Pemberton Ave." },
+      { speaker: "Caller", text: "Thursday works. 27 Larkspur Ridge Road." },
       { speaker: "AI Dispatcher", text: "You're booked. I've texted you the confirmation." },
     ],
-    toast: { title: "Site visit booked", body: "Thu 8:00 AM · Skylight leak · 1420 Pemberton Ave" },
+    toast: { title: "Site visit booked", body: "Thu 8:00 AM · Skylight leak · 27 Larkspur Ridge Rd" },
   },
   retail: {
     business: "Garibaldi Outdoor & Gear",

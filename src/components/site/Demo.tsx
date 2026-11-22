@@ -8,7 +8,7 @@ import { INDUSTRIES, TRADE_KEYS, type TradeKey } from "@/lib/site-content";
 
 const DemoContext = createContext<(trade?: TradeKey, followup?: boolean) => void>(() => undefined);
 
-export function DemoProvider({ children }: { children: ReactNode }) {
+export function DemoProvider({ children, bookingPath = null }: { children: ReactNode; bookingPath?: string | null }) {
   const [open, setOpen] = useState(false);
   const [trade, setTrade] = useState<TradeKey>("contractors");
   const [followup, setFollowup] = useState(false);
@@ -20,7 +20,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   return (
     <DemoContext.Provider value={openDemo}>
       {children}
-      {open ? <DemoModal trade={trade} followup={followup} onClose={() => setOpen(false)} /> : null}
+      {open ? <DemoModal trade={trade} followup={followup} bookingPath={bookingPath} onClose={() => setOpen(false)} /> : null}
     </DemoContext.Provider>
   );
 }
@@ -37,7 +37,7 @@ export function DemoButton({ trade, followup = false, children, variant = "tan",
 
 const inputClass = "w-full h-11 px-3 rounded-[6px] border-2 border-[#6B5A43] bg-[#EFE6D4] text-sm text-[#1F3B2D] focus:outline-none focus:border-[#1F3B2D]";
 
-function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: boolean; onClose: () => void }) {
+function DemoModal({ trade, followup, bookingPath, onClose }: { trade: TradeKey; followup: boolean; bookingPath: string | null; onClose: () => void }) {
   const [state, action, pending] = useActionState<DemoRequestState | undefined, FormData>(submitDemoRequest, undefined);
   const [started] = useState(() => Date.now());
   const dialog = useRef<HTMLDivElement>(null);
@@ -73,6 +73,14 @@ function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: bo
             <button type="button" onClick={onClose} className="mt-2 h-[48px] cursor-pointer rounded-[12px] bg-[#D8B47A] px-5 text-sm font-semibold text-[#1F3B2D]">Back to site</button>
           </div>
         ) : (
+          <>
+          {bookingPath ? (
+            <div className="space-y-3 rounded-[12px] bg-[#1F3B2D] p-5 text-[#EFE6D4]">
+              <p className="text-sm">Pick a time that suits you on our calendar: a 20-minute call where you hear your own receptionist answer.</p>
+              <a href={`${bookingPath}?trade=${trade}`} className="inline-flex h-[48px] items-center rounded-[12px] bg-[#D8B47A] px-6 text-sm font-semibold text-[#1F3B2D] hover:no-underline">Choose a demo time →</a>
+            </div>
+          ) : null}
+          {bookingPath ? <p className="font-condensed-700 text-lg text-[#1F3B2D]">Or have us call you</p> : null}
           <form action={action} className="space-y-4">
             <input type="hidden" name="started" value={started} />
             <div aria-hidden="true" className="absolute -left-[9999px] h-0 overflow-hidden">
@@ -103,6 +111,7 @@ function DemoModal({ trade, followup, onClose }: { trade: TradeKey; followup: bo
               <button type="submit" disabled={pending} className="h-[48px] cursor-pointer rounded-[12px] bg-[#1F3B2D] px-6 text-sm font-semibold text-[#EFE6D4] disabled:opacity-60">{pending ? "Sending…" : "Book my live demo"}</button>
             </div>
           </form>
+          </>
         )}
       </div>
     </div>

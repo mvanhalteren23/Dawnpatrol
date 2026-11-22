@@ -29,7 +29,7 @@ export function FollowupAddon({ trade = "contractors" }: { trade?: TradeKey }) {
           </div>
           <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#EFE6D4] sm:text-[48px]">Every website lead called back within 5 minutes.</h2>
           <p className="max-w-2xl text-[18px] font-medium leading-[28px] text-[#EFE6D4]">
-            The first business to call back usually wins the job. When someone fills in the form on your website, the Follow-Up Agent calls them, finds out what they need and books the estimate, drop-off or appointment—without you stopping work.
+            The first business to call back usually wins the customer. When someone fills in the form on your website, the Follow-Up Agent calls them, finds out what they need and books the estimate, drop-off or appointment—without you stopping what you&apos;re doing.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             {POINTS.map((p) => (

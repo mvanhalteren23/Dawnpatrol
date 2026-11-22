@@ -64,8 +64,8 @@ export function DispatchSimulator({ initialTrade = "contractors" }: { initialTra
         </div>
 
         <div className="mb-6 flex flex-wrap gap-3" role="group" aria-label="Scenario">
-          <button type="button" aria-pressed={scenario === "customer"} onClick={() => setScenario("customer")} style={scenarioBtn(scenario === "customer")} className="h-[48px] cursor-pointer rounded-[12px] border-2 px-5 text-sm font-semibold">Scenario A: Customer booking a job</button>
-          <button type="button" aria-pressed={scenario === "supplier"} onClick={() => setScenario("supplier")} style={scenarioBtn(scenario === "supplier")} className="h-[48px] cursor-pointer rounded-[12px] border-2 px-5 text-sm font-semibold">Scenario B: Parts supplier / vendor call</button>
+          <button type="button" aria-pressed={scenario === "customer"} onClick={() => setScenario("customer")} style={scenarioBtn(scenario === "customer")} className="h-[48px] cursor-pointer rounded-[12px] border-2 px-5 text-sm font-semibold">Scenario A: {trade === "retail" ? "Customer booking an appointment" : trade === "mechanics" ? "Customer booking a repair" : "Customer booking a job"}</button>
+          <button type="button" aria-pressed={scenario === "supplier"} onClick={() => setScenario("supplier")} style={scenarioBtn(scenario === "supplier")} className="h-[48px] cursor-pointer rounded-[12px] border-2 px-5 text-sm font-semibold">Scenario B: {trade === "retail" ? "Courier / delivery call" : "Parts supplier / vendor call"}</button>
         </div>
 
         <div className="grid items-start gap-6 lg:grid-cols-12">
