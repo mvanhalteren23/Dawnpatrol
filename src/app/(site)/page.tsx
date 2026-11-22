@@ -10,7 +10,7 @@ import { Eyebrow, liveDemo } from "@/components/site/Sections";
 import { CallScene } from "@/components/site/CallScene";
 import { Reveal } from "@/components/site/Reveal";
 import { HearItForm } from "@/components/site/HearItForm";
-import { ConnectsAndData, FaqSection, ResultsPreview, ServicesSection } from "@/components/site/TrustSections";
+import { ConnectsAndData, FaqSection, ResultsPreview } from "@/components/site/TrustSections";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +118,6 @@ export default async function Home() {
       <FollowupAddon />
       <ResultsPreview />
       <PricingSection />
-      <ServicesSection />
       <ConnectsAndData />
       <FaqSection />
       <OnboardingBanner />

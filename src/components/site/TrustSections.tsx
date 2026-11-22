@@ -2,13 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { FAQ } from "@/lib/site-faq";
 import { faqJsonLd, jsonLdScript } from "@/lib/seo";
-import { DemoButton } from "./Demo";
 import { Eyebrow } from "./Eyebrow";
 import { Reveal } from "./Reveal";
-import type { TradeKey } from "@/lib/site-content";
 
 // The trust sections shared by the home page and the industry pages: what it connects to, how
-// call data is handled, the FAQ, a look at the client dashboard, and our setup services. Every
+// call data is handled, the FAQ and a look at the client dashboard. Every
 // statement here matches the product and the privacy policy; keep them in step.
 
 
@@ -104,42 +102,6 @@ export function ResultsPreview() {
           <figcaption className="mt-2 text-xs text-[#6B5A43]">A sample business with invented calls. Your own numbers appear once your line is live.</figcaption>
         </div>
       </div>
-    </section>
-  );
-}
-
-const SERVICES: { title: string; desc: string; points: string[] }[] = [
-  {
-    title: "A website that books work",
-    desc: "A fast, mobile-friendly website for your business, written for the jobs you want, with click-to-call and online booking built in.",
-    points: ["Your services, service area, photos and reviews", "Call, text and book buttons on every page", "Website enquiries called back by your receptionist (Follow-Up Agent)"],
-  },
-  {
-    title: "Google Business Profile & local SEO setup",
-    desc: "Get found when people near you search for what you do, and turn those searches into calls.",
-    points: ["Business Profile set up or cleaned up: categories, services, hours, photos and booking link", "Service and town pages so you show up in the places you work", "Search Console and sitemap set up, and review requests after each job"],
-  },
-];
-
-export function ServicesSection({ trade }: { trade?: TradeKey }) {
-  return (
-    <section id="services" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="mb-8 max-w-3xl">
-        <Eyebrow>Also from Head Above Digital</Eyebrow>
-        <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">More calls in the first place.</h2>
-        <p className="mt-3 text-[18px] font-medium leading-[28px] text-[#6B5A43]">Your receptionist answers the calls. These help more of them come in. One-time setup, quoted for your business, on its own or with your receptionist.</p>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        {SERVICES.map((s, i) => (
-          <Reveal key={s.title} delay={i * 100} className="space-y-3 rounded-[20px] border-2 border-[#1F3B2D] bg-[#F7F2E8] p-6 sm:p-8">
-            <h3 className="font-condensed-800 text-3xl leading-[1.05] text-[#1F3B2D]">{s.title}</h3>
-            <p className="text-base leading-7 text-[#6B5A43]">{s.desc}</p>
-            <ul className="space-y-1.5 text-sm text-[#1F3B2D]">{s.points.map((p) => <li key={p}>✓ {p}</li>)}</ul>
-            <p className="text-sm font-semibold text-[#A87A33]">Quoted per project: ask on your demo call.</p>
-          </Reveal>
-        ))}
-      </div>
-      <div className="mt-6"><DemoButton trade={trade} variant="green">Ask about a website or Google profile</DemoButton></div>
     </section>
   );
 }

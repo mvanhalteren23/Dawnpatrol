@@ -59,7 +59,7 @@ export function SiteFooter({ account }: { account: { href: string; label: string
           <BrandLogo />
           <p className="text-xs text-[#EFE6D4]/70">{trade ? INDUSTRIES[trade].footerTagline : "Voice AI for trades, auto shops, storefronts and salons. Every call answered."}</p>
           <p className="text-xs text-[#EFE6D4]/70">Questions or support: <a href="mailto:team@headabovedigital.com" className="text-[#D8B47A]">team@headabovedigital.com</a></p>
-          <p className="text-xs text-[#EFE6D4]/70"><Link href="/privacy" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Privacy</Link> · <Link href="/terms" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Terms</Link> · <Link href="/google-calendar" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Google Calendar connection</Link> · <Link href="/#faq" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">FAQ</Link> · <Link href="/#services" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Websites &amp; Google profile</Link></p>
+          <p className="text-xs text-[#EFE6D4]/70"><Link href="/privacy" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Privacy</Link> · <Link href="/terms" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Terms</Link> · <Link href="/google-calendar" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">Google Calendar connection</Link> · <Link href="/#faq" className="text-[#EFE6D4]/80 hover:text-[#D8B47A]">FAQ</Link></p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-6 text-sm font-semibold">
           {NAV.map((n) => <Link key={n.href} href={n.href} className="text-[#EFE6D4] hover:text-[#D8B47A] hover:no-underline">{n.short === "Overview" ? "Overview" : n.label}</Link>)}

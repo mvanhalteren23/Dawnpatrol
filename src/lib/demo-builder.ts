@@ -204,10 +204,21 @@ export async function takeClientMessage(house: Receptionist, input: CallerInput 
   if (account) {
     await recordActivity({ accountId: account.id, type: "TASK", direction: "INBOUND", source: "receptionist", subject: `${urgent ? "URGENT: " : ""}Client request: ${request.slice(0, 80)}`, body, dueAt: addDays(new Date(), urgent ? 0 : 1) });
   }
+  // Urgent (their line isn't working, or it can't wait): text whoever's on support right away
+  // (the administrators' mobiles), plus a phone notification and the support email.
+  if (urgent) {
+    const { alertTeam } = await import("./call-guard");
+    await alertTeam(`URGENT client request: ${who}`, `${request.slice(0, 300)} Call back: ${input.caller_phone.trim()}.`, { category: "lines", urgent: true, ...(account ? { accountId: account.id } : {}) })
+      .catch((e) => console.error("urgent client alert", e));
+    return {
+      sent: true,
+      message: `Got it. Tell the caller the support team has been texted and will get back to them as soon as possible, at ${input.caller_phone.trim()}.`,
+    };
+  }
   const to = await supportAddress();
   let sent = false;
   if (to) {
-    sent = await sendPlainEmail({ to, subject: `${urgent ? "URGENT — " : ""}Client request from ${who}`, body, fromName: await companyName(), replyTo: input.caller_email?.includes("@") ? input.caller_email.trim() : null })
+    sent = await sendPlainEmail({ to, subject: `Client request from ${who}`, body, fromName: await companyName(), replyTo: input.caller_email?.includes("@") ? input.caller_email.trim() : null })
       .then(() => true)
       .catch((e) => {
         console.error("client message email", e);
