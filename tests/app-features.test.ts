@@ -279,3 +279,30 @@ describe("demo cost controls", async () => {
     expect(DEMO_BUILDS_PER_HOUR).toBe(6);
   });
 });
+
+describe("Grace and prospects' demos", async () => {
+  const { demoEndReason, demoProspectOpening, demoReturnOpening, DEMO_TIMEOUT_SLACK_SECONDS } = await import("@/lib/house-line-rules");
+  const t0 = 1_800_000_000_000;
+
+  it("tells a demo that ran out of time from one that finished, failed or was hung up", () => {
+    expect(demoEndReason(t0, t0 + 300_000, 5, "in-progress")).toBe("timeout");
+    expect(demoEndReason(t0, t0 + (300 - DEMO_TIMEOUT_SLACK_SECONDS) * 1000, 5, "in-progress")).toBe("timeout");
+    expect(demoEndReason(t0, t0 + (300 - DEMO_TIMEOUT_SLACK_SECONDS - 1) * 1000, 5, "in-progress")).toBe("ended");
+    expect(demoEndReason(t0, t0 + 120_000, 5, "in-progress")).toBe("ended");
+    expect(demoEndReason(t0, t0 + 5_000, 5, "in-progress")).toBe("failed");
+    expect(demoEndReason(t0, t0 + 300_000, 5, "completed")).toBe("ended");
+    expect(demoEndReason(NaN, t0, 5, "in-progress")).toBe("ended");
+    expect(demoEndReason(t0, t0 + 175_000, 3, undefined)).toBe("timeout");
+  });
+
+  it("greets a prospect with a demo by name and offers it", () => {
+    const o = demoProspectOpening({ firstName: "Dana Lee", company: "Head Above Digital", receptionist: "Grace", demoBusiness: "Atwell Peak Contracting" });
+    expect(o).toBe("Hi Dana, thanks for calling Head Above Digital, it's Grace. How can I help? And your demo receptionist for Atwell Peak Contracting is set up, if you'd like to try it.");
+    expect(demoProspectOpening({ firstName: "", company: "Head Above Digital", receptionist: "Grace", demoBusiness: "X" })).toMatch(/^Hi there, /);
+  });
+
+  it("comes back after the demo to book a follow-up", () => {
+    expect(demoReturnOpening({ firstName: "Dana", company: "Head Above Digital", receptionist: "Grace" })).toMatch(/^Hi again, Dana, it's Grace.*end of the demo time.*book a quick call/);
+    expect(demoReturnOpening({ company: "Head Above Digital", receptionist: "Grace", failed: true })).toMatch(/^Sorry about that, the demo didn't connect/);
+  });
+});

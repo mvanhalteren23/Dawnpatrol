@@ -8,12 +8,14 @@ import { appUrl } from "@/lib/app-url";
 import { twilioSignatureOk } from "@/lib/twilio-request";
 import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
-import { callerContext, houseReceptionist } from "@/lib/house-line";
+import { callerContext, demoReturnContext, houseReceptionist } from "@/lib/house-line";
 import { screenCall } from "@/lib/call-guard";
 import { demoLineLimits } from "@/lib/call-guard-rules";
 import { teamMemberByPhone } from "@/lib/owner-mode";
 import { defaultGreeting } from "@/lib/safety-rules";
-import { matchDemoByName } from "@/lib/house-line-rules";
+import { demoEndReason, matchDemoByName } from "@/lib/house-line-rules";
+import { DEMO_MAX_CALL_MINUTES } from "@/lib/call-guard-rules";
+import { withAfterAgent } from "@/lib/agent-fallback-rules";
 import { escapeXml } from "@/lib/twilio";
 
 // Demo line directory. Twilio's Voice webhook for the demo number points here:
@@ -31,10 +33,20 @@ function base() {
   return appUrl();
 }
 
-async function connect(agentId: string, from: string, to: string, callSid = "") {
+/** A whole call (Grace and demos) longer than this: Grace still comes back, but doesn't reopen the demo. */
+const MAX_DEMO_CALL_SECONDS = 15 * 60;
+
+/**
+ * Hand the call to an agent. For a prospect's demo (`demo`), Twilio comes back here when the demo's
+ * audio ends, so Grace can pick the call up again if the demo ran out of time or didn't connect.
+ */
+async function connect(agentId: string, from: string, to: string, callSid = "", demo?: { maxCallMinutes: number; lifecycle: string }) {
   try {
     // Every inbound agent's prompt reads these (owner mode is only ever set on a client's own line).
-    return xml(await registerTwilioCall(agentId, from, to, { dynamicVariables: { caller_role: "customer", owner_name: "", call_sid: callSid } }));
+    const handoff = await registerTwilioCall(agentId, from, to, { dynamicVariables: { caller_role: "customer", owner_name: "", call_sid: callSid } });
+    if (!demo) return xml(handoff);
+    const max = demo.lifecycle === "demo" ? Math.min(demo.maxCallMinutes, DEMO_MAX_CALL_MINUTES) : demo.maxCallMinutes;
+    return xml(withAfterAgent(handoff, `${base()}/api/voice/demo?step=after&t=${Date.now()}&max=${max}`));
   } catch (err) {
     console.error("demo line: register-call failed", err);
     return xml(twiml(`${say("Sorry, the demo is having a technical issue. Please try again in a few minutes.")}<Hangup/>`));
@@ -65,17 +77,38 @@ export async function POST(req: Request) {
 
   const step = url.searchParams.get("step");
 
+  // A prospect's demo just ended. Out of time, or it didn't connect, and the caller's still there:
+  // Grace comes back on (to book a follow-up). Otherwise the call ends as usual.
+  if (step === "after") {
+    const reason = internal ? "ended" : demoEndReason(Number(url.searchParams.get("t")), Date.now(), Number(url.searchParams.get("max")) || DEMO_MAX_CALL_MINUTES, params.CallStatus);
+    if (reason === "ended") return xml(twiml("<Hangup/>"));
+    const grace = await houseReceptionist();
+    if (!grace?.elevenLabsAgentId) return xml(twiml(`${say("Thanks for trying the demo. We'll be in touch. Goodbye.")}<Hangup/>`));
+    const ctx = await demoReturnContext(from, reason === "failed");
+    // A long call already: Grace books the follow-up but doesn't reopen the demo again.
+    const started = params.CallSid ? await callStartedMs(params.CallSid) : null;
+    if (started && Date.now() - started > MAX_DEMO_CALL_SECONDS * 1000) ctx.demo_extension = "";
+    const { agentUnavailable, guardedHandoff } = await import("@/lib/agent-fallback");
+    try {
+      const handoff = await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...ctx, call_sid: params.CallSid ?? "" } });
+      return xml(guardedHandoff(grace, handoff));
+    } catch (err) {
+      console.error("demo line: return to Grace failed", err);
+      return xml(await agentUnavailable(grace, (err as Error).message ?? "the agent couldn't be reached"));
+    }
+  }
+
   // The demo menu (the owner keyed their code to Grace) and a prospect's demo by extension: the
   // keypad tool moved the live call here. Pick a demo by extension or by saying the company name.
   if (!internal && (step === "menu" || step === "pick" || step === "open")) {
-    const demos = await db.receptionist.findMany({ where: { demoExtension: { not: null }, elevenLabsAgentId: { not: null } }, select: { id: true, demoExtension: true, businessName: true, elevenLabsAgentId: true } });
+    const demos = await db.receptionist.findMany({ where: { demoExtension: { not: null }, elevenLabsAgentId: { not: null } }, select: { id: true, demoExtension: true, businessName: true, elevenLabsAgentId: true, maxCallMinutes: true, lifecycle: true } });
     const pick = (n: number) => `${base()}/api/voice/demo?step=pick&attempt=${n}`;
     const menu = (prompt: string, n: number) =>
       xml(twiml(`<Gather input="dtmf speech" finishOnKey="#" timeout="6" speechTimeout="auto" hints="${escapeXml(demos.map((d) => d.businessName).join(", ").slice(0, 900))}" action="${escapeXml(pick(n))}" method="POST">${say(prompt)}</Gather><Redirect method="POST">${escapeXml(pick(n))}</Redirect>`));
     if (step === "menu") return menu("Demo menu. Enter the extension and press pound, or say the company name.", 1);
     const ext = step === "open" ? cleanDigits(url.searchParams.get("ext") ?? "") : cleanDigits(params.Digits);
     const chosen = demos.find((d) => ext && d.demoExtension === ext) ?? (step === "pick" && params.SpeechResult ? matchDemoByName(params.SpeechResult, demos) : null);
-    if (chosen) return connect(chosen.elevenLabsAgentId!, from, to, params.CallSid ?? "");
+    if (chosen) return connect(chosen.elevenLabsAgentId!, from, to, params.CallSid ?? "", chosen);
     if (step === "open" || attempt >= MAX_ATTEMPTS) return xml(twiml(`${say("Sorry, that demo isn't available right now. Goodbye.")}<Hangup/>`));
     return menu("Sorry, I couldn't find that one. Enter the extension, or say the company name.", attempt + 1);
   }
@@ -138,7 +171,7 @@ export async function POST(req: Request) {
         externalId: params.CallSid ? `twilio:${params.CallSid}` : null,
       }).catch((e) => console.warn("demo line activity", e));
     });
-    return connect(receptionist.elevenLabsAgentId, from, to, params.CallSid ?? "");
+    return connect(receptionist.elevenLabsAgentId, from, to, params.CallSid ?? "", receptionist);
   }
 
   if (attempt >= MAX_ATTEMPTS) {
@@ -155,4 +188,16 @@ export async function POST(req: Request) {
       ? "That demo isn't ready yet. Please try another extension, or call back later."
       : "That extension isn't set up. Please enter your demo extension again, then press pound.";
   return xml(gatherExtension(retry, action(attempt + 1), action(attempt + 1)));
+}
+
+/** When this call started (Twilio), or null if it can't be read. */
+async function callStartedMs(callSid: string): Promise<number | null> {
+  try {
+    const { twilioApi } = await import("@/lib/twilio");
+    const c = await twilioApi<{ start_time?: string | null }>(`/Calls/${callSid}.json`);
+    const t = c.start_time ? Date.parse(c.start_time) : NaN;
+    return Number.isFinite(t) ? t : null;
+  } catch {
+    return null;
+  }
 }

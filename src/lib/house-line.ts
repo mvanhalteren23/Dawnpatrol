@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Receptionist } from "@prisma/client";
 import { db } from "./db";
 import { getSetting, setSetting } from "./settings";
-import { isClientStage } from "./constants";
+import { CLIENT_STAGES, isClientStage } from "./constants";
 import { companyName } from "./brand";
 import { toE164, twilioApi } from "./twilio";
 import { appBase } from "./twilio-request";
@@ -43,13 +43,74 @@ export async function callerType(from: string): Promise<CallerType> {
  * What Grace is told when a call starts: the caller type, the team member's first name (team only),
  * and her opening line (team members are greeted by name and asked what they'd like to do).
  */
-export async function callerContext(from: string, greeting: string): Promise<{ caller_type: CallerType; team_name: string; opening: string }> {
+export type CallerContext = { caller_type: CallerType; team_name: string; opening: string; caller_first_name: string; demo_business: string; demo_extension: string; demo_return: string };
+
+/**
+ * A prospect's own live demo, found from the number they're calling from (a contact's phone or the
+ * business's main number). Clients and unknown numbers have none.
+ */
+export async function prospectDemo(from: string): Promise<{ firstName: string; business: string; extension: string; maxCallMinutes: number } | null> {
+  if (!from) return null;
+  const e164 = toE164(from);
+  // The same mobile can be on more than one account: look at all of them, newest demo wins.
+  const [{ account }, contacts] = await Promise.all([
+    matchAccount({ phone: from }),
+    db.contact.findMany({ where: { phone: { in: [...new Set([e164, from])] } }, select: { accountId: true, firstName: true } }),
+  ]);
+  const accountIds = [...new Set([...(account ? [account.id] : []), ...contacts.map((c) => c.accountId)])];
+  if (!accountIds.length) return null;
+  const demo = await db.receptionist.findFirst({
+    where: { accountId: { in: accountIds }, lifecycle: "demo", demoExtension: { not: null }, elevenLabsAgentId: { not: null }, account: { stage: { notIn: CLIENT_STAGES } } },
+    orderBy: { updatedAt: "desc" },
+    select: { accountId: true, businessName: true, demoExtension: true, maxCallMinutes: true },
+  });
+  if (!demo?.demoExtension) return null;
+  const firstName = contacts.find((c) => c.accountId === demo.accountId && c.firstName)?.firstName ?? "";
+  return { firstName, business: demo.businessName, extension: demo.demoExtension, maxCallMinutes: demo.maxCallMinutes };
+}
+
+/**
+ * What Grace is told when a call starts: the caller type, the team member's first name (team only),
+ * her opening line (team members are greeted by name and asked what they'd like to do; a prospect
+ * with a demo is greeted by name and told their demo is ready), and their demo (if any).
+ */
+export async function callerContext(from: string, greeting: string): Promise<CallerContext> {
+  const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" };
   const team = await teamMemberByPhone(from).catch(() => null);
   if (team) {
     const house = await houseReceptionist();
-    return { caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu, or a demo by company name.` };
+    return { ...none, caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu, or a demo by company name.` };
   }
-  return { caller_type: await callerType(from), team_name: "", opening: greeting };
+  const demo = await prospectDemo(from).catch(() => null);
+  if (demo) {
+    const [house, company] = await Promise.all([houseReceptionist(), companyName()]);
+    const { demoProspectOpening } = await import("./house-line-rules");
+    return {
+      ...none,
+      caller_type: "prospect",
+      team_name: "",
+      caller_first_name: demo.firstName,
+      demo_business: demo.business,
+      demo_extension: demo.extension,
+      opening: demoProspectOpening({ firstName: demo.firstName, company, receptionist: house?.name ?? "Grace", demoBusiness: demo.business }),
+    };
+  }
+  return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting };
+}
+
+/** Grace back on the line after a demo: its time ran out (book a follow-up), or it didn't connect. */
+export async function demoReturnContext(from: string, failed: boolean): Promise<CallerContext> {
+  const [house, company, demo] = await Promise.all([houseReceptionist(), companyName(), prospectDemo(from).catch(() => null)]);
+  const { demoReturnOpening } = await import("./house-line-rules");
+  return {
+    caller_type: "prospect",
+    team_name: "",
+    caller_first_name: demo?.firstName ?? "",
+    demo_business: demo?.business ?? "",
+    demo_extension: demo?.extension ?? "",
+    demo_return: failed ? "failed" : "timeout",
+    opening: demoReturnOpening({ firstName: demo?.firstName, company, receptionist: house?.name ?? "Grace", failed }),
+  };
 }
 
 /**
@@ -62,7 +123,16 @@ export async function openDemoForTeam(callSid: string, wanted: string): Promise<
   const call = await twilioApi<{ status: string; to: string; from: string }>(`/Calls/${callSid}.json`).catch(() => null);
   const number = demoNumber();
   if (!call || call.status !== "in-progress" || !number || toE164(call.to) !== number) return refuse;
-  if (!(await teamMemberByPhone(call.from))) return refuse;
+  if (!(await teamMemberByPhone(call.from))) {
+    // A prospect may open their own demo (the one on the account their number belongs to), nothing else.
+    const own = await prospectDemo(call.from).catch(() => null);
+    if (!own) return refuse;
+    const said = wanted.trim();
+    const digits = said.replace(/\D/g, "");
+    const theirs = !digits || digits === own.extension;
+    if (!theirs) return { message: `They can only open their own demo here. Offer to open the ${own.business} demo instead.`, redirect: null };
+    return { message: `Say only: "Connecting you to your ${own.business} demo now. When the demo time is up, I'll come back on."`, redirect: `${appBase()}/api/voice/demo?step=open&ext=${own.extension}` };
+  }
   const demos = await db.receptionist.findMany({ where: { demoExtension: { not: null }, elevenLabsAgentId: { not: null }, lifecycle: "demo" }, select: { demoExtension: true, businessName: true }, orderBy: { updatedAt: "desc" }, take: 200 });
   const said = wanted.trim();
   if (!said || /^(the )?(demo )?menu$|directory|list/i.test(said)) return { message: "Say only: \"Opening the demo menu.\"", redirect: `${appBase()}/api/voice/demo?step=menu` };

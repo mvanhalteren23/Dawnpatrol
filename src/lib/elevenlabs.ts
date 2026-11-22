@@ -158,7 +158,7 @@ export function salesTools(r: { id: string; ragToken: string }) {
     open_demo: {
       type: "webhook",
       name: "open_demo",
-      description: "Only for a team member (caller type team): open the demo menu or a demo the team member asks for, by company name or extension. The app checks the caller is on the team.",
+      description: "Move the call to a demo. A team member (caller type team) can open the demo menu or any demo, by company name or extension. A prospect can open only their own demo: pass its extension. The app checks the caller.",
       response_timeout_secs: 10,
       api_schema: {
         url: `${base}/open-demo`,
@@ -415,7 +415,7 @@ export function agentConfig(
   const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
   const clientLine = !house && isClientInbound(r as { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string });
   // Our line: the opening is chosen per call (team members are greeted by name).
-  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
