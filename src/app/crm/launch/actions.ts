@@ -49,3 +49,20 @@ export async function checkLinesNow() {
   revalidatePath("/crm/launch");
   redirect(`/crm/launch?${new URLSearchParams(msg).toString()}`);
 }
+
+/** Create every Stripe price now (monthly and yearly, CAD and USD) instead of at the first checkout. */
+export async function createStripePrices() {
+  await requireAdmin();
+  let msg: Record<string, string>;
+  try {
+    const { ensureAllPrices } = await import("@/lib/billing");
+    const res = await ensureAllPrices();
+    const bad = res.filter((r) => !r.ok);
+    const made = res.filter((r) => r.ok).map((r) => `${r.plan} ${r.note}`).join(" · ");
+    msg = bad.length ? { error: `Some prices couldn't be created: ${bad.map((r) => `${r.plan} ${r.currency} ${r.interval}: ${r.note}`).join(" · ")}` } : { notice: `Stripe prices ready: ${made}` };
+  } catch (e) {
+    msg = { error: (e as Error).message.slice(0, 300) };
+  }
+  revalidatePath("/crm/launch");
+  redirect(`/crm/launch?${new URLSearchParams(msg).toString()}`);
+}

@@ -178,7 +178,7 @@ export async function launchChecks(): Promise<Check[]> {
 
   checks.push(...st);
   const main = plans.find((p) => p.kind === "plan" && p.priceCents === PRICES.CAD.monthly * 100);
-  checks.push({ area: "Payments", label: `The CA$${PRICES.CAD.monthly} plan`, state: main ? "ok" : "todo", detail: main ? `"${main.name}" is active. Its Stripe prices (CAD and USD) are created automatically the first time you make a checkout link.` : "No active plan at the website's price.", fix: main ? undefined : "CRM → Billing: add or fix the plan." });
+  checks.push({ area: "Payments", label: `The CA$${PRICES.CAD.monthly} plan`, state: main ? "ok" : "todo", detail: main ? `"${main.name}" is active. Its Stripe prices (CAD and USD, monthly and yearly at 20% off) are created the first time a checkout link needs them, or all at once with the button below.` : "No active plan at the website's price.", fix: main ? undefined : "CRM → Billing: add or fix the plan." });
   const stale = plans.filter((p) => p.kind === "plan" && p.id !== main?.id);
   if (stale.length) checks.push({ area: "Payments", label: "Old plans still on offer", state: "warn", detail: `${stale.map((p) => `${p.name} ($${(p.priceCents / 100).toFixed(0)})`).join(", ")} can still be picked when creating a checkout link.`, fix: "Hide them below so only the current plan is offered." });
 

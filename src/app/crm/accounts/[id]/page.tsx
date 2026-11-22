@@ -313,6 +313,10 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                     <select name="planId" className="input">{plans.filter((p) => p.kind !== "addon").map((p) => <option key={p.id} value={p.id}>{p.name} — {formatMoney(p.priceCents)}/mo</option>)}</select>
                     <SubmitButton className="btn-secondary whitespace-nowrap" pendingText="…">Stripe checkout link</SubmitButton>
                   </div>
+                  <div className="flex flex-wrap gap-4 text-sm" role="radiogroup" aria-label="Billing">
+                    <label className="flex items-center gap-2"><input type="radio" name="interval" value="month" defaultChecked /> Monthly</label>
+                    <label className="flex items-center gap-2"><input type="radio" name="interval" value="year" /> Yearly upfront (20% off)</label>
+                  </div>
                   {plans.filter((p) => p.kind === "addon").map((a) => (
                     <label key={a.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="addOn" value={a.id} /> Add {a.name} (+{formatMoney(a.priceCents)}/mo)</label>
                   ))}

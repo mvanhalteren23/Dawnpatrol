@@ -5,7 +5,7 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage, recordActivity } from "./outreach";
 import { getSetting, setSetting } from "./settings";
-import { blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planPriceCents, planPriceKey, salesTaxFor, type SalesTax } from "./billing-rules";
+import { annualCents, blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planIntervalPriceKey, planPriceCents, salesTaxFor, usageWindowAt, usageWindows, type BillingInterval, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
 export function stripe(): Stripe {
@@ -56,44 +56,83 @@ type PricedPlan = { id: string; name: string; priceCents: number; kind: string; 
  * another Stripe mode, e.g. test vs live), the product and monthly price are created in Stripe
  * and saved on the plan, so nothing has to be set up in Stripe by hand.
  */
-async function ensurePrice(plan: PricedPlan, currency: "CAD" | "USD"): Promise<string> {
-  const saved = currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId;
+export async function ensurePrice(plan: PricedPlan, currency: "CAD" | "USD", interval: BillingInterval = "month"): Promise<string> {
+  // Monthly prices are saved on the plan; yearly ones are found by their lookup key.
+  const saved = interval === "month" ? (currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId) : null;
   if (saved) {
     const ok = await stripe().prices.retrieve(saved).then((p) => p.active, () => false);
     if (ok) return saved;
   }
-  const cents = planPriceCents(plan, currency);
-  if (!cents) throw new Error(`"${plan.name}" has no ${currency} price: set one in CRM → Billing (Stripe price id${currency === "USD" ? ", USD" : ""})`);
-  const key = planPriceKey(plan.id, currency, cents);
+  const monthly = planPriceCents(plan, currency);
+  if (!monthly) throw new Error(`"${plan.name}" has no ${currency} price: set one in CRM → Billing (Stripe price id${currency === "USD" ? ", USD" : ""})`);
+  const cents = interval === "year" ? annualCents(monthly) : monthly;
+  const key = planIntervalPriceKey(plan.id, currency, monthly, interval);
   const found = await stripe().prices.list({ lookup_keys: [key], active: true, limit: 1 });
   let id = found.data[0]?.id;
   if (!id) {
+    // Both prices hang off the plan's one Stripe product, so Stripe reports show them together.
+    const product = await planProduct(plan, currency);
     const price = await stripe().prices.create({
       currency: currency.toLowerCase(),
       unit_amount: cents,
-      recurring: { interval: "month" },
+      recurring: { interval },
       lookup_key: key,
-      product_data: { name: `Head Above Digital: ${plan.name}`, metadata: { planId: plan.id } },
-      metadata: { planId: plan.id },
+      nickname: `${plan.name} (${interval === "year" ? "yearly, 20% off" : "monthly"})`,
+      ...(product ? { product } : { product_data: { name: `Head Above Digital: ${plan.name}`, metadata: { planId: plan.id } } }),
+      metadata: { planId: plan.id, interval },
     });
     id = price.id;
   }
-  await db.plan.update({ where: { id: plan.id }, data: currency === "USD" ? { stripePriceIdUsd: id } : { stripePriceId: id } });
+  if (interval === "month") await db.plan.update({ where: { id: plan.id }, data: currency === "USD" ? { stripePriceIdUsd: id } : { stripePriceId: id } });
   return id;
 }
 
+/** The Stripe product the plan's existing (monthly) price belongs to, if there is one. */
+async function planProduct(plan: PricedPlan, currency: "CAD" | "USD"): Promise<string | null> {
+  const saved = (currency === "USD" ? plan.stripePriceIdUsd : plan.stripePriceId) ?? plan.stripePriceId ?? plan.stripePriceIdUsd;
+  if (!saved) return null;
+  const price = await stripe().prices.retrieve(saved).catch(() => null);
+  return price ? (typeof price.product === "string" ? price.product : price.product.id) : null;
+}
+
+/**
+ * Create every Stripe price ahead of time: monthly and yearly, CAD and USD, for each active plan
+ * and add-on (otherwise each is made the first time a checkout link needs it).
+ */
+export async function ensureAllPrices(): Promise<{ plan: string; currency: string; interval: BillingInterval; ok: boolean; note: string }[]> {
+  const plans = await db.plan.findMany({ where: { isActive: true }, orderBy: { priceCents: "desc" } });
+  const out: { plan: string; currency: string; interval: BillingInterval; ok: boolean; note: string }[] = [];
+  for (const interval of ["month", "year"] as const) {
+    for (const currency of ["CAD", "USD"] as const) {
+      for (const p of plans) {
+        // Re-read so the monthly price saved a moment ago is used for the yearly price's product.
+        const plan = await db.plan.findUniqueOrThrow({ where: { id: p.id } });
+        try {
+          const id = await ensurePrice(plan, currency, interval);
+          const price = await stripe().prices.retrieve(id);
+          out.push({ plan: plan.name, currency, interval, ok: true, note: `${currency} ${((price.unit_amount ?? 0) / 100).toFixed(2)} per ${interval}` });
+        } catch (err) {
+          out.push({ plan: plan.name, currency, interval, ok: false, note: (err as Error).message.slice(0, 200) });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 /** Hosted Stripe Checkout for a plan — send the link to the client or open it from the portal. */
-export async function createCheckout(accountId: string, planId: string, returnPath: string, addOnIds: string[] = []): Promise<string> {
+export async function createCheckout(accountId: string, planId: string, returnPath: string, addOnIds: string[] = [], interval: BillingInterval = "month"): Promise<string> {
   const plan = await db.plan.findUniqueOrThrow({ where: { id: planId } });
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { state: true } });
   // US clients pay in USD; everyone else in CAD.
   const currency = currencyForAccount(account.state);
-  const priceId = await ensurePrice(plan, currency);
+  const priceId = await ensurePrice(plan, currency, interval);
   const taxRate = await taxRateId(salesTaxFor(account.state));
   // Add-ons (e.g. the Follow-Up Agent) ride on the same subscription, in the same currency.
   const addOns = addOnIds.length ? await db.plan.findMany({ where: { id: { in: addOnIds }, kind: "addon", isActive: true } }) : [];
   const addOnPrices: string[] = [];
-  for (const a of addOns) addOnPrices.push(await ensurePrice(a, currency));
+  // Stripe needs every item on a subscription on the same schedule: yearly plans get yearly add-ons.
+  for (const a of addOns) addOnPrices.push(await ensurePrice(a, currency, interval));
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
   const app = appUrl();
@@ -102,12 +141,12 @@ export async function createCheckout(accountId: string, planId: string, returnPa
     customer,
     line_items: [{ price: priceId, quantity: 1 }, ...addOnPrices.map((price) => ({ price, quantity: 1 }))],
     client_reference_id: accountId,
-    subscription_data: { metadata: { accountId, planId, termsVersion: TERMS_VERSION }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
+    subscription_data: { metadata: { accountId, planId, interval, termsVersion: TERMS_VERSION }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
     success_url: `${app}${returnPath}?billing=success`,
     cancel_url: `${app}${returnPath}?billing=cancelled`,
     // Signing up = ticking "I agree to the Terms of Service" on the checkout page.
     consent_collection: { terms_of_service: "required" },
-    custom_text: { terms_of_service_acceptance: { message: `I agree to Head Above Digital's [Terms of Service](${SITE_TERMS_URL}) and [Privacy Policy](${SITE_PRIVACY_URL}). Billed monthly from today; cancel any time, effective at the end of the paid month.` } },
+    custom_text: { terms_of_service_acceptance: { message: `I agree to Head Above Digital's [Terms of Service](${SITE_TERMS_URL}) and [Privacy Policy](${SITE_PRIVACY_URL}). ${interval === "year" ? "Billed yearly in advance from today, at 20% off the monthly price. Cancel any time and it won't renew; service continues to the end of the paid year, with no refund for the rest of the year." : "Billed monthly from today; cancel any time, effective at the end of the paid month."}` } },
   };
   let session: Stripe.Checkout.Session;
   try {
@@ -189,16 +228,23 @@ async function addOverage(inv: Stripe.Invoice) {
   if (!account) return;
   const start = new Date(inv.period_start * 1000);
   const end = new Date(inv.period_end * 1000);
-  const used = await db.callLog.aggregate({
-    where: { receptionist: { accountId, lifecycle: "production" }, startedAt: { gte: start, lt: end }, outcome: { not: "SPAM" } },
-    _sum: { durationSec: true },
-  });
-  const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
   const included = account.subscription?.plan?.includedMinutes || 200;
-  // Blocks are normally charged the moment they're used (billExtraMinutesNow); this only catches any missed.
+  // Blocks are normally charged the moment they're used (billExtraMinutesNow); this only catches any
+  // missed. A yearly plan's minutes are counted month by month (200 included every month).
   const subId = typeof inv.parent?.subscription_details?.subscription === "string" ? inv.parent.subscription_details.subscription : null;
-  const already = subId ? Number((await getSetting(overageKey(subId, inv.period_start))) ?? 0) : 0;
-  const blocks = overageBlocks(minutes, included) - already;
+  const yearly = (inv.period_end - inv.period_start) > 40 * 86400;
+  let minutes = 0;
+  let blocks = 0;
+  for (const w of usageWindows(start, end, yearly ? "year" : "month")) {
+    const used = await db.callLog.aggregate({
+      where: { receptionist: { accountId, lifecycle: "production" }, startedAt: { gte: w.start, lt: w.end }, outcome: { not: "SPAM" } },
+      _sum: { durationSec: true },
+    });
+    const m = Math.ceil((used._sum.durationSec ?? 0) / 60);
+    minutes += m;
+    const already = subId ? Number((await getSetting(overageKey(subId, Math.floor(w.start.getTime() / 1000)))) ?? 0) : 0;
+    blocks += Math.max(0, overageBlocks(m, included) - already);
+  }
   if (blocks <= 0) return;
   const currency = inv.currency?.toUpperCase() === "USD" ? "USD" : "CAD";
   const taxRate = await taxRateId(salesTaxFor(account.state));
@@ -208,14 +254,14 @@ async function addOverage(inv: Stripe.Invoice) {
       invoice: inv.id,
       currency: currency.toLowerCase(),
       amount: blocks * blockPriceCents(currency),
-      description: `Extra call minutes: ${minutes} used, ${included} included (${blocks} × 100-minute block)`,
+      description: yearly ? `Extra call minutes not yet billed this year: ${blocks} × 100-minute block (${included} minutes included each month)` : `Extra call minutes: ${minutes} used, ${included} included (${blocks} × 100-minute block)`,
       metadata: { accountId, kind: "extra_minutes", minutes: String(minutes) },
       ...(taxRate ? { tax_rates: [taxRate] } : {}),
     },
     { idempotencyKey: `extra-minutes-${inv.id}` },
   );
   const amount = (blocks * blockPriceCents(currency)) / 100;
-  const note = `${account.name} used ${minutes} of ${included} minutes (${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}): ${blocks} extra 100-minute block${blocks === 1 ? "" : "s"}, ${currency} $${amount.toFixed(2)} plus tax, added to their renewal invoice.`;
+  const note = `${account.name} used ${minutes} minutes${yearly ? ` over the year (${included} included each month)` : ` of ${included}`} (${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}): ${blocks} extra 100-minute block${blocks === 1 ? "" : "s"}, ${currency} $${amount.toFixed(2)} plus tax, added to their renewal invoice.`;
   await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Extra minutes billed: ${blocks} block${blocks === 1 ? "" : "s"}`, body: note });
   await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: `Extra minutes billed this month. ${note} Worth a call about their plan.` } });
   const { supportAddress } = await import("./google");
@@ -243,8 +289,9 @@ export async function billExtraMinutesNow(accountId: string): Promise<void> {
   const live = await stripe().subscriptions.retrieve(sub.stripeSubscriptionId);
   const item = live.items.data[0];
   if (!item?.current_period_start || !item.current_period_end) return;
-  const start = new Date(item.current_period_start * 1000);
-  const end = new Date(item.current_period_end * 1000);
+  // A yearly plan includes its minutes every month: count this month of the year.
+  const interval: BillingInterval = item.price?.recurring?.interval === "year" ? "year" : "month";
+  const { start, end } = usageWindowAt(new Date(item.current_period_start * 1000), new Date(item.current_period_end * 1000), interval, new Date());
   const used = await db.callLog.aggregate({
     where: { receptionist: { accountId, lifecycle: "production" }, startedAt: { gte: start, lt: end }, outcome: { not: "SPAM" } },
     _sum: { durationSec: true },
@@ -252,13 +299,14 @@ export async function billExtraMinutesNow(accountId: string): Promise<void> {
   const minutes = Math.ceil((used._sum.durationSec ?? 0) / 60);
   const included = sub.plan?.includedMinutes || 200;
   const due = overageBlocks(minutes, included);
-  const key = overageKey(live.id, item.current_period_start);
+  const windowStart = Math.floor(start.getTime() / 1000);
+  const key = overageKey(live.id, windowStart);
   const billed = Number((await getSetting(key)) ?? 0);
   if (due <= billed) return;
   const blocks = due - billed;
   const currency = live.currency?.toUpperCase() === "USD" ? "USD" : "CAD";
   const taxRate = await taxRateId(salesTaxFor(account.state));
-  const tag = `${live.id}-${item.current_period_start}-${due}`;
+  const tag = `${live.id}-${windowStart}-${due}`;
   await setSetting(key, String(due)); // claim first, so two calls ending together can't both charge
   try {
     await stripe().invoiceItems.create(
@@ -318,8 +366,9 @@ async function syncSubscription(sub: Stripe.Subscription) {
   const status = STATUS_MAP[sub.status] ?? "INCOMPLETE";
   // The plan is the item whose price belongs to a plan (not an add-on), in either currency.
   const priceIds = sub.items.data.map((it) => it.price?.id).filter(Boolean) as string[];
-  const plan = priceIds.length ? await db.plan.findFirst({ where: { kind: "plan", OR: [{ stripePriceId: { in: priceIds } }, { stripePriceIdUsd: { in: priceIds } }] } }) : null;
-  const item = sub.items.data.find((it) => it.price?.id && (it.price.id === plan?.stripePriceId || it.price.id === plan?.stripePriceIdUsd)) ?? sub.items.data[0];
+  const metaPlanIds = sub.items.data.map((it) => it.price?.metadata?.planId).filter(Boolean) as string[];
+  const plan = priceIds.length ? await db.plan.findFirst({ where: { kind: "plan", OR: [{ stripePriceId: { in: priceIds } }, { stripePriceIdUsd: { in: priceIds } }, { id: { in: metaPlanIds } }] } }) : null;
+  const item = sub.items.data.find((it) => it.price?.id && (it.price.id === plan?.stripePriceId || it.price.id === plan?.stripePriceIdUsd || it.price.metadata?.planId === plan?.id)) ?? sub.items.data[0];
 
   await db.subscription.upsert({
     where: { accountId },

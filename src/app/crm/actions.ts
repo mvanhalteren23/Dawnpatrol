@@ -1050,11 +1050,11 @@ export async function checkoutLink(accountId: string, form: FormData) {
   await requireAdmin();
   let url: string;
   try {
-    url = await createCheckout(accountId, str(form, "planId"), "/portal/billing", form.getAll("addOn").map(String));
+    url = await createCheckout(accountId, str(form, "planId"), "/portal/billing", form.getAll("addOn").map(String), str(form, "interval") === "year" ? "year" : "month");
   } catch (err) {
     back(`/crm/accounts/${accountId}`, { error: errMsg(err) });
   }
-  await recordActivity({ accountId, type: "BILLING", source: "system", subject: "Stripe checkout link created", body: url });
+  await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Stripe checkout link created (${str(form, "interval") === "year" ? "yearly, 20% off" : "monthly"})`, body: url });
   back(`/crm/accounts/${accountId}`, { notice: "Checkout link created — copy it from the activity feed", checkout: url });
 }
 

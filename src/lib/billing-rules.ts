@@ -72,3 +72,53 @@ export function planPriceCents(plan: { priceCents: number; kind: string }, curre
 export function planPriceKey(planId: string, currency: Currency, cents: number): string {
   return `plan_${planId}_${currency.toLowerCase()}_${cents}`;
 }
+
+// --- Yearly billing --------------------------------------------------------------------
+
+export type BillingInterval = "month" | "year";
+/** Paying a year upfront: 20% off twelve monthly payments. */
+export const ANNUAL_DISCOUNT = 0.2;
+
+/** The yearly price for a monthly price (cents): 12 months less the annual discount. */
+export function annualCents(monthlyCents: number): number {
+  return Math.round(monthlyCents * 12 * (1 - ANNUAL_DISCOUNT));
+}
+
+/** Stripe lookup key for a plan's price at an interval (monthly keys are unchanged). */
+export function planIntervalPriceKey(planId: string, currency: Currency, cents: number, interval: BillingInterval): string {
+  return interval === "year" ? `${planPriceKey(planId, currency, cents)}_year` : planPriceKey(planId, currency, cents);
+}
+
+function addMonthsUtc(d: Date, months: number): Date {
+  const out = new Date(d);
+  const day = out.getUTCDate();
+  out.setUTCDate(1);
+  out.setUTCMonth(out.getUTCMonth() + months);
+  // Keep the day of month, clamped to the month's last day (Jan 31 + 1 month = Feb 28/29).
+  const last = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
+  out.setUTCDate(Math.min(day, last));
+  return out;
+}
+
+/**
+ * The monthly usage windows inside a billing period. A monthly plan has one (the period itself);
+ * a yearly plan has twelve, each a month from the start date, so 200 minutes are included every
+ * month of the year, not once a year.
+ */
+export function usageWindows(periodStart: Date, periodEnd: Date, interval: BillingInterval): { start: Date; end: Date }[] {
+  if (interval !== "year") return [{ start: periodStart, end: periodEnd }];
+  const out: { start: Date; end: Date }[] = [];
+  for (let k = 0; k < 13; k++) {
+    const start = addMonthsUtc(periodStart, k);
+    if (start.getTime() >= periodEnd.getTime()) break;
+    const next = addMonthsUtc(periodStart, k + 1);
+    out.push({ start, end: next.getTime() < periodEnd.getTime() ? next : periodEnd });
+  }
+  return out;
+}
+
+/** The usage window a moment falls in (the last one if it's past the period). */
+export function usageWindowAt(periodStart: Date, periodEnd: Date, interval: BillingInterval, at: Date): { start: Date; end: Date } {
+  const all = usageWindows(periodStart, periodEnd, interval);
+  return all.find((w) => at.getTime() >= w.start.getTime() && at.getTime() < w.end.getTime()) ?? all[all.length - 1]!;
+}

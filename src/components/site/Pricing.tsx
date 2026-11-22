@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { FOLLOWUP_ADDON_PRICE, formatMoney, INDUSTRIES, PLAN_NAME, PRICES, PRICING, type TradeKey } from "@/lib/site-content";
 import { CurrencyToggle, useCurrency } from "./Currency";
+import { annualCents } from "@/lib/billing-rules";
 import { DemoButton } from "./Demo";
 
 const CHECK = <span className="font-bold text-[#D8B47A]" aria-hidden="true">✓</span>;
@@ -18,13 +19,15 @@ export function PricingSection({ trade }: { trade?: TradeKey }) {
   const price = PRICES[currency];
   const monthly = price.monthly + extraBlocks * price.blockPrice;
   const money = (n: number) => formatMoney(currency, n);
+  // Yearly upfront: 12 months less 20%, to the cent (e.g. CA$1,334.40).
+  const yearly = (monthly: number) => `${price.symbol}${(annualCents(monthly * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <section id="pricing" className="mx-auto max-w-7xl scroll-mt-24 px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-10 max-w-3xl">
         <div style={{ letterSpacing: "0.2em" }} className="font-condensed-700 mb-2 text-sm uppercase text-[#A87A33]">Simple, transparent pricing</div>
         <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed {trade === "retail" ? "customer" : "job"}.</h2>
-        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no contract: billed monthly, cancel any time. All prices in {price.name} ({price.symbol}){currency === "CAD" ? ", plus GST/HST" : ""}.</p>
+        <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no contract: billed monthly (or yearly at 20% off), cancel any time. All prices in {price.name} ({price.symbol}){currency === "CAD" ? ", plus GST/HST" : ""}.</p>
         <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-[#6B5A43]"><span>Show prices in</span><CurrencyToggle /></div>
       </div>
 
@@ -38,6 +41,7 @@ export function PricingSection({ trade }: { trade?: TradeKey }) {
             <div className="text-left sm:text-right">
               <div className="font-condensed-800 text-5xl text-[#D8B47A]">{money(price.monthly)}</div>
               <div className="text-xs font-medium text-[#EFE6D4]/80">{price.name} per month • {PRICING.includedMinutes} mins included</div>
+              <div className="mt-1 text-xs font-semibold text-[#D8B47A]">Or {yearly(price.monthly)} a year, paid upfront: save 20%</div>
             </div>
           </div>
           <ul className="space-y-3 text-base text-[#EFE6D4]">

@@ -306,3 +306,33 @@ describe("Grace and prospects' demos", async () => {
     expect(demoReturnOpening({ company: "Head Above Digital", receptionist: "Grace", failed: true })).toMatch(/^Sorry about that, the demo didn't connect/);
   });
 });
+
+describe("yearly billing", async () => {
+  const { annualCents, planIntervalPriceKey, usageWindowAt, usageWindows } = await import("@/lib/billing-rules");
+
+  it("prices a year upfront at 20% off twelve months", () => {
+    expect(annualCents(13900)).toBe(133440); // CA$1,334.40
+    expect(annualCents(10900)).toBe(104640); // US$1,046.40
+    expect(annualCents(5900)).toBe(56640); // Follow-Up Agent CA$566.40
+    expect(annualCents(4500)).toBe(43200); // US$432.00
+  });
+
+  it("keeps monthly price keys unchanged and gives yearly ones their own", () => {
+    expect(planIntervalPriceKey("p1", "CAD", 13900, "month")).toBe("plan_p1_cad_13900");
+    expect(planIntervalPriceKey("p1", "CAD", 13900, "year")).toBe("plan_p1_cad_13900_year");
+  });
+
+  it("counts a yearly plan's minutes month by month", () => {
+    const start = new Date("2026-01-31T10:00:00Z");
+    const end = new Date("2027-01-31T10:00:00Z");
+    const w = usageWindows(start, end, "year");
+    expect(w).toHaveLength(12);
+    expect(w[0]!.end.toISOString()).toBe("2026-02-28T10:00:00.000Z"); // Jan 31 + 1 month = Feb 28
+    expect(w[11]!.end.toISOString()).toBe(end.toISOString());
+    for (let i = 1; i < w.length; i++) expect(w[i]!.start.getTime()).toBeGreaterThanOrEqual(w[i - 1]!.end.getTime() - 3 * 86400_000);
+    expect(usageWindowAt(start, end, "year", new Date("2026-06-15T00:00:00Z")).start.toISOString()).toBe("2026-05-31T10:00:00.000Z");
+    // A monthly plan is one window: the billing period itself.
+    const m = usageWindows(new Date("2026-11-05T00:00:00Z"), new Date("2026-12-05T00:00:00Z"), "month");
+    expect(m).toEqual([{ start: new Date("2026-11-05T00:00:00Z"), end: new Date("2026-12-05T00:00:00Z") }]);
+  });
+});

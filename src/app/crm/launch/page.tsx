@@ -4,7 +4,7 @@ import { sortChecks, type CheckState } from "@/lib/launch-check-rules";
 import { Badge, Notice, PageHeader, Stat } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
-import { checkLinesNow, hideOldPlans, setBackupAnswering, toggleLaunchItem } from "./actions";
+import { checkLinesNow, hideOldPlans, setBackupAnswering, toggleLaunchItem, createStripePrices } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,6 +26,7 @@ function Row({ c }: { c: Check }) {
         {c.fix ? <div className="mt-1 text-slate-800"><b>Fix:</b> {c.fix}</div> : null}
         {c.label === "Backup answering on every number" && c.state === "todo" ? <form action={setBackupAnswering} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Setting…">Set backup answering on every number</SubmitButton></form> : null}
         {c.label === "Daily line check (no test call)" ? <form action={checkLinesNow} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Checking…">Check all lines now</SubmitButton></form> : null}
+        {c.area === "Payments" && c.label.startsWith("The CA$") && c.state === "ok" ? <form action={createStripePrices} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Creating…">Create Stripe prices now (monthly and yearly)</SubmitButton></form> : null}
         {c.label === "Old plans still on offer" ? <form action={hideOldPlans} className="mt-2"><SubmitButton className="btn-secondary" pendingText="Hiding…">Hide the old plans</SubmitButton></form> : null}
       </div>
     </li>

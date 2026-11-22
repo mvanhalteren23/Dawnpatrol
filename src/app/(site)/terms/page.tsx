@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
 };
 
-const UPDATED = "November 6, 2026";
+const UPDATED = "November 22, 2026";
 const EMAIL = "team@headabovedigital.com";
 
 export default function Terms() {
@@ -31,11 +31,12 @@ export default function Terms() {
 
       <h2>Plans, billing and cancellation</h2>
       <ul>
-        <li>Plans are billed monthly in advance, in Canadian dollars (or US dollars for US businesses). Prices start at CA${PRICES.CAD.monthly} (US${PRICES.USD.monthly}) a month with {PRICING.includedMinutes} call minutes included, and there is no setup fee.</li>
+        <li>Plans are billed monthly in advance, or yearly in advance at 20% off the monthly price, in Canadian dollars (or US dollars for US businesses). Prices start at CA${PRICES.CAD.monthly} (US${PRICES.USD.monthly}) a month with {PRICING.includedMinutes} call minutes included each month, and there is no setup fee.</li>
         <li>Canadian businesses are charged GST or HST as applicable.</li>
-        <li>Minutes over your plan are charged in {PRICING.blockMinutes}-minute blocks as each block is used, to the card on file. We let you know when you reach 75% of your minutes.</li>
+        <li>Minutes over your plan are charged in {PRICING.blockMinutes}-minute blocks as each block is used, to the card on file. We let you know when you reach 75% of your minutes. Yearly plans include the same minutes every month of the year.</li>
         <li>There is no minimum term. You&apos;re billed monthly from the day you sign up, and you can cancel any time from your portal. Your service continues until the end of the month you&apos;ve paid for, so nothing stops abruptly; there are no refunds for partial months.</li>
-        <li>Add-ons, such as the website follow-up agent, are billed monthly with your plan.</li>
+        <li>Yearly plans are paid for twelve months upfront. You can cancel any time and the plan won&apos;t renew; your service continues until the end of the year you&apos;ve paid for, and there are no refunds for the rest of the year.</li>
+        <li>Add-ons, such as the website follow-up agent, are billed with your plan, monthly or yearly.</li>
       </ul>
 
       <h2>Your responsibilities</h2>
