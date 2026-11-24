@@ -8,9 +8,10 @@ import { handleCustomerText, receptionistForSharedText, textsCustomers } from "@
 import { parseMedia, bodyWithPhotos } from "@/lib/photo-rules";
 import { acceptPhotos, logPhotoAck } from "@/lib/photos";
 import { handleOwnerText, ownerCaller } from "@/lib/owner-mode";
-import { isClientInbound } from "@/lib/elevenlabs";
+import { isAssistantLine } from "@/lib/elevenlabs";
+import { houseReceptionist } from "@/lib/house-line";
 import { isBlocked } from "@/lib/call-guard";
-import { assistantEnabled } from "@/lib/assistant";
+import { assistantEnabled, lineNumber } from "@/lib/assistant";
 
 // Texts to a business line:
 // - STOP / START from anyone: recorded so the line never texts that number again (Twilio also
@@ -29,8 +30,13 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const params = await twilioParams(req);
   if (params instanceof Response) return params;
-  const r = (await db.receptionist.findUnique({ where: { businessNumber: params.To ?? "" } })) ?? (await receptionistForSharedText(params.From ?? ""));
   const body = params.Body ?? "";
+  // Our own number, texted by one of Grace's owners (an admin's mobile): owner updates, feedback
+  // and the evening caller list for Grace (Assistant tier). Anyone else is handled as before.
+  const house = process.env.TWILIO_DEMO_NUMBER && toE164(params.To ?? "") === toE164(process.env.TWILIO_DEMO_NUMBER) ? await houseReceptionist() : null;
+  // ("1"/"done" replies keep their old meaning: marking a lead handled on the shared number.)
+  const houseOwner = house && body && !isHandledReply(body) && (await ownerCaller(house, params.From ?? "").catch(() => null)) ? house : null;
+  const r = houseOwner ?? (await db.receptionist.findUnique({ where: { businessNumber: params.To ?? "" } })) ?? (await receptionistForSharedText(params.From ?? ""));
   const from = toE164(params.From ?? "");
   const media = parseMedia(params);
   // Photos can come with no words at all, but only a client's live line takes them.
@@ -48,9 +54,10 @@ export async function POST(req: Request) {
 
   const owners = new Set([...leadAlertNumbers(r), ...(r.ringFirstNumber ? [r.ringFirstNumber] : [])]);
   // The owner texting their own line: changes, messages and UNDO (src/lib/owner-mode.ts).
-  const ownLine = Boolean(r.businessNumber) && toE164(params.To ?? "") === toE164(r.businessNumber!);
+  const line = lineNumber(r);
+  const ownLine = Boolean(line) && toE164(params.To ?? "") === toE164(line!);
   // Assistant tier only: without it, the owner's texts work as before (1 = handled, nothing forwarded back).
-  if (ownLine && body && isClientInbound(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null)) && (await assistantEnabled(r).catch(() => false))) {
+  if (ownLine && body && isAssistantLine(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null)) && (await assistantEnabled(r).catch(() => false))) {
     const reply = await handleOwnerText(r, from, body.slice(0, 1000)).catch((e) => {
       console.error("owner text", e);
       return "Sorry, that didn't go through. Please try again, or use your portal.";

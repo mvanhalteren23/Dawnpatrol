@@ -45,6 +45,17 @@ export async function refreshAssistantAgents(accountId: string): Promise<void> {
   }
 }
 
+/** Our own line (Grace): the receptionist that adds bookings to the CRM. */
+export function isHouseLine(r: Pick<R, "bookingAddsToCrm" | "agentType">): boolean {
+  return r.bookingAddsToCrm && r.agentType === "inbound";
+}
+
+/** The number a line answers and texts from: its business line, or for Grace our main (demo) number. */
+export function lineNumber(r: Pick<R, "businessNumber" | "bookingAddsToCrm" | "agentType">): string | null {
+  if (r.businessNumber) return r.businessNumber;
+  return isHouseLine(r) && process.env.TWILIO_DEMO_NUMBER ? toE164(process.env.TWILIO_DEMO_NUMBER) : null;
+}
+
 /** The owner's number for texts and calls: check-in number, ring-first cell, transfer number, then the account's. */
 export function ownerNumber(r: Pick<R, "checkinPhone" | "ringFirstNumber" | "escalationPhone">, accountPhone?: string | null): string | null {
   const p = r.checkinPhone || r.ringFirstNumber || r.escalationPhone || accountPhone;
@@ -89,7 +100,7 @@ export async function routingForCall(r: R, from: string, opts: { transferFailed?
  */
 export async function transferCall(r: R, callSid: string, urgent: boolean): Promise<{ message: string; redirect?: string }> {
   const { liveCaller } = await import("./owner-mode");
-  const from = await liveCaller(callSid, r.businessNumber);
+  const from = await liveCaller(callSid, lineNumber(r));
   if (!from) return { message: "Putting callers through isn't possible on this call. Take a message instead, and say they'll get a call back." };
   const { route } = await callerRouting(r, from);
   const to = transferTarget({ route, urgent, escalationPhone: r.escalationPhone ? toE164(r.escalationPhone) : null });
@@ -150,7 +161,7 @@ export async function labelKnownCaller(id: string, label: Category | "DISMISS", 
 export async function processLabelDigests(now = new Date()): Promise<{ sent: number; queued: number; errors: string[] }> {
   const out = { sent: 0, queued: 0, errors: [] as string[] };
   const rs = await db.receptionist.findMany({
-    where: { labelDigestOn: true, lifecycle: "production", agentType: "inbound", bookingAddsToCrm: false, knownCallers: { some: { status: "PENDING" } } },
+    where: { labelDigestOn: true, lifecycle: "production", agentType: "inbound", knownCallers: { some: { status: "PENDING" } } },
     include: { account: { select: { phone: true } } },
   });
   for (const r of rs) {
@@ -163,12 +174,13 @@ export async function processLabelDigests(now = new Date()): Promise<{ sent: num
       if (!digestDue(localHour(now, r.timezone), today, await getSetting(key))) continue;
       await setSetting(key, today); // once a day, even if this one fails
       const to = ownerNumber(r, r.account.phone);
-      if (!to || !r.businessNumber) continue;
+      const from = lineNumber(r);
+      if (!to || !from) continue;
       const items = await db.knownCaller.findMany({ where: { receptionistId: r.id, status: "PENDING", askedAt: null }, orderBy: { lastCallAt: "desc" }, take: DIGEST_MAX });
       if (!items.length) continue;
       await db.$transaction(items.map((it, i) => db.knownCaller.update({ where: { id: it.id }, data: { digestNumber: i + 1, askedAt: now } })));
       await setSetting(`labels.digestIds.${r.id}`, JSON.stringify(items.map((it) => it.id)));
-      await sendSms(to, digestText({ businessName: r.businessName, items }), r.businessNumber);
+      await sendSms(to, digestText({ businessName: r.businessName, items }), from);
       out.sent++;
     } catch (err) {
       out.errors.push(`${r.id}: ${(err as Error).message.slice(0, 200)}`);

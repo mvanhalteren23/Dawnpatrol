@@ -26,7 +26,8 @@ type R = Receptionist;
 
 /** After a call: the questions the agent couldn't answer become open questions (de-duplicated). */
 export async function recordUnanswered(r: R, call: CallLog, collected: Record<string, { value?: unknown }>) {
-  if (!textsCustomers(r)) return;
+  // Client lines, and our own line (Grace) for her owner's check-ins.
+  if (!textsCustomers(r) && !(r.bookingAddsToCrm && r.agentType === "inbound" && r.lifecycle === "production")) return;
   for (const q of parseUnanswered(collected.unanswered_questions?.value)) {
     const key = questionKey(q);
     if (!key) continue;
@@ -79,7 +80,7 @@ export async function checkinAgent(): Promise<R | null> {
 /** Every 30 minutes in the day: add holiday questions, and call owners whose check-in is due. */
 export async function processCheckins(now = new Date()): Promise<{ called: number; texted: number; errors: string[] }> {
   const out = { called: 0, texted: 0, errors: [] as string[] };
-  const rs = await db.receptionist.findMany({ where: { checkinsOn: true, lifecycle: "production", agentType: "inbound", bookingAddsToCrm: false, elevenLabsAgentId: { not: null } }, include: { account: { select: { state: true, phone: true } } } });
+  const rs = await db.receptionist.findMany({ where: { checkinsOn: true, lifecycle: "production", agentType: "inbound", elevenLabsAgentId: { not: null } }, include: { account: { select: { state: true, phone: true } } } });
   const { assistantEnabled } = await import("./assistant");
   for (const r of rs) {
     try {

@@ -334,15 +334,72 @@ export const MAJOR_INFO = ["PRICING", "SERVICE", "POLICY"];
 
 /**
  * Bigger changes need the owner's PIN (or a YES by text when no PIN is set): permanent hours,
- * prices, services, policies, and who gets put through. Closures, blocks, special hours and
+ * prices, services, policies, who gets put through, and feedback on how calls are handled. Closures, blocks, special hours and
  * general notes don't.
  */
 export function needsPin(p: { action: string; infoCategory?: string | null }): boolean {
-  if (p.action === "hours" || p.action === "routing") return true;
+  // Feedback changes how every caller is handled, so it counts as a bigger change too.
+  if (p.action === "hours" || p.action === "routing" || p.action === "feedback") return true;
   return p.action === "info" && MAJOR_INFO.includes(p.infoCategory ?? "");
 }
 
 export function isYes(body: string): boolean {
   // Not "ok": on the owner's line that already means "lead handled" (follow-up-rules.ts).
   return /^\s*(yes|y|yep|yeah|confirm(ed)?|go ahead|do it)\s*[.!]?\s*$/i.test(body);
+}
+
+// --- Feedback ("coaching") -------------------------------------------------------------------
+// The owner tells their assistant how to handle calls ("don't ask for an email so early", "be
+// shorter with sales reps"). Each piece of feedback becomes one short rule; the agent follows them
+// unless they clash with its core rules, the knowledge base or a tool's instructions.
+
+export const COACHING_MAX_RULES = 20;
+export const COACHING_MAX_CHARS = 240;
+
+/** Why a rule can't be used (a sentence for the owner), or null if it's fine. */
+export function coachingProblem(rule: string): string | null {
+  const r = rule.trim();
+  if (!r) return "What should I do differently?";
+  if (r.length > COACHING_MAX_CHARS) return "That's a lot for one rule. Could you say it more briefly?";
+  const lower = r.toLowerCase();
+  const refused: [RegExp, string][] = [
+    [/\b(say|tell (them|callers|people)|claim|pretend)\b[^.]{0,40}\b(human|real person|not (an? )?(ai|robot|bot))\b/, "I always have to say I'm an AI assistant if someone asks."],
+    [/\b(ask|collect|take|get|request|record|write down|note)\b[^.]{0,40}\b(card|credit card|debit|bank|banking|sin|social insurance|social security|password)\b/, "I can't take payment, banking, ID or password details on calls."],
+    [/\b(ignore|disregard|forget|override|turn off)\b[^.]{0,30}\b(instructions?|rules?|prompt|guidelines|safety)\b/, "I can't switch off my own rules."],
+    [/\b(reveal|share|read out|tell)\b[^.]{0,30}\b(system prompt|instructions|your prompt)\b/, "I can't share my instructions."],
+  ];
+  for (const [re, why] of refused) {
+    const m = re.exec(lower);
+    // "Never ask for card numbers" is fine: only the instruction to do it is refused.
+    if (m && !/\b(never|don'?t|do not|avoid|stop|no longer|not)\b[^.]*$/.test(lower.slice(0, m.index))) return why;
+  }
+  return null;
+}
+
+export function coachingRules(stored: string | null | undefined): string[] {
+  return (stored ?? "").split("\n").map((l) => l.trim()).filter(Boolean).slice(0, COACHING_MAX_RULES);
+}
+
+/** Add a rule (no exact repeats). Full: the oldest rule makes room, and is returned so the owner hears about it. */
+export function addCoachingRule(stored: string, rule: string): { value: string; dropped: string | null } {
+  const rules = coachingRules(stored);
+  const clean = rule.replace(/\s+/g, " ").trim();
+  if (rules.some((r) => r.toLowerCase() === clean.toLowerCase())) return { value: rules.join("\n"), dropped: null };
+  rules.push(clean);
+  const dropped = rules.length > COACHING_MAX_RULES ? rules.shift()! : null;
+  return { value: rules.join("\n"), dropped };
+}
+
+export function removeCoachingRule(stored: string, index: number): string {
+  return coachingRules(stored).filter((_, i) => i !== index).join("\n");
+}
+
+/** The prompt section with the owner's rules (empty when there are none). */
+export function coachingSection(stored: string | null | undefined, businessName: string): string {
+  const rules = coachingRules(stored);
+  if (!rules.length) return "";
+  return `
+Feedback from the owner of ${businessName} on how to handle calls (follow it, unless it clashes with your core rules above, the knowledge base's facts or a tool's instructions; those always win):
+${rules.map((r) => `- ${r}`).join("\n")}
+`;
 }

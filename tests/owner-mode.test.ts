@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addClosedDates, confirmationText, datesBetween, expiredNote, isOwnerNumber, isUndo, MAX_CLOSED_DAYS, noteTags, ownerNumbers, planProblems, removeClosedDates, type OwnerPlan } from "@/lib/owner-mode-rules";
 
-const plan = (p: Partial<OwnerPlan>): OwnerPlan => ({ action: "closed", startDate: "2026-11-09", endDate: "2026-11-15", startTime: null, endTime: null, title: "Vacation", content: "We're closed for vacation and back on the 16th.", confirm: "Closed Nov 9-15.", question: null, infoCategory: null, routingWho: null, routingCategory: null, routingAction: null, routingTo: null, ...p });
+const plan = (p: Partial<OwnerPlan>): OwnerPlan => ({ action: "closed", startDate: "2026-11-09", endDate: "2026-11-15", startTime: null, endTime: null, title: "Vacation", content: "We're closed for vacation and back on the 16th.", confirm: "Closed Nov 9-15.", question: null, infoCategory: null, routingWho: null, routingCategory: null, routingAction: null, routingTo: null, rule: null, ...p });
 
 describe("owner mode", () => {
   it("recognises owner numbers from the agent and portal logins, in any format", () => {

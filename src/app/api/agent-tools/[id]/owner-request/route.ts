@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeRag } from "@/lib/rag-auth";
-import { isClientInbound } from "@/lib/elevenlabs";
+import { isAssistantLine } from "@/lib/elevenlabs";
 import { ownerRequestOnCall } from "@/lib/owner-mode";
 
 export const maxDuration = 60;
@@ -11,7 +11,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const r = await authorizeRag(req, id);
   if (!r) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isClientInbound(r)) return NextResponse.json({ error: "Not available for this receptionist" }, { status: 403 });
+  if (!isAssistantLine(r)) return NextResponse.json({ error: "Not available for this receptionist" }, { status: 403 });
   const body = (await req.json().catch(() => ({}))) as { request?: string; confirmed?: boolean | string; call_sid?: string };
   try {
     const message = await ownerRequestOnCall(r, String(body.call_sid ?? ""), String(body.request ?? "").slice(0, 1000), body.confirmed === true || body.confirmed === "true");

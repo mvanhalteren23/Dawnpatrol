@@ -8,7 +8,7 @@ import { recordActivity } from "./outreach";
 import { sendSms, toE164, twilioApi } from "./twilio";
 import { formatSlot, isoDate, localDate, zonedTime } from "./booking";
 import { deleteEvent } from "./calendar";
-import { CATEGORY_LABELS, CONFIRM_MINUTES, isCategory, isYes, matchKnownCaller, needsPin, parseRoutingRules, prettyPhone, ROUTE_LABELS } from "./assistant-rules";
+import { addCoachingRule, coachingProblem, CATEGORY_LABELS, CONFIRM_MINUTES, isCategory, isYes, matchKnownCaller, needsPin, parseRoutingRules, prettyPhone, ROUTE_LABELS } from "./assistant-rules";
 import {
   addClosedDates, confirmationText, datesBetween, expiredNote, isOwnerNumber, isUndo, minutesOf, noteTags, OWNER_TAG, ownerNumbers, planProblems, removeClosedDates, type OwnerPlan,
 } from "./owner-mode-rules";
@@ -30,7 +30,8 @@ export async function teamMemberByPhone(from: string): Promise<{ id: string; fir
 /** Is this the owner of the business calling or texting their own line? Returns their first name. */
 export async function ownerCaller(r: R, from: string): Promise<{ firstName: string } | null> {
   if (!from) return null;
-  const portal = await db.user.findMany({ where: { accountId: r.accountId, disabled: false, phone: { not: null } }, select: { name: true, phone: true } });
+  // Our own line (Grace): its owners are the team's admins, by the mobile on their login.
+  const portal = await db.user.findMany({ where: { OR: [{ accountId: r.accountId }, ...(r.bookingAddsToCrm && r.agentType === "inbound" ? [{ role: "ADMIN" as const }] : [])], disabled: false, phone: { not: null } }, select: { name: true, phone: true } });
   if (!isOwnerNumber(from, ownerNumbers(r, portal.map((u) => u.phone)))) return null;
   const named = portal.find((u) => isOwnerNumber(from, [u.phone!]));
   return { firstName: (named?.name ?? "").split(/\s+/)[0] ?? "" };
@@ -41,7 +42,8 @@ export async function ownerCaller(r: R, from: string): Promise<{ firstName: stri
  * from our number (house-line.ts openAssistantForClient). Null if it's neither.
  */
 export async function ownerLiveCaller(r: R, callSid: string): Promise<string | null> {
-  const direct = await liveCaller(callSid, r.businessNumber);
+  const { lineNumber } = await import("./assistant");
+  const direct = await liveCaller(callSid, lineNumber(r));
   if (direct) return direct;
   const { handedOffTo, houseNumber } = await import("./house-line");
   return (await handedOffTo(callSid, r.id)) ? liveCaller(callSid, houseNumber()) : null;
@@ -73,6 +75,7 @@ type Undo = {
   event?: { id: string; calendarId: string; as: string | null };
   blockId?: string;
   routingRules?: string; // the line's routing rules before the change
+  coaching?: string; // the owner's feedback rules before the change
   knownCaller?: { id: string; created?: boolean; category?: string | null; status?: string; routeAction?: string; routeTo?: string | null };
 };
 
@@ -127,13 +130,23 @@ async function applyPlan(r: R, p: OwnerPlan, ctx: { channel: "call" | "text"; by
     summary = `Callers will now be told: "${p.content}"`;
   } else if (p.action === "routing") {
     summary = await applyRouting(r, p, ctx, undo);
+  } else if (p.action === "feedback") {
+    // Feedback becomes a standing rule in the agent's instructions (assistant-rules.ts coaching).
+    const rule = (p.rule ?? "").trim();
+    const problem = coachingProblem(rule);
+    if (problem) throw new Error(problem);
+    const fresh = await db.receptionist.findUniqueOrThrow({ where: { id: r.id }, select: { coaching: true } });
+    undo.coaching = fresh.coaching;
+    const { value, dropped } = addCoachingRule(fresh.coaching, rule);
+    await db.receptionist.update({ where: { id: r.id }, data: { coaching: value } });
+    summary = `From now on: "${rule}"${dropped ? ` (to make room, the oldest piece of feedback was retired: "${dropped}")` : ""}`;
   } else {
     throw new Error("Nothing to change");
   }
 
   await db.ownerUpdate.create({ data: { receptionistId: r.id, channel: ctx.channel, byPhone: toE164(ctx.byPhone), request: ctx.request.slice(0, 2000), kind: p.action, summary, undo: JSON.stringify(undo) } });
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: `Owner update by ${ctx.channel}`, body: `${summary}.\nRequest: "${ctx.request.slice(0, 500)}" (from ${ctx.byPhone})` });
-  if (undo.itemId || undo.businessHours !== undefined) resyncLater(r.id);
+  if (undo.itemId || undo.businessHours !== undefined || undo.coaching !== undefined) resyncLater(r.id);
   return summary;
 }
 
@@ -209,6 +222,7 @@ export async function undoLatest(r: R): Promise<string> {
   if (u.event) await deleteEvent(u.event.calendarId, u.event.id, u.event.as).catch((e) => console.warn("undo calendar block", e));
   if (u.blockId) await db.calendarBlock.deleteMany({ where: { id: u.blockId } });
   if (u.routingRules !== undefined) await db.receptionist.update({ where: { id: r.id }, data: { routingRules: u.routingRules } });
+  if (u.coaching !== undefined) await db.receptionist.update({ where: { id: r.id }, data: { coaching: u.coaching } });
   if (u.knownCaller?.created) await db.knownCaller.deleteMany({ where: { id: u.knownCaller.id, receptionistId: r.id } });
   else if (u.knownCaller) {
     const k = u.knownCaller;
@@ -216,7 +230,7 @@ export async function undoLatest(r: R): Promise<string> {
   }
   await db.ownerUpdate.update({ where: { id: last.id }, data: { undoneAt: new Date() } });
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: "Owner update undone", body: `Undone: ${last.summary}` });
-  if (u.itemId || u.businessHours !== undefined) resyncLater(r.id);
+  if (u.itemId || u.businessHours !== undefined || u.coaching !== undefined) resyncLater(r.id);
   return `Undone: ${last.summary}.`;
 }
 

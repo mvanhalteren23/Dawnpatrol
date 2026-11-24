@@ -429,6 +429,7 @@ model Receptionist {
   ownerPinHash          String? // bcrypt hash of the owner's keypad PIN for bigger changes
   ownerPinFails         Int            @default(0)
   ownerPinLockedUntil   DateTime?
+  coaching              String         @default("") // the owner's feedback as short rules, one per line (Assistant tier; assistant-rules.ts)
   knownCallers          KnownCaller[]
   ownerUpdates          OwnerUpdate[]
   reviewLinks           KbReviewLink[]

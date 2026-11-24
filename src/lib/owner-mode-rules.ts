@@ -25,13 +25,14 @@ export function isOwnerNumber(from: string | null | undefined, numbers: string[]
 
 /** What the AI makes of an owner's request (dates already resolved against today in their timezone). */
 export const OwnerPlanSchema = z.object({
-  action: z.enum(["closed", "special_hours", "hours", "block", "info", "routing", "messages", "unclear"]).describe(
-    "closed = closed whole days (holiday, vacation); special_hours = different hours on particular dates; hours = their regular weekly hours change from now on; block = block time in the booking calendar so nothing is booked there; info = change or add something the receptionist tells callers (prices, services, policies, anything else); routing = who gets put through to them or someone else, or how a kind of caller (suppliers, sales reps, sub-trades, staff, family, spam) or one particular caller is handled; messages = they want recent messages/calls; unclear = anything else or not enough detail",
+  action: z.enum(["closed", "special_hours", "hours", "block", "info", "routing", "feedback", "messages", "unclear"]).describe(
+    "closed = closed whole days (holiday, vacation); special_hours = different hours on particular dates; hours = their regular weekly hours change from now on; block = block time in the booking calendar so nothing is booked there; info = change or add something the receptionist tells callers (prices, services, policies, anything else); routing = who gets put through to them or someone else, or how a kind of caller (suppliers, sales reps, sub-trades, staff, family, spam) or one particular caller is handled; feedback = how the receptionist itself should behave or handle calls differently (tone, length, what to ask or not ask, in what order, how to treat a kind of caller), not facts to tell callers; messages = they want recent messages/calls; unclear = anything else or not enough detail",
   ),
   infoCategory: z.enum(["FAQ", "PRICING", "SERVICE", "POLICY", "STAFF", "OTHER"]).nullable().describe("For info: what it's about. PRICING = prices, rates, fees, quotes; SERVICE = what they do or don't do, service area; POLICY = warranties, payment, cancellations, deposits; STAFF = who works there; FAQ = anything else. Null for other actions."),
   routingWho: z.string().nullable().describe("For routing about one particular caller: who, as the owner said it (a name, company or phone number). Null when it's about a kind of caller."),
   routingCategory: z.enum(["SUPPLIER", "VENDOR", "SUBTRADE", "STAFF", "PERSONAL", "CUSTOMER", "SPAM"]).nullable().describe("For routing: the kind of caller (SUPPLIER = suppliers, parts, deliveries; VENDOR = sales reps; SUBTRADE = sub-trades, partners; STAFF = their staff; PERSONAL = family and friends). For one particular caller, the kind they are, if the owner said; otherwise null."),
   routingAction: z.enum(["transfer", "message", "normal", "end"]).nullable().describe("For routing: transfer = put them through; message = take a message; normal = treat like any caller; end = politely end the call. Null if not said."),
+  rule: z.string().nullable().describe("For feedback: the feedback as one short instruction to the receptionist, under 200 characters, e.g. 'Ask for the caller's business name before their email.' or 'Keep answers to one or two sentences.' Null for other actions."),
   routingTo: z.string().nullable().describe("For routing with transfer to someone other than the owner: the phone number to put them through to, digits only. Null = the owner."),
   startDate: z.string().nullable().describe("YYYY-MM-DD"),
   endDate: z.string().nullable().describe("YYYY-MM-DD, same as startDate for one day"),
@@ -84,6 +85,7 @@ export function planProblems(p: OwnerPlan, today: string): string[] {
   if (p.action === "closed" && p.startDate && datesBetween(p.startDate, p.endDate).length >= MAX_CLOSED_DAYS) problems.push(`a closure shorter than ${MAX_CLOSED_DAYS} days`);
   if (p.action === "block" && (p.startTime || p.endTime) && !(p.startTime && p.endTime && TIME.test(p.startTime) && TIME.test(p.endTime) && p.startTime < p.endTime)) problems.push("a start and end time");
   if ((p.action === "info" || p.action === "hours" || p.action === "special_hours") && !p.content.trim()) problems.push("what to tell callers");
+  if (p.action === "feedback" && !p.rule?.trim()) problems.push("what to do differently");
   if (p.action === "routing" && !p.routingAction && !p.routingCategory) problems.push("how those calls should be handled");
   if (p.action === "routing" && !p.routingWho && !p.routingCategory) problems.push("which callers it's about");
   if (p.action === "routing" && p.routingTo && p.routingTo.replace(/\D/g, "").length < 10) problems.push("the full 10-digit number to put them through to");

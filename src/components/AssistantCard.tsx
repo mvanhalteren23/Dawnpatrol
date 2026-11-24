@@ -1,8 +1,8 @@
 import type { KnownCaller } from "@prisma/client";
 import { Badge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
-import { CATEGORIES, CATEGORY_LABELS, isCategory, parseRoutingRules, prettyPhone, ROUTE_ACTIONS, ROUTE_LABELS } from "@/lib/assistant-rules";
-import { labelPendingCaller, removeKnownCaller, removeOwnerPin, saveDigestSetting, saveKnownCaller, saveOwnerPin, saveRoutingRules, setAssistantOverride } from "@/app/assistant-actions";
+import { CATEGORIES, CATEGORY_LABELS, coachingRules, isCategory, parseRoutingRules, prettyPhone, ROUTE_ACTIONS, ROUTE_LABELS } from "@/lib/assistant-rules";
+import { addCoaching, removeCoaching, labelPendingCaller, removeKnownCaller, removeOwnerPin, saveDigestSetting, saveKnownCaller, saveOwnerPin, saveRoutingRules, setAssistantOverride } from "@/app/assistant-actions";
 
 type Line = {
   id: string;
@@ -15,6 +15,7 @@ type Line = {
   routingRules: string;
   labelDigestOn: boolean;
   assistantOverride: string;
+  coaching: string;
 };
 
 const OVERRIDE: Record<string, string> = { "": "Follow the account's plan", on: "On (comped or manual billing)", off: "Off" };
@@ -102,6 +103,25 @@ export function AssistantCard({ r, entitled, callers, returnTo, staff }: { r: Li
               <summary className="cursor-pointer text-xs underline">Add a caller</summary>
               <CallerForm lineId={r.id} returnTo={returnTo} />
             </details>
+          </div>
+
+          <div className="space-y-2">
+            <div className="label">Feedback {r.name} follows</div>
+            <p className="text-xs text-slate-500">Tell {r.name} how to handle calls differently, here or by calling or texting it (&ldquo;feedback: don&apos;t ask for an email until they&apos;ve booked&rdquo;). Each becomes a rule it follows from the next call; facts like prices belong in the knowledge base.</p>
+            {coachingRules(r.coaching).length ? (
+              <ul className="divide-y divide-slate-100">
+                {coachingRules(r.coaching).map((rule, i) => (
+                  <li key={`${i}-${rule}`} className="flex items-start justify-between gap-2 py-1.5">
+                    <span>{rule}</span>
+                    <form action={removeCoaching.bind(null, r.id, i, returnTo)}><button className="text-xs text-red-600 underline">Remove</button></form>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-xs text-slate-500">No feedback yet.</p>}
+            <form action={addCoaching.bind(null, r.id, returnTo)} className="flex gap-2">
+              <input name="rule" required maxLength={240} placeholder="e.g. Keep answers to one or two sentences" className="input flex-1" aria-label="Feedback" />
+              <button className="btn-secondary">Add</button>
+            </form>
           </div>
 
           <form action={saveRoutingRules.bind(null, r.id, returnTo)} className="space-y-2">

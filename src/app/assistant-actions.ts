@@ -165,3 +165,26 @@ export async function saveCheckinSettings(receptionistId: string, returnTo: stri
   });
   done(returnTo, "Saved");
 }
+
+/** Feedback for the assistant, typed in the portal or CRM: one short rule it follows from now on. */
+export async function addCoaching(receptionistId: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const rule = str(form, "rule").replace(/\s+/g, " ").trim();
+  const { addCoachingRule, coachingProblem } = await import("@/lib/assistant-rules");
+  const problem = coachingProblem(rule);
+  if (problem) done(returnTo, problem, "error");
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { coaching: true, elevenLabsAgentId: true } });
+  const { value, dropped } = addCoachingRule(r.coaching, rule);
+  await db.receptionist.update({ where: { id: receptionistId }, data: { coaching: value } });
+  if (r.elevenLabsAgentId) resyncLater(receptionistId);
+  done(returnTo, dropped ? `Saved. To make room, the oldest feedback was retired: "${dropped}"` : "Saved. It applies to calls within a minute.");
+}
+
+export async function removeCoaching(receptionistId: string, index: number, returnTo: string) {
+  await guard(receptionistId);
+  const { removeCoachingRule } = await import("@/lib/assistant-rules");
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { coaching: true, elevenLabsAgentId: true } });
+  await db.receptionist.update({ where: { id: receptionistId }, data: { coaching: removeCoachingRule(r.coaching, index) } });
+  if (r.elevenLabsAgentId) resyncLater(receptionistId);
+  done(returnTo, "Removed");
+}

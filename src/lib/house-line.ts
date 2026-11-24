@@ -43,7 +43,7 @@ export async function callerType(from: string): Promise<CallerType> {
  * What Grace is told when a call starts: the caller type, the team member's first name (team only),
  * and her opening line (team members are greeted by name and asked what they'd like to do).
  */
-export type CallerContext = { caller_type: CallerType; team_name: string; opening: string; caller_first_name: string; demo_business: string; demo_extension: string; demo_return: string; client_assistant: string };
+export type CallerContext = { caller_type: CallerType; team_name: string; opening: string; caller_first_name: string; demo_business: string; demo_extension: string; demo_return: string; client_assistant: string; caller_routing: string };
 
 /**
  * An Assistant-tier client calling Grace from one of their own owner numbers: their line (the one
@@ -126,11 +126,13 @@ export async function prospectDemo(from: string): Promise<{ firstName: string; b
  * with a demo is greeted by name and told their demo is ready), and their demo (if any).
  */
 export async function callerContext(from: string, greeting: string): Promise<CallerContext> {
-  const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "" };
+  const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "", caller_routing: "" };
   const team = await teamMemberByPhone(from).catch(() => null);
   if (team) {
     const house = await houseReceptionist();
-    return { ...none, caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu, or a demo by company name.` };
+    // Admins own this line on the Assistant tier: they can also make changes and give feedback.
+    const owner = house ? await import("./assistant").then((a) => a.assistantEnabled(house)).catch(() => false) : false;
+    return { ...none, caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu or a demo by company name${owner ? ", make a change, take your feedback, or read your messages" : ""}.` };
   }
   const demo = await prospectDemo(from).catch(() => null);
   if (demo) {
@@ -159,7 +161,10 @@ export async function callerContext(from: string, greeting: string): Promise<Cal
       opening: `Hi${assistant.firstName ? ` ${assistant.firstName}` : ""}, it's ${house?.name ?? "Grace"}. Would you like me to put you through to ${assistant.r.name}, your assistant, or is there something I can help with?`,
     };
   }
-  return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting };
+  // Assistant tier on our own line: suppliers, sales reps and others we know are routed by our rules.
+  const house = await houseReceptionist();
+  const caller_routing = house ? await (await import("./assistant")).routingForCall(house, from).catch(() => "") : "";
+  return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting, caller_routing };
 }
 
 /** Grace back on the line after a demo: its time ran out (book a follow-up), or it didn't connect. */
@@ -174,6 +179,7 @@ export async function demoReturnContext(from: string, failed: boolean): Promise<
     demo_extension: demo?.extension ?? "",
     demo_return: failed ? "failed" : "timeout",
     client_assistant: "",
+    caller_routing: "",
     opening: demoReturnOpening({ firstName: demo?.firstName, company, receptionist: house?.name ?? "Grace", failed }),
   };
 }

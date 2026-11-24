@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { authorizeRag } from "@/lib/rag-auth";
-import { isClientInbound } from "@/lib/elevenlabs";
+import { isAssistantLine } from "@/lib/elevenlabs";
 import { assistantEnabled, transferCall } from "@/lib/assistant";
 import { redirectCall } from "@/lib/house-line";
 
@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const r = await authorizeRag(req, id);
   if (!r) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isClientInbound(r) || !(await assistantEnabled(r))) return NextResponse.json({ message: "Putting callers through isn't available on this line. Take a message instead." });
+  if (!isAssistantLine(r) || !(await assistantEnabled(r))) return NextResponse.json({ message: "Putting callers through isn't available on this line. Take a message instead." });
   const body = (await req.json().catch(() => ({}))) as { call_sid?: string; urgent?: boolean | string };
   const callSid = String(body.call_sid ?? "");
   try {

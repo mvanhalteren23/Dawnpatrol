@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeRag } from "@/lib/rag-auth";
-import { isClientInbound } from "@/lib/elevenlabs";
+import { isAssistantLine } from "@/lib/elevenlabs";
 import { ownerPinOnCall } from "@/lib/owner-mode";
 
 // ElevenLabs webhook tool "owner_pin" (Assistant tier): the digits the owner keyed in, checked
@@ -10,7 +10,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const r = await authorizeRag(req, id);
   if (!r) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isClientInbound(r)) return NextResponse.json({ error: "Not available for this receptionist" }, { status: 403 });
+  if (!isAssistantLine(r)) return NextResponse.json({ error: "Not available for this receptionist" }, { status: 403 });
   const body = (await req.json().catch(() => ({}))) as { digits?: string; call_sid?: string };
   try {
     const message = await ownerPinOnCall(r, String(body.call_sid ?? ""), String(body.digits ?? "").slice(0, 40));

@@ -416,6 +416,14 @@ export function isClientInbound(r: { agentType?: string; bookingAddsToCrm?: bool
   return (r.agentType ?? "inbound") === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
 }
 
+/**
+ * A line that can have the Assistant features: a client's own receptionist, or our own (Grace,
+ * where the owner is the team's admins).
+ */
+export function isAssistantLine(r: { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string }): boolean {
+  return isClientInbound(r) || ((r.agentType ?? "inbound") === "inbound" && Boolean(r.bookingAddsToCrm) && r.lifecycle === "production");
+}
+
 /** The weekly owner check-in agent (src/lib/owner-checkin.ts). */
 export function checkinTools(r: { id: string; ragToken: string }) {
   return {
@@ -446,7 +454,7 @@ type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isClientInbound(r) && r.assistantOn ? { ...ownerTools(r), ...assistantTools(r) } : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isAssistantLine(r) && r.assistantOn ? { ...ownerTools(r), ...assistantTools(r) } : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -479,7 +487,7 @@ export function agentConfig(
   const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
   const clientLine = !house && isClientInbound(r as { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string });
   // Our line: the opening is chosen per call (team members are greeted by name).
-  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", caller_routing: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "", caller_routing: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", caller_routing: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {

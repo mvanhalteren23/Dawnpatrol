@@ -64,7 +64,8 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     await rescueAfterCall(full, call, collected).catch((e) => console.error("rescue text failed", e));
     await recordUnanswered(full, call, collected).catch((e) => console.error("open questions failed", e));
     // Assistant tier: suppliers, sales reps, staff… go on the owner's evening list to be labelled.
-    if (full.agentType === "inbound" && full.lifecycle === "production" && !full.bookingAddsToCrm) {
+    // (Our own line too: Grace has the Assistant tier.)
+    if (full.agentType === "inbound" && full.lifecycle === "production") {
       const { assistantEnabled, noteCaller } = await import("./assistant");
       if (await assistantEnabled(full).catch(() => false)) await noteCaller(full, call, collected).catch((e) => console.error("caller directory failed", e));
     }

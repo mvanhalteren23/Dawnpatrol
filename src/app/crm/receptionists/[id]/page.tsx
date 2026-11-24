@@ -61,7 +61,8 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const reviewEmail = reviewContact?.email ?? null;
   const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
   // Assistant tier: the line's caller directory and settings (src/components/AssistantCard.tsx).
-  const clientInbound = r.agentType === "inbound" && !r.bookingAddsToCrm;
+  // Client lines and our own (Grace, whose owners are the team's admins).
+  const clientInbound = r.agentType === "inbound";
   const assistantOn = clientInbound ? await assistantEnabled(r) : false;
   const knownCallers = clientInbound ? await db.knownCaller.findMany({ where: { receptionistId: r.id, status: { not: "DISMISSED" } }, orderBy: [{ lastCallAt: "desc" }, { createdAt: "desc" }], take: 200 }) : [];
   const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
