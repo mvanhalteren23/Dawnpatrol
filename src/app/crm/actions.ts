@@ -856,6 +856,8 @@ export async function updateReceptionist(id: string, form: FormData) {
     if (taken) back(`/crm/receptionists/${id}`, { error: `Extension ${ext} is already used by ${taken.businessName}` });
     if (ext.length < 2 || ext.length > 6) back(`/crm/receptionists/${id}`, { error: "Extensions are 2–6 digits" });
   }
+  const before = await db.receptionist.findUniqueOrThrow({ where: { id }, select: { voiceId: true, elevenLabsAgentId: true } });
+  const voiceId = str(form, "voiceId") === "__custom" ? optStr(form, "voiceIdCustom") : optStr(form, "voiceId");
   await db.receptionist.update({
     where: { id },
     data: {
@@ -864,7 +866,7 @@ export async function updateReceptionist(id: string, form: FormData) {
       greeting: str(form, "greeting"),
       persona: str(form, "persona"),
       // The voice picker: a curated voice, or (team only) any other voice ID; blank = default.
-      voiceId: str(form, "voiceId") === "__custom" ? optStr(form, "voiceIdCustom") : optStr(form, "voiceId"),
+      voiceId,
       language: str(form, "language") || "en",
       timezone: str(form, "timezone") || "America/New_York",
       businessHours: str(form, "businessHours"),
@@ -878,6 +880,12 @@ export async function updateReceptionist(id: string, form: FormData) {
     },
   });
   await markDirty(id);
+  // A new voice goes live straight away (as it does from the client portal): otherwise the line keeps
+  // the old voice until someone presses Sync, which is easy to miss when testing a demo.
+  if ((voiceId ?? null) !== (before.voiceId ?? null) && before.elevenLabsAgentId) {
+    after(() => syncReceptionist(id).then(() => undefined).catch((e) => console.error("voice sync", e)));
+    back(`/crm/receptionists/${id}`, { notice: "Saved. The new voice (and your other changes) will be live within a minute." });
+  }
   back(`/crm/receptionists/${id}`, { notice: "Saved" });
 }
 
