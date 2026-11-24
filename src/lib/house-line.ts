@@ -43,7 +43,58 @@ export async function callerType(from: string): Promise<CallerType> {
  * What Grace is told when a call starts: the caller type, the team member's first name (team only),
  * and her opening line (team members are greeted by name and asked what they'd like to do).
  */
-export type CallerContext = { caller_type: CallerType; team_name: string; opening: string; caller_first_name: string; demo_business: string; demo_extension: string; demo_return: string };
+export type CallerContext = { caller_type: CallerType; team_name: string; opening: string; caller_first_name: string; demo_business: string; demo_extension: string; demo_return: string; client_assistant: string };
+
+/**
+ * An Assistant-tier client calling Grace from one of their own owner numbers: their line (the one
+ * Grace can put them through to, in owner mode). Null for everyone else.
+ */
+export async function clientAssistant(from: string): Promise<{ r: Receptionist; firstName: string } | null> {
+  if (!from || from.replace(/\D/g, "").length < 10) return null;
+  const e164 = toE164(from);
+  const users = await db.user.findMany({ where: { phone: { in: [...new Set([e164, from])] }, accountId: { not: null }, disabled: false }, select: { accountId: true } });
+  const rs = await db.receptionist.findMany({
+    where: {
+      agentType: "inbound", lifecycle: "production", bookingAddsToCrm: false, elevenLabsAgentId: { not: null },
+      OR: [{ ringFirstNumber: e164 }, { checkinPhone: e164 }, { leadAlertTo: { contains: e164.slice(-10) } }, { accountId: { in: users.map((u) => u.accountId!) } }],
+    },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+  });
+  const { ownerCaller } = await import("./owner-mode");
+  const { assistantEnabled } = await import("./assistant");
+  for (const r of rs) {
+    const owner = await ownerCaller(r, e164).catch(() => null);
+    if (owner && (await assistantEnabled(r))) return { r, firstName: owner.firstName };
+  }
+  return null;
+}
+
+/**
+ * open_assistant: an Assistant client on Grace's line, put through to their own assistant in owner
+ * mode. The caller's number is checked on the live call itself; the handoff is recorded so their
+ * assistant accepts owner changes on a call that came in on our number.
+ */
+export async function openAssistantForClient(callSid: string): Promise<{ message: string; redirect: string | null }> {
+  const refuse = { message: "That's only for clients calling from their own phone. Carry on helping the caller.", redirect: null };
+  if (!/^CA[0-9a-f]{32}$/i.test(callSid)) return refuse;
+  const call = await twilioApi<{ status: string; to: string; from: string }>(`/Calls/${callSid}.json`).catch(() => null);
+  const number = demoNumber();
+  if (!call || call.status !== "in-progress" || !number || toE164(call.to) !== number) return refuse;
+  const found = await clientAssistant(call.from).catch(() => null);
+  if (!found) return refuse;
+  await setSetting(`assistant.handoff.${callSid}`, found.r.id);
+  return { message: `Say only: "Putting you through to ${found.r.name} now."`, redirect: `${appBase()}/api/voice/assistant?r=${encodeURIComponent(found.r.id)}` };
+}
+
+/** Did Grace hand this live call to this line's assistant? (owner-mode.ts checks it.) */
+export async function handedOffTo(callSid: string, receptionistId: string): Promise<boolean> {
+  return Boolean(callSid) && (await getSetting(`assistant.handoff.${callSid}`)) === receptionistId;
+}
+
+export function houseNumber(): string | null {
+  return demoNumber();
+}
 
 /**
  * A prospect's own live demo, found from the number they're calling from (a contact's phone or the
@@ -75,7 +126,7 @@ export async function prospectDemo(from: string): Promise<{ firstName: string; b
  * with a demo is greeted by name and told their demo is ready), and their demo (if any).
  */
 export async function callerContext(from: string, greeting: string): Promise<CallerContext> {
-  const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" };
+  const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "" };
   const team = await teamMemberByPhone(from).catch(() => null);
   if (team) {
     const house = await houseReceptionist();
@@ -95,6 +146,19 @@ export async function callerContext(from: string, greeting: string): Promise<Cal
       opening: demoProspectOpening({ firstName: demo.firstName, company, receptionist: house?.name ?? "Grace", demoBusiness: demo.business }),
     };
   }
+  // An Assistant client on their own phone: Grace offers to put them through to their assistant.
+  const assistant = await clientAssistant(from).catch(() => null);
+  if (assistant) {
+    const house = await houseReceptionist();
+    return {
+      ...none,
+      caller_type: "client",
+      team_name: "",
+      caller_first_name: assistant.firstName,
+      client_assistant: assistant.r.name,
+      opening: `Hi${assistant.firstName ? ` ${assistant.firstName}` : ""}, it's ${house?.name ?? "Grace"}. Would you like me to put you through to ${assistant.r.name}, your assistant, or is there something I can help with?`,
+    };
+  }
   return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting };
 }
 
@@ -109,6 +173,7 @@ export async function demoReturnContext(from: string, failed: boolean): Promise<
     demo_business: demo?.business ?? "",
     demo_extension: demo?.extension ?? "",
     demo_return: failed ? "failed" : "timeout",
+    client_assistant: "",
     opening: demoReturnOpening({ firstName: demo?.firstName, company, receptionist: house?.name ?? "Grace", failed }),
   };
 }

@@ -8,12 +8,17 @@ import { safeLogo } from "@/lib/email-brand";
 
 export async function PortalShell({ accountId, accountName, adminAccountId, email, children }: { accountId: string; accountName: string; adminAccountId?: string; email: string; children: ReactNode }) {
   const q = adminAccountId ? `?account=${adminAccountId}` : "";
-  const [company, followups, support, branded] = await Promise.all([
+  const [company, followups, support, branded, assistant] = await Promise.all([
     companyName(),
     db.receptionist.count({ where: { accountId, agentType: "followup" } }),
     supportAddress().catch(() => null),
     // Their own logo (from their website or set under Your setup) makes the portal theirs.
     db.receptionist.findFirst({ where: { accountId, brandLogoUrl: { not: null } }, orderBy: [{ lifecycle: "desc" }, { createdAt: "asc" }], select: { brandLogoUrl: true } }),
+    // The Assistant page is only in the menu for lines on the Assistant tier.
+    (async () => {
+      const line = await db.receptionist.findFirst({ where: { accountId, agentType: "inbound", lifecycle: "production" }, orderBy: { createdAt: "asc" } });
+      return line ? (await import("@/lib/assistant")).assistantEnabled(line).catch(() => false) : false;
+    })(),
   ]);
   const logo = safeLogo(branded?.brandLogoUrl);
   return (
@@ -35,6 +40,7 @@ export async function PortalShell({ accountId, accountName, adminAccountId, emai
           </div>
           <nav className="flex flex-wrap gap-4 text-sm [&_a]:font-semibold [&_a]:text-dawn-100 [&_a:hover]:text-dawn-400">
             <Link href={`/portal${q}`}>Overview</Link>
+            {assistant ? <Link href={`/portal/assistant${q}`}>Your assistant</Link> : null}
             <Link href={`/portal/knowledge${q}`}>What it knows</Link>
             <Link href={`/portal/calls${q}`}>Calls</Link>
             <Link href={`/portal/bookings${q}`}>Bookings</Link>

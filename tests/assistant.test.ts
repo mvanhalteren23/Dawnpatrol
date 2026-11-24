@@ -236,6 +236,13 @@ describe("assistant prompt sections", () => {
     expect(noPin).toContain("reply YES");
   });
 
+  it("Grace offers Assistant clients a handoff to their own assistant", () => {
+    const grace = buildReceptionistPrompt({ ...line, name: "Grace", businessName: "Head Above Digital", bookingAddsToCrm: true });
+    expect(grace).toContain("{{client_assistant}}");
+    expect(grace).toContain("open_assistant");
+    expect(buildReceptionistPrompt({ ...line, assistantOn: true })).not.toContain("open_assistant");
+  });
+
   it("demos, follow-up agents and our own line never get owner updates", () => {
     expect(buildReceptionistPrompt({ ...line, assistantOn: true, lifecycle: "demo" })).not.toContain("owner_request");
     expect(buildReceptionistPrompt({ ...line, assistantOn: true, bookingAddsToCrm: true })).not.toContain("{{caller_routing}}");

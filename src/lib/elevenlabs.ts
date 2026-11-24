@@ -139,6 +139,19 @@ export function salesTools(r: { id: string; ragToken: string }) {
     business_type: str("Type of business, e.g. auto repair, plumbing, retail store."),
   };
   return {
+    // Assistant clients calling from their own phone: put them through to their own assistant (owner mode).
+    open_assistant: {
+      type: "webhook",
+      name: "open_assistant",
+      description: "Only when the caller is a client with an assistant (their opening offered it) and they want to be put through to it, to make changes or hear their messages. The app checks their number; Grace says one short line, then the call moves.",
+      response_timeout_secs: 10,
+      api_schema: {
+        url: `${base}/open-assistant`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: { type: "object", properties: { call_sid: { type: "string", dynamic_variable: "call_sid" } }, required: [] },
+      },
+    },
     keypad_entry: {
       type: "webhook",
       name: "keypad_entry",
@@ -466,7 +479,7 @@ export function agentConfig(
   const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
   const clientLine = !house && isClientInbound(r as { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string });
   // Our line: the opening is chosen per call (team members are greeted by name).
-  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", caller_routing: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "", client_assistant: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", caller_routing: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {

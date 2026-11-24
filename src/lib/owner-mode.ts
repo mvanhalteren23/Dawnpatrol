@@ -36,6 +36,17 @@ export async function ownerCaller(r: R, from: string): Promise<{ firstName: stri
   return { firstName: (named?.name ?? "").split(/\s+/)[0] ?? "" };
 }
 
+/**
+ * The owner's live call to their assistant: on their own business line, or put through by Grace
+ * from our number (house-line.ts openAssistantForClient). Null if it's neither.
+ */
+export async function ownerLiveCaller(r: R, callSid: string): Promise<string | null> {
+  const direct = await liveCaller(callSid, r.businessNumber);
+  if (direct) return direct;
+  const { handedOffTo, houseNumber } = await import("./house-line");
+  return (await handedOffTo(callSid, r.id)) ? liveCaller(callSid, houseNumber()) : null;
+}
+
 /** The live call's caller, if the call is in progress and to this number. */
 export async function liveCaller(callSid: string, to: string | null): Promise<string | null> {
   if (!/^CA[0-9a-f]{32}$/i.test(callSid) || !to) return null;
@@ -249,7 +260,7 @@ async function confirmByText(r: R, phone: string, pending: Omit<Pending, "at">):
 export async function ownerRequestOnCall(r: R, callSid: string, request: string, confirmed: boolean): Promise<string> {
   const { assistantEnabled, pinVerifiedOnCall } = await import("./assistant");
   if (!(await assistantEnabled(r))) return "Changes by phone aren't part of this plan. Say the owner can request changes in their portal.";
-  const from = await liveCaller(callSid, r.businessNumber);
+  const from = await ownerLiveCaller(r, callSid);
   if (!from || !(await ownerCaller(r, from))) return "This isn't the owner's phone, so no changes can be made on this call. Say the owner can call from their own phone, text this number from it, or use their portal.";
   const key = `owner.pending.${callSid}`;
   if (!confirmed) {
@@ -288,7 +299,7 @@ export async function ownerRequestOnCall(r: R, callSid: string, request: string,
 
 /** owner_pin during an owner's call: the digits they keyed in, checked against their PIN. */
 export async function ownerPinOnCall(r: R, callSid: string, digits: string): Promise<string> {
-  const from = await liveCaller(callSid, r.businessNumber);
+  const from = await ownerLiveCaller(r, callSid);
   if (!from || !(await ownerCaller(r, from))) return "This isn't the owner's phone. Don't make any changes.";
   const { checkOwnerPin, markPinVerified } = await import("./assistant");
   const res = await checkOwnerPin(r.id, digits);

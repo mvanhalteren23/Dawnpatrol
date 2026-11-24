@@ -151,3 +151,17 @@ export async function saveDigestSetting(receptionistId: string, returnTo: string
   await db.receptionist.update({ where: { id: receptionistId }, data: { labelDigestOn: form.get("labelDigestOn") === "on" } });
   done(returnTo, "Saved");
 }
+
+/** Check-in calls (Assistant tier): on/off, how many questions before a call, and the number to call. */
+export async function saveCheckinSettings(receptionistId: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const raw = str(form, "checkinPhone");
+  const phone = await phoneOrNull(raw);
+  if (phone === false) done(returnTo, "Enter a 10-digit Canadian or US number to call, or leave it blank", "error");
+  const { clampThreshold } = await import("@/lib/customer-text-rules");
+  await db.receptionist.update({
+    where: { id: receptionistId },
+    data: { checkinsOn: form.get("checkinsOn") === "on", checkinThreshold: clampThreshold(Number(str(form, "checkinThreshold"))), checkinPhone: phone || null },
+  });
+  done(returnTo, "Saved");
+}
