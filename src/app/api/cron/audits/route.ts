@@ -8,7 +8,8 @@ import { processDueLeads } from "@/lib/followup";
 export const maxDuration = 300;
 
 // Every 30 minutes in the day: call audits (place due calls, collect transcripts, analyse,
-// write reports), appointment reminders and review requests, and owner check-ins. Called every 30 minutes during the day by .github/workflows/call-audits.yml (Vercel Hobby
+// write reports), appointment reminders and review requests, owner check-ins, and the Assistant
+// tier's evening caller digest. Called every 30 minutes during the day by .github/workflows/call-audits.yml (Vercel Hobby
 // crons only run daily), and by the daily calls-sync job as a backstop.
 export async function GET(req: Request) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
@@ -16,6 +17,8 @@ export async function GET(req: Request) {
   const audits = await processAudits().catch((e: Error) => ({ error: e.message }));
   const texts = await processCustomerTexts().catch((e: Error) => ({ error: e.message }));
   const checkins = await processCheckins().catch((e: Error) => ({ error: e.message }));
+  // Assistant tier: the evening "who were these callers?" text, and old ones to the check-in queue.
+  const labels = await (await import("@/lib/assistant")).processLabelDigests().catch((e: Error) => ({ error: e.message }));
   // Website leads that came in outside calling hours: called as soon as calling hours start.
   const leads = await processDueLeads(10).catch((e: Error) => e.message);
   // Warn the team before voice credits or the phone balance run out.
@@ -23,5 +26,5 @@ export async function GET(req: Request) {
   // Once a day: the free line check (no call placed) and removal of old customer photos.
   const lineCheck = await (await import("@/lib/line-check")).runLineCheckIfDue().then((r) => (r ? { lines: r.lines.length, problems: r.lines.filter((l) => l.problems.length).length } : "not due")).catch((e: Error) => e.message);
   const photos = await (await import("@/lib/photos")).expireOldPhotos().catch((e: Error) => e.message);
-  return NextResponse.json({ audits, texts, checkins, leads, health, lineCheck, photos });
+  return NextResponse.json({ audits, texts, checkins, labels, leads, health, lineCheck, photos });
 }

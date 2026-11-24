@@ -233,6 +233,13 @@ export const DATA_COLLECTION = {
   caller_email: { type: "string", description: "The caller's email address if they gave one (as spelled back), or empty." },
   summary_delivery: { type: "string", enum: ["text", "email", "none"], description: "How the caller asked to receive a summary or confirmation: text, email, or none if they declined or weren't asked." },
   unanswered_questions: { type: "string", description: "Questions the caller asked that the agent couldn't answer from its knowledge base (it had to take a message or say the team would confirm), one per line in the caller's words. Empty if there were none." },
+  // Assistant tier: callers who aren't customers go on the owner's evening list (src/lib/assistant.ts).
+  caller_kind: {
+    type: "string",
+    enum: ["customer", "supplier", "vendor", "subtrade", "staff", "personal", "spam", "unknown"],
+    description: "Who the caller is to the business: customer (wants or has the business's services, including enquiries), supplier (parts, materials, deliveries, couriers), vendor (selling something to the business: sales reps, marketing, software), subtrade (another trade or partner working with them), staff (works for the business), personal (family or friends of the owner), spam (robocall, scam, wrong number), unknown (can't tell).",
+  },
+  caller_company: { type: "string", description: "The company the caller said they're calling from, or empty." },
 };
 
 /** Follow-up agents also report how the lead went. */
@@ -332,6 +339,22 @@ export function ownerTools(r: { id: string; ragToken: string }) {
         },
       },
     },
+    owner_pin: {
+      type: "webhook",
+      name: "owner_pin",
+      description: "Only when the caller is the owner and owner_request asked for their PIN: the digits they keyed in on the phone keypad. Never say the digits.",
+      response_timeout_secs: 10,
+      api_schema: {
+        url: `${base}/owner-pin`,
+        method: "POST",
+        request_headers: headers,
+        request_body_schema: {
+          type: "object",
+          properties: { digits: str("Exactly the digits the owner pressed on the keypad."), call_sid: callSid },
+          required: ["digits"],
+        },
+      },
+    },
     owner_messages: {
       type: "webhook",
       name: "owner_messages",
@@ -342,6 +365,34 @@ export function ownerTools(r: { id: string; ragToken: string }) {
         method: "POST",
         request_headers: headers,
         request_body_schema: { type: "object", properties: { call_sid: callSid }, required: [] },
+      },
+    },
+  };
+}
+
+/**
+ * Assistant tier: put the live call through (src/lib/assistant.ts transferCall). Where it goes is
+ * decided by the app from the caller's number and the owner's routing rules, never by the agent.
+ */
+export function assistantTools(r: { id: string; ragToken: string }) {
+  return {
+    transfer_call: {
+      type: "webhook",
+      name: "transfer_call",
+      description: "Put the caller through to the owner (or whoever the owner chose) when the known-callers note says to, or with urgent true for a customer's emergency. Say one short line first; the call moves a moment later.",
+      response_timeout_secs: 15,
+      api_schema: {
+        url: `${appUrl()}/api/agent-tools/${r.id}/transfer`,
+        method: "POST",
+        request_headers: { Authorization: `Bearer ${r.ragToken}` },
+        request_body_schema: {
+          type: "object",
+          properties: {
+            urgent: { type: "boolean", description: "true only for a customer's emergency or an urgent request that can't wait; false for callers the known-callers note says to put through." },
+            call_sid: { type: "string", dynamic_variable: "call_sid" },
+          },
+          required: ["urgent"],
+        },
       },
     },
   };
@@ -377,12 +428,12 @@ export function checkinTools(r: { id: string; ragToken: string }) {
   };
 }
 
-type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string; lifecycle: string };
+type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string; lifecycle: string; assistantOn?: boolean };
 
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isClientInbound(r) ? ownerTools(r) : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isClientInbound(r) && r.assistantOn ? { ...ownerTools(r), ...assistantTools(r) } : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -415,7 +466,7 @@ export function agentConfig(
   const house = Boolean((r as { bookingAddsToCrm?: boolean }).bookingAddsToCrm) && !followup && !builder && !checkin;
   const clientLine = !house && isClientInbound(r as { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string });
   // Our line: the opening is chosen per call (team members are greeted by name).
-  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
+  const dynamicDefaults = house ? { caller_type: "new", team_name: "", opening: greeting, call_sid: "", caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" } : clientLine ? { caller_role: "customer", owner_name: "", caller_context: "", caller_routing: "", call_sid: "" } : checkin ? CHECKIN_DYNAMIC_DEFAULTS : builder ? BUILDER_DYNAMIC_DEFAULTS : followup ? { lead_first_name: "there", lead_name: "the person who contacted us", lead_request: "They asked to be contacted.", lead_id: "" } : null;
   return {
     name: `${r.businessName} — ${r.name}${followup ? " (follow-up)" : builder ? " (demo builder)" : checkin ? " (owner check-in)" : ""}`,
     conversation_config: {
@@ -459,9 +510,12 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
       docs.push({ category: d.category, docId: created.id, name: d.name });
     }
 
-    const { ids: toolIds, attached } = await syncAgentTools(r);
+    // Assistant tier: owner updates, routing and transfers are only in the prompt and tools when the line has it.
+    const { assistantEnabled } = await import("./assistant");
+    const tiered = { ...r, assistantOn: await assistantEnabled(r), ownerPinSet: Boolean(r.ownerPinHash) };
+    const { ids: toolIds, attached } = await syncAgentTools(tiered);
     const platform = await mergedPlatformSettings(r.elevenLabsAgentId, r.agentType === "followup");
-    const config = { ...agentConfig(r, docs, attached), platform_settings: platform };
+    const config = { ...agentConfig(tiered, docs, attached), platform_settings: platform };
     // If ElevenLabs ever rejects the security settings, still sync the agent (with a warning)
     // rather than leave it out of date.
     const send = async (body: object) => {

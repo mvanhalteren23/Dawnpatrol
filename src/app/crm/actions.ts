@@ -1031,6 +1031,7 @@ export async function savePlan(form: FormData) {
     stripePriceId: optStr(form, "stripePriceId"),
     stripePriceIdUsd: optStr(form, "stripePriceIdUsd"),
     kind: str(form, "kind") === "addon" ? "addon" : "plan",
+    tier: str(form, "tier") === "assistant" ? "assistant" : "standard",
   };
   if (id) await db.plan.update({ where: { id }, data });
   else await db.plan.create({ data });

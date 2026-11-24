@@ -25,6 +25,8 @@ import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
 import { chooseVoice, saveMyMobile, undoOwnerChange } from "@/app/customer-actions";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
+import { AssistantCard } from "@/components/AssistantCard";
+import { assistantEnabled } from "@/lib/assistant";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
 import { calendarConnectAllowedFor, calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { appUrl } from "@/lib/app-url";
@@ -48,6 +50,9 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   ]);
   const me = portalUsers.find((u) => u.id === session.sub);
   const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
+  // Assistant tier: only lines that have it see its settings (and the owner-updates card).
+  const assistantOn = r ? await assistantEnabled(r) : false;
+  const knownCallers = r && assistantOn ? await db.knownCaller.findMany({ where: { receptionistId: r.id, status: { not: "DISMISSED" } }, orderBy: [{ lastCallAt: "desc" }, { createdAt: "desc" }], take: 200 }) : [];
   const bookingCal: { mode: "client" | "google" | "crm"; email: string | null; fallbackFrom?: string | null } = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
   // Before Google approves, only test clients (CRM → Settings → Client calendars) see the option.
   const calendarLive = adminAccountId ? await calendarConnectLive() : await calendarConnectAllowedFor(session.email);
@@ -98,10 +103,10 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                 <button className="btn-secondary">Save voice</button>
               </form>
             ) : null}
-            <div className="card space-y-3 text-sm">
+            {assistantOn ? <div className="card space-y-3 text-sm">
               <h2>Update {r.name} by phone or text</h2>
               {r.businessNumber ? (
-                <p className="text-slate-600">Call or text <b>{r.businessNumber}</b> from your own phone and {r.name} knows it&apos;s you. Say or text things like &ldquo;we&apos;re closed next Monday&rdquo;, &ldquo;block 2 to 4 Thursday&rdquo;, &ldquo;tell callers we now do heat pumps&rdquo; or &ldquo;any messages?&rdquo;. Every change is confirmed by text: reply <b>UNDO</b> to reverse it.</p>
+                <p className="text-slate-600">Call or text <b>{r.businessNumber}</b> from your own phone and {r.name} knows it&apos;s you. Say or text things like &ldquo;we&apos;re closed next Monday&rdquo;, &ldquo;block 2 to 4 Thursday&rdquo;, &ldquo;tell callers we now do heat pumps&rdquo;, &ldquo;put suppliers straight through to me&rdquo; or &ldquo;any messages?&rdquo;. Every change is confirmed by text: reply <b>UNDO</b> to reverse it. Bigger changes (regular hours, prices, services, routing) need your owner PIN, set below.</p>
               ) : <p className="text-slate-600">Available once your business line is set up.</p>}
               <p className="text-xs text-slate-500">Recognised numbers: {[r.ringFirstNumber, r.checkinPhone, ...portalPhones].filter(Boolean).join(", ") || "none yet"}.</p>
               {session.role === "CLIENT" ? (
@@ -119,10 +124,11 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
                   {ownerUpdates.some((u) => !u.undoneAt) ? <form action={undoOwnerChange.bind(null, r.id, returnTo)} className="mt-2"><button className="btn-secondary py-1 text-xs">Undo the latest change</button></form> : null}
                 </div>
               ) : null}
-            </div>
+            </div> : null}
+            {assistantOn ? <AssistantCard r={r} entitled callers={knownCallers} returnTo={returnTo} staff={false} /> : null}
             <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={appUrl()} returnTo={returnTo} canConnect={calendarLive && r.agentType === "inbound" && !r.bookingAddsToCrm} staff={false} live={calendarLive} fallbackFrom={bookingCal.fallbackFrom ?? null} />
             <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
-            <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
+            <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} checkins={assistantOn} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>
             <div className="card">

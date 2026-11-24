@@ -2,6 +2,7 @@
 // and extra-minute blocks.
 
 import { FOLLOWUP_ADDON_PRICE, PRICES, PRICING, type Currency } from "./site-content";
+import { ASSISTANT_PLAN, ASSISTANT_TIER } from "./assistant-rules";
 
 const CA_PROVINCES = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"];
 const US_STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
@@ -59,11 +60,13 @@ export const USAGE_NOTICE_SHARE = 0.75;
 
 /**
  * What a plan costs per month in a currency, in cents, when Stripe has no price for it yet.
- * CAD is the plan's own price. USD is only known for the published prices (the Voice Agent and
- * the Follow-Up add-on); any other plan needs its USD price set by hand. Null = not known.
+ * CAD is the plan's own price. USD is only known for the published prices (the Voice Agent, the
+ * Follow-Up add-on and the Assistant Plan); any other plan needs its USD price set by hand. Null = not known.
  */
-export function planPriceCents(plan: { priceCents: number; kind: string }, currency: Currency): number | null {
+export function planPriceCents(plan: { priceCents: number; kind: string; tier?: string }, currency: Currency): number | null {
   if (currency === "CAD") return plan.priceCents > 0 ? plan.priceCents : null;
+  // The Assistant Plan's published USD price (only while its CAD price is the published one).
+  if (plan.tier === ASSISTANT_TIER) return plan.priceCents === ASSISTANT_PLAN.CAD * 100 ? ASSISTANT_PLAN.USD * 100 : null;
   if (plan.kind === "addon") return FOLLOWUP_ADDON_PRICE && plan.priceCents === FOLLOWUP_ADDON_PRICE.CAD * 100 ? FOLLOWUP_ADDON_PRICE.USD * 100 : null;
   return plan.priceCents === PRICES.CAD.monthly * 100 ? PRICES.USD.monthly * 100 : null;
 }

@@ -47,6 +47,12 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
   // The owner calling their own line (owner mode) isn't a customer: no texts, alerts or open questions.
   const { ownerCaller } = await import("./owner-mode");
   const ownerCall = full && full.agentType !== "followup" && call.callerNumber ? await ownerCaller(full, call.callerNumber).catch(() => null) : null;
+  // A PIN keyed in on an owner's call never stays in the transcript (assistant-rules.ts).
+  if (ownerCall && call.transcript) {
+    const { redactOwnerDigits } = await import("./assistant-rules");
+    const masked = redactOwnerDigits(call.transcript);
+    if (masked !== call.transcript) await db.callLog.update({ where: { id: call.id }, data: { transcript: masked } });
+  }
   if (full) {
     const { checkLineVolume } = await import("./call-guard");
     await checkLineVolume(full).catch((e) => console.error("line volume check failed", e));
@@ -57,6 +63,11 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     // No booking but they wanted something: a booking link by text (skipped if a summary just went out).
     await rescueAfterCall(full, call, collected).catch((e) => console.error("rescue text failed", e));
     await recordUnanswered(full, call, collected).catch((e) => console.error("open questions failed", e));
+    // Assistant tier: suppliers, sales reps, staff… go on the owner's evening list to be labelled.
+    if (full.agentType === "inbound" && full.lifecycle === "production" && !full.bookingAddsToCrm) {
+      const { assistantEnabled, noteCaller } = await import("./assistant");
+      if (await assistantEnabled(full).catch(() => false)) await noteCaller(full, call, collected).catch((e) => console.error("caller directory failed", e));
+    }
     await sendLeadAlert(full, call).catch((e) => console.error("lead alert failed", e));
     if (!full.demoExtension) await checkMinuteUsage(full).catch((e) => console.error("minute usage check failed", e));
     if (full.lifecycle === "production" && !full.bookingAddsToCrm) {

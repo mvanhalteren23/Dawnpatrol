@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addClosedDates, confirmationText, datesBetween, expiredNote, isOwnerNumber, isUndo, MAX_CLOSED_DAYS, noteTags, ownerNumbers, planProblems, removeClosedDates, type OwnerPlan } from "@/lib/owner-mode-rules";
 
-const plan = (p: Partial<OwnerPlan>): OwnerPlan => ({ action: "closed", startDate: "2026-11-09", endDate: "2026-11-15", startTime: null, endTime: null, title: "Vacation", content: "We're closed for vacation and back on the 16th.", confirm: "Closed Nov 9-15.", question: null, ...p });
+const plan = (p: Partial<OwnerPlan>): OwnerPlan => ({ action: "closed", startDate: "2026-11-09", endDate: "2026-11-15", startTime: null, endTime: null, title: "Vacation", content: "We're closed for vacation and back on the 16th.", confirm: "Closed Nov 9-15.", question: null, infoCategory: null, routingWho: null, routingCategory: null, routingAction: null, routingTo: null, ...p });
 
 describe("owner mode", () => {
   it("recognises owner numbers from the agent and portal logins, in any format", () => {
@@ -33,6 +33,10 @@ describe("owner mode", () => {
     expect(planProblems(plan({ action: "block", startTime: "16:00", endTime: "14:00" }), "2026-11-06")).toContain("a start and end time");
     expect(planProblems(plan({ action: "block", startTime: "14:00", endTime: "16:00" }), "2026-11-06")).toEqual([]);
     expect(planProblems(plan({ action: "info", content: " " }), "2026-11-06")).toContain("what to tell callers");
+    expect(planProblems(plan({ action: "routing", startDate: null, routingCategory: "SUPPLIER", routingAction: "transfer" }), "2026-11-06")).toEqual([]);
+    expect(planProblems(plan({ action: "routing", startDate: null, routingWho: "Acme Lumber", routingAction: "message" }), "2026-11-06")).toEqual([]);
+    expect(planProblems(plan({ action: "routing", startDate: null }), "2026-11-06")).toContain("which callers it's about");
+    expect(planProblems(plan({ action: "routing", startDate: null, routingCategory: "SUPPLIER", routingAction: "transfer", routingTo: "555" }), "2026-11-06")).toContain("the full 10-digit number to put them through to");
   });
 
   it("dated notes expire after their last day", () => {

@@ -15,10 +15,11 @@ const Toggle = ({ name, on, label, help }: { name: string; on: boolean; label: s
   </label>
 );
 
-export function CustomerTextSettings({ r, returnTo, bookingLink }: { r: R; returnTo: string; bookingLink: string | null }) {
+/** `checkins` false (lines without the Assistant tier): the check-in settings are kept, just not shown. */
+export function CustomerTextSettings({ r, returnTo, bookingLink, checkins = true }: { r: R; returnTo: string; bookingLink: string | null; checkins?: boolean }) {
   return (
     <form action={saveCustomerTextSettings.bind(null, r.id, returnTo)} className="card space-y-3 text-sm">
-      <h2>Texts, reminders and check-ins</h2>
+      <h2>{checkins ? "Texts, reminders and check-ins" : "Texts and reminders"}</h2>
       {!r.businessNumber ? <p className="text-xs text-slate-500">Texts go out from our shared number until you have your own business line.</p> : null}
       <Toggle name="rescueTextsOn" on={r.rescueTextsOn} label="Text a booking link after missed opportunities" help="When a caller hangs up or leaves a message without booking, they get a text within a minute with a link to pick a time." />
       <Toggle name="smsAgentOn" on={r.smsAgentOn} label={`${r.name} answers customers' texts`} help="Customers who text your line get answers from your knowledge base and the booking link. Anything that needs you is sent to your phone." />
@@ -30,13 +31,20 @@ export function CustomerTextSettings({ r, returnTo, bookingLink }: { r: R; retur
         <input name="reviewLink" defaultValue={r.reviewLink} placeholder="https://g.page/r/... (Google Business Profile → Ask for reviews)" className="input" />
         <label className="flex items-center gap-2 text-xs text-slate-600">Send it <input name="reviewDelayHours" type="number" min={1} max={48} defaultValue={r.reviewDelayHours} className="input w-16 py-1" /> hours after the appointment ends</label>
       </div>
-      <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+      {checkins ? <div className="space-y-2 rounded-lg border border-slate-200 p-3">
         <Toggle name="checkinsOn" on={r.checkinsOn} label="Weekly check-in call about callers' questions" help="When callers ask things it can't answer, or a holiday is coming up, we call you (at most once a week, weekdays 10–4) so it learns the answers." />
         <label className="flex items-center gap-2 text-xs text-slate-600">Call once
           <select name="checkinThreshold" defaultValue={String(r.checkinThreshold)} className="input w-16 py-1">{[3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select>
           questions are waiting (holidays are asked about anyway)</label>
         <input name="checkinPhone" defaultValue={r.checkinPhone ?? ""} placeholder={r.ringFirstNumber ? `Number to call (blank = ${r.ringFirstNumber})` : "Number to call for check-ins"} className="input" />
-      </div>
+      </div> : (
+        <>
+          {/* Kept as they are, so they're ready if the line moves to the Assistant tier. */}
+          {r.checkinsOn ? <input type="hidden" name="checkinsOn" value="on" /> : null}
+          <input type="hidden" name="checkinThreshold" value={String(r.checkinThreshold)} />
+          <input type="hidden" name="checkinPhone" value={r.checkinPhone ?? ""} />
+        </>
+      )}
       {bookingLink ? <p className="text-xs text-slate-600">Your booking link: <a href={bookingLink} target="_blank" rel="noreferrer" className="break-all">{bookingLink}</a> (add it to your website or Google profile too)</p> : r.bookingEnabled ? null : <p className="text-xs text-slate-500">Booking links need online booking turned on.</p>}
       <button className="btn-secondary">Save</button>
     </form>

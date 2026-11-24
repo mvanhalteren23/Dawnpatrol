@@ -182,7 +182,8 @@ export async function planOwnerRequest(o: { businessName: string; today: string;
     OwnerPlanSchema,
     `You help the owner of ${o.businessName} update their AI receptionist by phone or text. Today is ${o.weekday} ${o.today} (${o.timezone}). Their regular hours: ${o.currentHours || "not set"}.
 Work out what they want. Resolve every relative date ("tomorrow", "next week" = next Monday to Sunday, "the long weekend") to exact dates. "Block my calendar" or "don't book anything" means block. If they only want to know about calls or messages, use messages. Times are 24-hour HH:MM in their timezone.
-Write content as what the receptionist should tell callers, in plain words. If the request is missing something essential (like which day), use unclear and ask one short question.`,
+Write content as what the receptionist should tell callers, in plain words. If the request is missing something essential (like which day), use unclear and ask one short question.
+For info, set infoCategory (a new price or fee is PRICING; a service they now do or stop doing is SERVICE). "Put suppliers through to me", "sales reps just take a message", "Acme Lumber can come straight to my cell" and "send sub-trades to Mike at 604 555 0199" are routing; fill routingWho, routingCategory, routingAction and routingTo from what they said, leaving the rest null.`,
     o.request,
   );
   return ex.data;

@@ -283,6 +283,7 @@ model Plan {
   stripePriceId   String? // CAD price
   stripePriceIdUsd String? // USD price, for US clients
   kind            String   @default("plan") // plan | addon (added to a plan at checkout, e.g. the Follow-Up Agent)
+  tier            String   @default("standard") // standard | assistant (the Assistant tier's features: src/lib/assistant-rules.ts)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
 
@@ -421,6 +422,14 @@ model Receptionist {
   checkinsOn            Boolean        @default(true) // call the owner about questions callers asked
   checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
   checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
+  // Assistant tier (src/lib/assistant-rules.ts): who gets it, how known callers are routed, the owner's PIN.
+  assistantOverride     String         @default("") // "" = follow the account's plan | on | off (set by the team)
+  routingRules          String         @default("{}") // JSON {CATEGORY: {action, to}}: transfer | message | normal | end
+  labelDigestOn         Boolean        @default(true) // evening text asking the owner who unlabelled callers were
+  ownerPinHash          String? // bcrypt hash of the owner's keypad PIN for bigger changes
+  ownerPinFails         Int            @default(0)
+  ownerPinLockedUntil   DateTime?
+  knownCallers          KnownCaller[]
   ownerUpdates          OwnerUpdate[]
   reviewLinks           KbReviewLink[]
   trustedNumbers        TrustedNumber[]
@@ -942,6 +951,36 @@ model TrustedNumber {
   createdAt      DateTime     @default(now())
 
   @@unique([receptionistId, phone])
+}
+
+// The Assistant tier's caller directory: who a number is to the business (supplier, sales rep,
+// sub-trade, staff, family, customer, spam), labelled by the owner from the evening digest, a
+// check-in call, the portal or the CRM. Calls from labelled numbers are routed by the line's rules.
+model KnownCaller {
+  id             String       @id @default(cuid())
+  receptionistId String
+  receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
+  phone          String // E.164
+  name           String       @default("")
+  company        String       @default("")
+  category       String? // SUPPLIER | VENDOR | SUBTRADE | STAFF | PERSONAL | CUSTOMER | SPAM; null while PENDING
+  suggested      String       @default("") // the call's own guess, shown to the owner
+  note           String       @default("") // what their last call was about
+  status         String       @default("PENDING") // PENDING | LABELLED | DISMISSED
+  routeAction    String       @default("") // "" = their category's rule | transfer | message | normal | end
+  routeTo        String? // E.164, for routeAction transfer
+  source         String       @default("call") // call | digest | checkin | owner_call | owner_text | portal | crm
+  digestNumber   Int? // its number in the latest evening text
+  askedAt        DateTime? // when it went out in an evening text
+  lastCallId     String?
+  lastCallAt     DateTime?
+  labelledBy     String?
+  labelledAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([receptionistId, phone])
+  @@index([receptionistId, status])
 }
 
 // Time blocked on a receptionist's own (CRM) booking calendar, e.g. the owner texting "block

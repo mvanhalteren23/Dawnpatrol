@@ -5,6 +5,7 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage, recordActivity } from "./outreach";
 import { getSetting, setSetting } from "./settings";
+import { assistantEntitled } from "./assistant-rules";
 import { annualCents, blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planIntervalPriceKey, planPriceCents, salesTaxFor, usageWindowAt, usageWindows, type BillingInterval, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
@@ -49,7 +50,7 @@ async function ensureCustomer(accountId: string): Promise<string> {
   return customer.id;
 }
 
-type PricedPlan = { id: string; name: string; priceCents: number; kind: string; stripePriceId: string | null; stripePriceIdUsd: string | null };
+type PricedPlan = { id: string; name: string; priceCents: number; kind: string; tier?: string; stripePriceId: string | null; stripePriceIdUsd: string | null };
 
 /**
  * The plan's Stripe price in this currency. If none is saved (or the saved one belongs to
@@ -129,7 +130,8 @@ export async function createCheckout(accountId: string, planId: string, returnPa
   const priceId = await ensurePrice(plan, currency, interval);
   const taxRate = await taxRateId(salesTaxFor(account.state));
   // Add-ons (e.g. the Follow-Up Agent) ride on the same subscription, in the same currency.
-  const addOns = addOnIds.length ? await db.plan.findMany({ where: { id: { in: addOnIds }, kind: "addon", isActive: true } }) : [];
+  // The Assistant Plan already includes the Follow-Up Agent: no add-ons on top of it.
+  const addOns = addOnIds.length && plan.tier !== "assistant" ? await db.plan.findMany({ where: { id: { in: addOnIds }, kind: "addon", isActive: true } }) : [];
   const addOnPrices: string[] = [];
   // Stripe needs every item on a subscription on the same schedule: yearly plans get yearly add-ons.
   for (const a of addOns) addOnPrices.push(await ensurePrice(a, currency, interval));
@@ -364,6 +366,7 @@ async function syncSubscription(sub: Stripe.Subscription) {
   };
   const mrrCents = Math.round(sub.items.data.reduce((sum, it) => sum + monthlyOf(it), 0));
   const status = STATUS_MAP[sub.status] ?? "INCOMPLETE";
+  const before = await tierState(accountId);
   // The plan is the item whose price belongs to a plan (not an add-on), in either currency.
   const priceIds = sub.items.data.map((it) => it.price?.id).filter(Boolean) as string[];
   const metaPlanIds = sub.items.data.map((it) => it.price?.metadata?.planId).filter(Boolean) as string[];
@@ -394,6 +397,8 @@ async function syncSubscription(sub: Stripe.Subscription) {
       canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
     },
   });
+  // Assistant tier on or off with the plan/status: re-sync the account's agents if it changed.
+  await refreshIfTierChanged(accountId, before);
 
   const account = await db.account.findUnique({ where: { id: accountId } });
   if (!account) return;
@@ -480,13 +485,33 @@ export async function handleStripeEvent(event: Stripe.Event) {
   }
 }
 
+/** Whether the account's subscription gives the Assistant tier (assistant-rules.ts), for spotting changes. */
+async function tierState(accountId: string): Promise<boolean> {
+  const sub = await db.subscription.findUnique({ where: { accountId }, select: { status: true, plan: { select: { tier: true } } } });
+  return assistantEntitled({ lifecycle: "production", bookingAddsToCrm: false, assistantOverride: "", planTier: sub?.plan?.tier ?? null, subscriptionStatus: sub?.status ?? null });
+}
+
+/** Re-sync the account's agents in the background when the Assistant tier turned on or off. */
+async function refreshIfTierChanged(accountId: string, before: boolean): Promise<void> {
+  if ((await tierState(accountId)) === before) return;
+  const run = async () => (await import("./assistant")).refreshAssistantAgents(accountId).catch((e) => console.error("assistant tier re-sync", e));
+  try {
+    const { after } = await import("next/server");
+    after(run);
+  } catch {
+    await run(); // outside a request (scripts)
+  }
+}
+
 /** Manual (non-Stripe) billing for clients who pay by ACH/cheque — still counts toward MRR. */
 export async function setManualSubscription(accountId: string, planId: string | null, mrrCents: number, status: string) {
+  const before = await tierState(accountId);
   await db.subscription.upsert({
     where: { accountId },
     create: { accountId, planId, mrrCents, status, billingMethod: "manual", startedAt: new Date() },
     update: { planId, mrrCents, status, billingMethod: "manual" },
   });
+  await refreshIfTierChanged(accountId, before);
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId } });
   if (status === "ACTIVE" && !["ACTIVE", "ONBOARDING"].includes(account.stage)) await changeStage(accountId, "ONBOARDING");
   if (status === "CANCELED" && account.stage !== "CHURNED") await changeStage(accountId, "CHURNED");

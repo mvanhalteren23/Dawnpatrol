@@ -8,6 +8,7 @@ import { recordActivity } from "./outreach";
 import { sendSms, toE164, twilioApi } from "./twilio";
 import { formatSlot, isoDate, localDate, zonedTime } from "./booking";
 import { deleteEvent } from "./calendar";
+import { CATEGORY_LABELS, CONFIRM_MINUTES, isCategory, isYes, matchKnownCaller, needsPin, parseRoutingRules, prettyPhone, ROUTE_LABELS } from "./assistant-rules";
 import {
   addClosedDates, confirmationText, datesBetween, expiredNote, isOwnerNumber, isUndo, minutesOf, noteTags, OWNER_TAG, ownerNumbers, planProblems, removeClosedDates, type OwnerPlan,
 } from "./owner-mode-rules";
@@ -54,7 +55,17 @@ async function plan(r: R, request: string): Promise<OwnerPlan> {
   return planOwnerRequest({ businessName: r.businessName, today: t.date, weekday: t.weekday, timezone: r.timezone, currentHours: r.businessHours || r.bookingHours, request });
 }
 
-type Undo = { closedDates?: string[]; itemId?: string; businessHours?: string; event?: { id: string; calendarId: string; as: string | null }; blockId?: string };
+type Undo = {
+  closedDates?: string[];
+  itemId?: string;
+  businessHours?: string;
+  event?: { id: string; calendarId: string; as: string | null };
+  blockId?: string;
+  routingRules?: string; // the line's routing rules before the change
+  knownCaller?: { id: string; created?: boolean; category?: string | null; status?: string; routeAction?: string; routeTo?: string | null };
+};
+
+const KB_INFO: Record<string, string> = { FAQ: "FAQ", PRICING: "PRICING", SERVICE: "SERVICE", POLICY: "POLICY", STAFF: "STAFF", OTHER: "OTHER" };
 
 const pretty = (date: string, tz: string) => formatSlot(zonedTime(+date.slice(0, 4), +date.slice(5, 7), +date.slice(8, 10), 12 * 60, tz), tz).replace(/ at .*$/, "");
 
@@ -100,8 +111,11 @@ async function applyPlan(r: R, p: OwnerPlan, ctx: { channel: "call" | "text"; by
     if (done.eventId) undo.event = { id: done.eventId, calendarId: done.calendarId!, as: done.as ?? null };
     summary = `Calendar blocked ${allDay ? range : `${range}, ${p.startTime} to ${p.endTime}`}: nothing will be booked then`;
   } else if (p.action === "info") {
-    await addNote("FAQ", p.title, p.content, noteTags(p));
+    // Prices, services and policies go under their own heading; the note says it beats anything older.
+    await addNote(KB_INFO[p.infoCategory ?? ""] ?? "FAQ", p.title, p.content, noteTags(p));
     summary = `Callers will now be told: "${p.content}"`;
+  } else if (p.action === "routing") {
+    summary = await applyRouting(r, p, ctx, undo);
   } else {
     throw new Error("Nothing to change");
   }
@@ -110,6 +124,45 @@ async function applyPlan(r: R, p: OwnerPlan, ctx: { channel: "call" | "text"; by
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: `Owner update by ${ctx.channel}`, body: `${summary}.\nRequest: "${ctx.request.slice(0, 500)}" (from ${ctx.byPhone})` });
   if (undo.itemId || undo.businessHours !== undefined) resyncLater(r.id);
   return summary;
+}
+
+/**
+ * Who gets put through (Assistant tier): one caller from the line's directory, or a whole kind of
+ * caller. Looked up live at the start of each call, so no agent sync is needed.
+ */
+async function applyRouting(r: R, p: OwnerPlan, ctx: { channel: "call" | "text"; byPhone: string }, undo: Undo): Promise<string> {
+  const to = p.routingTo ? toE164(p.routingTo) : null;
+  const action = p.routingAction;
+  const how = action ? `${ROUTE_LABELS[action].toLowerCase()}${action === "transfer" ? ` (to ${to ? prettyPhone(to) : "you"})` : ""}` : "";
+  const by = `owner ${ctx.channel} ${prettyPhone(toE164(ctx.byPhone))}`;
+  if (p.routingWho) {
+    const list = await db.knownCaller.findMany({ where: { receptionistId: r.id } });
+    const hit = matchKnownCaller(p.routingWho, list);
+    if (!hit) {
+      const digits = p.routingWho.replace(/\D/g, "");
+      if (digits.length < 10 || !p.routingCategory) throw new Error(`I couldn't tell which caller "${p.routingWho.slice(0, 60)}" is. Try again with their phone number and what they are (supplier, sales rep, sub-trade, staff or family), or set it in your portal.`);
+      const created = await db.knownCaller.create({
+        data: { receptionistId: r.id, phone: toE164(digits), category: p.routingCategory, status: "LABELLED", routeAction: action ?? "", routeTo: action === "transfer" ? to : null, source: `owner_${ctx.channel}`, labelledBy: by, labelledAt: new Date() },
+      });
+      undo.knownCaller = { id: created.id, created: true };
+      return `${prettyPhone(created.phone)} saved as ${CATEGORY_LABELS[p.routingCategory].toLowerCase()}${how ? `: ${how}` : ""}`;
+    }
+    undo.knownCaller = { id: hit.id, category: hit.category, status: hit.status, routeAction: hit.routeAction, routeTo: hit.routeTo };
+    const category = p.routingCategory ?? (isCategory(hit.category) ? hit.category : null);
+    if (!category) throw new Error(`What is ${hit.name || hit.company || prettyPhone(hit.phone)} to the business: a supplier, sales rep, sub-trade, staff or family?`);
+    await db.knownCaller.update({
+      where: { id: hit.id },
+      data: { category, status: "LABELLED", ...(action ? { routeAction: action, routeTo: action === "transfer" ? to : null } : {}), labelledBy: by, labelledAt: new Date() },
+    });
+    const who = [hit.name, hit.company].filter(Boolean).join(", ") || prettyPhone(hit.phone);
+    return `Calls from ${who} (${CATEGORY_LABELS[category].toLowerCase()})${how ? `: ${how}` : ""}`;
+  }
+  const category = p.routingCategory!;
+  const rules = parseRoutingRules(r.routingRules);
+  undo.routingRules = r.routingRules;
+  rules[category] = { action: action ?? rules[category].action, to: (action ?? rules[category].action) === "transfer" ? to : null };
+  await db.receptionist.update({ where: { id: r.id }, data: { routingRules: JSON.stringify(rules) } });
+  return `${CATEGORY_LABELS[category]} calls: ${ROUTE_LABELS[rules[category].action].toLowerCase()}${rules[category].action === "transfer" ? ` (to ${to ? prettyPhone(to) : "you"})` : ""}`;
 }
 
 /** Push knowledge/prompt changes to ElevenLabs after the response (a sync takes a while). */
@@ -144,6 +197,12 @@ export async function undoLatest(r: R): Promise<string> {
   }
   if (u.event) await deleteEvent(u.event.calendarId, u.event.id, u.event.as).catch((e) => console.warn("undo calendar block", e));
   if (u.blockId) await db.calendarBlock.deleteMany({ where: { id: u.blockId } });
+  if (u.routingRules !== undefined) await db.receptionist.update({ where: { id: r.id }, data: { routingRules: u.routingRules } });
+  if (u.knownCaller?.created) await db.knownCaller.deleteMany({ where: { id: u.knownCaller.id, receptionistId: r.id } });
+  else if (u.knownCaller) {
+    const k = u.knownCaller;
+    await db.knownCaller.updateMany({ where: { id: k.id, receptionistId: r.id }, data: { category: k.category ?? null, status: k.status ?? "PENDING", routeAction: k.routeAction ?? "", routeTo: k.routeTo ?? null } });
+  }
   await db.ownerUpdate.update({ where: { id: last.id }, data: { undoneAt: new Date() } });
   await recordActivity({ accountId: r.accountId, type: "NOTE", source: "system", subject: "Owner update undone", body: `Undone: ${last.summary}` });
   if (u.itemId || u.businessHours !== undefined) resyncLater(r.id);
@@ -162,11 +221,34 @@ export async function ownerMessages(r: R): Promise<string> {
   return `${todayCount} call${todayCount === 1 ? "" : "s"} today. ${open.length ? `Waiting for a call back:\n${lines.join("\n")}` : "Nobody is waiting for a call back."}`;
 }
 
+type Pending = { request: string; plan: OwnerPlan; needs: "pin" | "yes"; channel: "call" | "text"; at: number };
+const pendingKey = (r: R, phone: string) => `owner.confirm.${r.id}.${toE164(phone)}`;
+
+/** A bigger change waiting for the owner's YES or PIN by text (at most CONFIRM_MINUTES old). */
+async function takePending(r: R, phone: string): Promise<Pending | null> {
+  const raw = await getSetting(pendingKey(r, phone));
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Pending;
+    return Date.now() - p.at < CONFIRM_MINUTES * 60_000 ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+async function confirmByText(r: R, phone: string, pending: Omit<Pending, "at">): Promise<void> {
+  await setSetting(pendingKey(r, phone), JSON.stringify({ ...pending, at: Date.now() }));
+}
+
 /**
  * The owner_request tool during a call: first a plan to read back (confirmed = false), then the
- * change once they say yes (confirmed = true, applying exactly the plan they heard).
+ * change once they say yes (confirmed = true, applying exactly the plan they heard). Bigger
+ * changes (assistant-rules.ts needsPin) also need the owner's PIN keyed in on this call
+ * (owner_pin), or, with no PIN set, a YES to a confirmation text.
  */
 export async function ownerRequestOnCall(r: R, callSid: string, request: string, confirmed: boolean): Promise<string> {
+  const { assistantEnabled, pinVerifiedOnCall } = await import("./assistant");
+  if (!(await assistantEnabled(r))) return "Changes by phone aren't part of this plan. Say the owner can request changes in their portal.";
   const from = await liveCaller(callSid, r.businessNumber);
   if (!from || !(await ownerCaller(r, from))) return "This isn't the owner's phone, so no changes can be made on this call. Say the owner can call from their own phone, text this number from it, or use their portal.";
   const key = `owner.pending.${callSid}`;
@@ -177,11 +259,23 @@ export async function ownerRequestOnCall(r: R, callSid: string, request: string,
     const problems = planProblems(p, today(r.timezone).date);
     if (problems.length) return `Ask the owner for ${problems.join(" and ")}.`;
     await setSetting(key, JSON.stringify({ request, plan: p }));
+    if (needsPin(p) && !(await pinVerifiedOnCall(callSid))) {
+      return r.ownerPinHash
+        ? `Read this back and ask them to confirm: "${p.confirm}" It's a bigger change, so it needs their owner PIN: if they say yes, ask them to key it in on the phone keypad (not say it out loud), then call owner_pin with the digits. Once owner_pin says it's verified, call owner_request again with confirmed true.`
+        : `Read this back and ask them to confirm: "${p.confirm}" It's a bigger change and they haven't set an owner PIN, so it's confirmed by text: if they say yes, call owner_request again with confirmed true, and tell them to reply YES to the text they're about to get.`;
+    }
     return `Read this back and ask them to confirm: "${p.confirm}" If they say yes, call owner_request again with confirmed true. If they change anything, call it again with confirmed false and the corrected request.`;
   }
   const pending = await getSetting(key);
   if (!pending) return "Nothing is waiting to be confirmed. Call owner_request with confirmed false first.";
   const { request: original, plan: p } = JSON.parse(pending) as { request: string; plan: OwnerPlan };
+  if (needsPin(p) && !(await pinVerifiedOnCall(callSid))) {
+    if (r.ownerPinHash) return "Their PIN hasn't been verified on this call yet. Ask them to key in their owner PIN on the keypad, then call owner_pin with the digits.";
+    await setSetting(key, "");
+    await confirmByText(r, from, { request: original, plan: p, needs: "yes", channel: "call" });
+    await sendSms(from, `${r.businessName}: reply YES within ${CONFIRM_MINUTES} minutes to confirm this change: ${p.confirm} (Set an owner PIN in your portal to confirm bigger changes on the call.)`, r.businessNumber).catch((e) => console.warn("owner confirm text", e));
+    return "Tell the owner you've texted them, and the change is made as soon as they reply YES to that text. Ask if there's anything else.";
+  }
   await setSetting(key, "");
   try {
     const summary = await applyPlan(r, p, { channel: "call", byPhone: from, request: original });
@@ -192,14 +286,70 @@ export async function ownerRequestOnCall(r: R, callSid: string, request: string,
   }
 }
 
-/** A text from an owner number: UNDO, messages, or a change (applied, then confirmed with UNDO). */
+/** owner_pin during an owner's call: the digits they keyed in, checked against their PIN. */
+export async function ownerPinOnCall(r: R, callSid: string, digits: string): Promise<string> {
+  const from = await liveCaller(callSid, r.businessNumber);
+  if (!from || !(await ownerCaller(r, from))) return "This isn't the owner's phone. Don't make any changes.";
+  const { checkOwnerPin, markPinVerified } = await import("./assistant");
+  const res = await checkOwnerPin(r.id, digits);
+  if (res === "ok") {
+    await markPinVerified(callSid);
+    return "PIN verified. If they've already said yes to the change, call owner_request with confirmed true now. Never repeat the digits.";
+  }
+  if (res === "none") return "No owner PIN is set. Call owner_request with confirmed true; the change will be confirmed by text instead.";
+  if (res === "locked") return "Too many wrong PINs: bigger changes are paused for 15 minutes. Tell the owner, and that they can reset their PIN in their portal. Don't try again on this call.";
+  return "That PIN wasn't right. Ask them to key it in once more (never repeat the digits). After 3 wrong tries it locks for 15 minutes.";
+}
+
+/**
+ * A text from an owner number: UNDO, a YES or PIN for a change waiting on one, a reply to the
+ * evening caller digest, messages, or a change (applied, then confirmed with UNDO). Bigger changes
+ * need the PIN (or a YES when no PIN is set) in a second text.
+ */
 export async function handleOwnerText(r: R, from: string, body: string): Promise<string> {
   if (isUndo(body)) return undoLatest(r);
+  const waiting = await takePending(r, from);
+  if (waiting) {
+    const pin = /^\s*\d{4,8}\s*$/.test(body);
+    if (/^\s*(no|cancel|stop that|never ?mind)\s*[.!]?\s*$/i.test(body)) {
+      await setSetting(pendingKey(r, from), "");
+      return "Cancelled: nothing was changed.";
+    }
+    if ((waiting.needs === "yes" && isYes(body)) || (waiting.needs === "pin" && pin)) {
+      if (waiting.needs === "pin") {
+        const { checkOwnerPin } = await import("./assistant");
+        const res = await checkOwnerPin(r.id, body);
+        if (res === "wrong") return "That PIN isn't right. Reply with your owner PIN to confirm, or NO to cancel.";
+        if (res === "locked") {
+          await setSetting(pendingKey(r, from), "");
+          return "Too many wrong PINs: bigger changes are paused for 15 minutes. Nothing was changed. You can reset your PIN in your portal.";
+        }
+      }
+      await setSetting(pendingKey(r, from), "");
+      try {
+        const summary = await applyPlan(r, waiting.plan, { channel: waiting.channel, byPhone: from, request: waiting.request });
+        return confirmationText({ businessName: r.businessName, summary, channel: "text" });
+      } catch (err) {
+        return `That couldn't be done: ${(err as Error).message}`;
+      }
+    }
+    // Anything else is a new request: the waiting one is dropped below if this one needs confirming too.
+  }
+  const { handleDigestReply } = await import("./assistant");
+  const digest = await handleDigestReply(r, from, body);
+  if (digest) return digest;
   const p = await plan(r, body);
   if (p.action === "messages") return ownerMessages(r);
-  if (p.action === "unclear") return `${p.question ?? "What would you like to change?"} (You can text things like "closed next Monday", "block 2-4pm Thursday", "tell callers we now do heat pumps", or "messages".)`;
+  if (p.action === "unclear") return `${p.question ?? "What would you like to change?"} (You can text things like "closed next Monday", "block 2-4pm Thursday", "tell callers we now do heat pumps", "put suppliers through to me", or "messages".)`;
   const problems = planProblems(p, today(r.timezone).date);
   if (problems.length) return `I need ${problems.join(" and ")} to do that. Could you send it again with that included?`;
+  if (needsPin(p)) {
+    const needs = r.ownerPinHash ? "pin" : "yes";
+    await confirmByText(r, from, { request: body, plan: p, needs, channel: "text" });
+    return needs === "pin"
+      ? `That's a bigger change, so it needs your owner PIN. Reply with your PIN within ${CONFIRM_MINUTES} minutes to confirm: ${p.confirm}`
+      : `Reply YES within ${CONFIRM_MINUTES} minutes to confirm: ${p.confirm}`;
+  }
   try {
     const summary = await applyPlan(r, p, { channel: "text", byPhone: from, request: body });
     return confirmationText({ businessName: r.businessName, summary, channel: "text" });

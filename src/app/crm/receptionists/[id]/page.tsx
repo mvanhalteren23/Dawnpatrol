@@ -18,6 +18,8 @@ import { kbHistory } from "@/lib/kb-history";
 import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
+import { AssistantCard } from "@/components/AssistantCard";
+import { assistantEnabled } from "@/lib/assistant";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
 import { calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
 import { googleConnection } from "@/lib/google";
@@ -58,6 +60,10 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   ]);
   const reviewEmail = reviewContact?.email ?? null;
   const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
+  // Assistant tier: the line's caller directory and settings (src/components/AssistantCard.tsx).
+  const clientInbound = r.agentType === "inbound" && !r.bookingAddsToCrm;
+  const assistantOn = clientInbound ? await assistantEnabled(r) : false;
+  const knownCallers = clientInbound ? await db.knownCaller.findMany({ where: { receptionistId: r.id, status: { not: "DISMISSED" } }, orderBy: [{ lastCallAt: "desc" }, { createdAt: "desc" }], take: 200 }) : [];
   const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
   const callerReplyTo = await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null);
   const clientLine = r.agentType === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
@@ -259,6 +265,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             </div>
           </form>
           <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
+          {clientInbound ? <AssistantCard r={r} entitled={assistantOn} callers={knownCallers} returnTo={returnTo} staff /> : null}
 
           <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 

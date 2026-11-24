@@ -73,18 +73,20 @@ export async function screenCall(o: { line: string; from: string; callSid: strin
 }
 
 /**
- * Never limited: numbers on the line's trusted list (suppliers, staff, regulars), and anyone who
- * booked with this line in the last 90 days.
+ * Never limited: numbers on the line's trusted list (suppliers, staff, regulars), anyone who
+ * booked with this line in the last 90 days, and callers labelled in the line's directory (not spam).
  */
 export async function isTrusted(receptionistId: string, from: string): Promise<boolean> {
   const phone = toE164(from);
   const since = new Date(Date.now() - TRUST_BOOKERS_DAYS * 86400_000);
-  const [listed, booked, bookedCall] = await Promise.all([
+  const [listed, booked, bookedCall, known] = await Promise.all([
     db.trustedNumber.findUnique({ where: { receptionistId_phone: { receptionistId, phone } } }),
     db.booking.findFirst({ where: { receptionistId, customerPhone: phone, start: { gte: since } }, select: { id: true } }),
     db.callLog.findFirst({ where: { receptionistId, callerNumber: phone, outcome: "BOOKED", startedAt: { gte: since } }, select: { id: true } }),
+    // Assistant tier: anyone the owner labelled (supplier, staff, family…), except spam.
+    db.knownCaller.findFirst({ where: { receptionistId, phone, status: "LABELLED", category: { not: "SPAM" } }, select: { id: true } }),
   ]);
-  return Boolean(listed || booked || bookedCall);
+  return Boolean(listed || booked || bookedCall || known);
 }
 
 export async function trustNumber(receptionistId: string, phone: string, label: string, by: string | null): Promise<string> {
