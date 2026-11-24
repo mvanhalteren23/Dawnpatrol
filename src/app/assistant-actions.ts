@@ -1,5 +1,6 @@
 "use server";
-// Assistant tier settings: shared by the CRM and the client portal. Clients manage their own
+// Receptionist call routing (urgent calls, suppliers) and Assistant tier settings: shared by the
+// CRM and the client portal. Clients manage their own
 // line's PIN, routing and caller directory; only the team can switch the tier on or off for a line.
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
@@ -123,7 +124,7 @@ export async function saveKnownCaller(receptionistId: string, returnTo: string, 
     savedId = saved.id;
   }
   // If the next check-in call was going to ask who they are, it no longer needs to.
-  await db.openQuestion.updateMany({ where: { receptionistId, key: `label:${savedId}`, status: "OPEN" }, data: { status: "ANSWERED", answeredBy: session.email, answeredAt: new Date() } });
+  await db.openQuestion.updateMany({ where: { receptionistId, key: { in: [`label:${savedId}`, `supplier:${savedId}`] }, status: "OPEN" }, data: { status: "ANSWERED", answeredBy: session.email, answeredAt: new Date() } });
   done(returnTo, "Saved");
 }
 
@@ -142,7 +143,7 @@ export async function labelPendingCaller(receptionistId: string, id: string, ret
 export async function removeKnownCaller(receptionistId: string, id: string, returnTo: string) {
   await guard(receptionistId);
   await db.knownCaller.deleteMany({ where: { id, receptionistId } });
-  await db.openQuestion.updateMany({ where: { receptionistId, key: `label:${id}`, status: "OPEN" }, data: { status: "DISMISSED" } });
+  await db.openQuestion.updateMany({ where: { receptionistId, key: { in: [`label:${id}`, `supplier:${id}`] }, status: "OPEN" }, data: { status: "DISMISSED" } });
   done(returnTo, "Removed from the list");
 }
 
@@ -187,4 +188,37 @@ export async function removeCoaching(receptionistId: string, index: number, retu
   await db.receptionist.update({ where: { id: receptionistId }, data: { coaching: removeCoachingRule(r.coaching, index) } });
   if (r.elevenLabsAgentId) resyncLater(receptionistId);
   done(returnTo, "Removed");
+}
+
+/** What the owner counts as urgent, and the number urgent calls are put through to (every receptionist). */
+export async function saveUrgentCalls(receptionistId: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const escalationRules = str(form, "escalationRules").replace(/\s+/g, " ").trim().slice(0, 1000);
+  const phone = await phoneOrNull(str(form, "escalationPhone"));
+  if (phone === false) done(returnTo, "Enter a 10-digit Canadian or US number for urgent calls, or leave it blank", "error");
+  const { looksLikeInstructions } = await import("@/lib/safety-rules");
+  if (looksLikeInstructions(escalationRules)) done(returnTo, "Describe which calls are urgent (e.g. \"a customer stranded or unsafe to drive\"), not instructions for the receptionist", "error");
+  const r = await db.receptionist.update({ where: { id: receptionistId }, data: { escalationRules, escalationPhone: phone || null } });
+  if (r.elevenLabsAgentId) resyncLater(r.id);
+  done(returnTo, phone ? "Saved. Urgent calls will be put through within a minute." : "Saved. With no number, urgent calls become urgent messages.");
+}
+
+/** A supplier and delivery list: an uploaded CSV, or pasted lines (company, contact, phone). */
+export async function importSuppliers(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await guard(receptionistId);
+  const file = form.get("file");
+  const fromFile = file && typeof file === "object" && "text" in file && (file as File).size > 0 ? ((file as File).size > 500_000 ? null : await (file as File).text()) : "";
+  if (fromFile === null) done(returnTo, "That file is too big. Save just the supplier names and numbers as a CSV and try again.", "error");
+  const { parseSupplierList } = await import("@/lib/assistant-rules");
+  const { rows, skipped } = parseSupplierList(`${fromFile}\n${str(form, "list")}`);
+  if (!rows.length) done(returnTo, skipped.length ? `No phone numbers found (first line: "${skipped[0]}"). Put one supplier per line with their 10-digit number.` : "Paste or upload a list first", "error");
+  if (rows.length > 500) done(returnTo, "That's more than 500 suppliers. Split the list and upload it in parts.", "error");
+  const by = session.email;
+  const source = session.role === "CLIENT" ? "portal" : "crm";
+  for (const row of rows) {
+    const data = { name: row.name.slice(0, 60), company: row.company.slice(0, 60), category: "SUPPLIER", status: "LABELLED", labelledBy: by, labelledAt: new Date() };
+    const saved = await db.knownCaller.upsert({ where: { receptionistId_phone: { receptionistId, phone: row.phone } }, create: { receptionistId, phone: row.phone, source, ...data }, update: data });
+    await db.openQuestion.updateMany({ where: { receptionistId, key: { in: [`supplier:${saved.id}`, `label:${saved.id}`] }, status: "OPEN" }, data: { status: "ANSWERED", answeredBy: by, answeredAt: new Date() } });
+  }
+  done(returnTo, `Added ${rows.length} supplier${rows.length === 1 ? "" : "s"}.${skipped.length ? ` Skipped ${skipped.length} line${skipped.length === 1 ? "" : "s"} without a phone number.` : ""}`);
 }

@@ -92,9 +92,9 @@ export function OpenQuestions({ r, questions, returnTo }: { r: Pick<Receptionist
         {questions.map((q) => (
           <li key={q.id} className="rounded-lg border border-slate-200 p-3 text-sm">
             <div className="font-medium">{q.question}</div>
-            <div className="text-xs text-slate-500">{q.kind === "holiday" ? "Upcoming holiday" : `Asked by ${q.askedCount} caller${q.askedCount === 1 ? "" : "s"} · since ${formatDate(q.createdAt)}`}</div>
+            <div className="text-xs text-slate-500">{q.kind === "holiday" ? "Upcoming holiday" : q.kind === "supplier" || q.kind === "label" ? "About a recent caller" : `Asked by ${q.askedCount} caller${q.askedCount === 1 ? "" : "s"} · since ${formatDate(q.createdAt)}`}</div>
             <form action={answerOpenQuestion.bind(null, r.id, q.id, returnTo)} className="mt-2 flex gap-2">
-              <input name="answer" required maxLength={2000} placeholder={q.kind === "holiday" ? "e.g. Closed, or open 9 to 1" : "Your answer"} className="input" />
+              <input name="answer" required maxLength={2000} placeholder={q.kind === "holiday" ? "e.g. Closed, or open 9 to 1" : q.kind === "supplier" ? "Yes or no" : "Your answer"} className="input" />
               <button className="btn-secondary whitespace-nowrap">Save</button>
             </form>
             <form action={dismissOpenQuestion.bind(null, r.id, q.id, returnTo)} className="mt-1"><button className="text-xs text-slate-400 hover:text-slate-600">Not relevant</button></form>

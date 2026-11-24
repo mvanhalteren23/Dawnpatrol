@@ -81,11 +81,8 @@ export async function checkinAgent(): Promise<R | null> {
 export async function processCheckins(now = new Date()): Promise<{ called: number; texted: number; errors: string[] }> {
   const out = { called: 0, texted: 0, errors: [] as string[] };
   const rs = await db.receptionist.findMany({ where: { checkinsOn: true, lifecycle: "production", agentType: "inbound", elevenLabsAgentId: { not: null } }, include: { account: { select: { state: true, phone: true } } } });
-  const { assistantEnabled } = await import("./assistant");
   for (const r of rs) {
     try {
-      // Check-in calls are part of the Assistant tier.
-      if (!(await assistantEnabled(r))) continue;
       await addHolidayQuestions(r, now);
       const phone = ownerPhone(r, r.account.phone);
       if (!phone || !checkinHours(now, r.timezone)) continue;
@@ -101,7 +98,7 @@ export async function processCheckins(now = new Date()): Promise<{ called: numbe
       }
       const open = await db.openQuestion.findMany({ where: { receptionistId: r.id, status: "OPEN" }, orderBy: [{ askedCount: "desc" }, { createdAt: "asc" }] });
       // Callers' questions, and callers still unlabelled after the evening digest (assistant.ts).
-      const callerQs = open.filter((q) => q.kind === "caller" || q.kind === "label");
+      const callerQs = open.filter((q) => q.kind === "caller" || q.kind === "label" || q.kind === "supplier");
       const holidayQs = open.filter((q) => q.kind === "holiday");
       if (!checkinDue({ lastCheckinAt: last?.createdAt ?? null, openCallerQuestions: callerQs.length, threshold: r.checkinThreshold, holidayDue: holidayQs.length > 0 }, now)) continue;
       // The check-in agent is created and synced before the first call, not while the owner waits.
@@ -214,6 +211,17 @@ export async function answerQuestions(receptionistId: string, answers: { questio
     const answer = a.answer.trim().slice(0, 2000);
     if (!answer || looksLikeInstructions(answer)) continue;
     const q = (a.questionId && open.find((o) => o.id === a.questionId)) || open.find((o) => o.key === questionKey(a.question)) || matchQuestion(a.question, open);
+    // "Is this caller one of your suppliers?" (every receptionist): yes adds them to the supplier list.
+    if (q?.kind === "supplier") {
+      const { supplierAnswer } = await import("./assistant-rules");
+      const { labelKnownCaller } = await import("./assistant");
+      const yes = supplierAnswer(answer);
+      const id = q.key.replace(/^supplier:/, "");
+      if (yes) await labelKnownCaller(id, yes === "yes" ? "SUPPLIER" : "DISMISS", by.label, "checkin").catch((e) => console.warn("supplier from check-in", e));
+      await db.openQuestion.update({ where: { id: q.id }, data: { status: yes ? "ANSWERED" : "DISMISSED", answer, answeredBy: by.label, answeredAt: new Date() } });
+      if (yes === "yes") saved++;
+      continue;
+    }
     // "Who is this caller?" (Assistant tier): the answer files them in the directory, not the knowledge base.
     if (q?.kind === "label") {
       const { categoryFromAnswer } = await import("./assistant-rules");

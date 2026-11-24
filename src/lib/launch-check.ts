@@ -172,6 +172,18 @@ export async function launchChecks(): Promise<Check[]> {
             ? { area: "Phones", label: "Main line", state: "warn", detail: `${house.name} has changes that aren't synced to ElevenLabs (${house.syncStatus.toLowerCase()}).`, fix: `Open ${house.name} and press Sync.` }
             : { area: "Phones", label: "Main line", state: "ok", detail: `${house.name} answers the main number and is synced.` },
   );
+  // Every client line needs the owner's definition of an urgent call, and a number to put it through to.
+  const urgentMissing = await db.receptionist.findMany({
+    where: { agentType: "inbound", lifecycle: "production", bookingAddsToCrm: false, OR: [{ escalationRules: "" }, { escalationPhone: null }] },
+    select: { businessName: true },
+  });
+  checks.push({
+    area: "Phones",
+    label: "Urgent calls set up on every client line",
+    state: urgentMissing.length ? "warn" : "ok",
+    detail: urgentMissing.length ? `Missing the owner's urgent definition or transfer number: ${urgentMissing.map((x) => x.businessName).slice(0, 6).join(", ")}${urgentMissing.length > 6 ? "…" : ""}. Their urgent calls become messages.` : "Every live client line has an urgent definition and a transfer number.",
+    fix: urgentMissing.length ? "Ask the owner what counts as urgent, then fill in CRM → Receptionists → the line (or they can, in their portal under Your setup)." : undefined,
+  });
   checks.push({ area: "Phones", label: "Daily Twilio spending alert", state: Number(spend) > 0 ? "ok" : "todo", detail: Number(spend) > 0 ? `Alerts at US$${spend} a day.` : "Not set.", fix: Number(spend) > 0 ? undefined : "CRM → Settings → Call protection: set an amount (e.g. 25) and Save." });
   const withPhone = admins.filter((a) => a.phone);
   checks.push({ area: "Phones", label: "Your mobile on your login", state: withPhone.length ? "ok" : "todo", detail: withPhone.length ? "Set: alerts reach you by text and the line recognises you." : "No administrator has a mobile set.", fix: withPhone.length ? undefined : "CRM → Settings → Users → your login → mobile." });

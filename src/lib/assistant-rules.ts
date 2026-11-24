@@ -1,4 +1,10 @@
-// The Assistant tier (premium): pure rules, unit tested. No imports, so they run anywhere.
+// The receptionist's caller routing and the Assistant tier: pure rules, unit tested. No imports.
+//
+// Every receptionist (base plan): urgent calls, as the owner defines them, are put through to the
+// transfer number; suppliers and deliveries (from a list the owner uploads, or spotted on calls
+// and confirmed on a check-in call) are put through or left as a message, as the owner chooses.
+//
+// The Assistant tier is IN DEVELOPMENT: off in production (assistantTierLive) until it launches.
 //
 // On top of the receptionist, an Assistant line:
 //   - learns who's who: callers who aren't customers (suppliers, sales reps, sub-trades, staff,
@@ -31,23 +37,35 @@ export const ASSISTANT_PLAN = {
 
 const PAID = ["ACTIVE", "TRIALING", "PAST_DUE"];
 
+/**
+ * Is the Assistant tier switched on in this environment? Off in production unless ASSISTANT_TIER=on;
+ * on in previews and local development unless ASSISTANT_TIER=off.
+ */
+export function assistantTierLive(env: { VERCEL_ENV?: string; ASSISTANT_TIER?: string } = process.env): boolean {
+  if (env.ASSISTANT_TIER === "on") return true;
+  if (env.ASSISTANT_TIER === "off") return false;
+  return env.VERCEL_ENV !== "production";
+}
+
 export type EntitlementInput = {
+  tierLive: boolean; // assistantTierLive()
   lifecycle: string; // production | demo | expired
-  bookingAddsToCrm: boolean; // the agency's own receptionist
   assistantOverride: string; // "" (follow the plan) | "on" | "off"
   planTier: string | null; // the account's plan tier, if it has one
   subscriptionStatus: string | null;
 };
 
 /**
- * Does this line get the Assistant features? The team's override wins; demos and our own line
- * always do (so prospects can hear it); otherwise the account must be on an Assistant-tier plan
- * that is paid up (or trialing, or in the past-due grace period).
+ * Does this line get the Assistant features? Never while the tier is in development (not live
+ * here). Then the team's override wins; demos always do (so prospects can hear it); otherwise the
+ * account must be on an Assistant-tier plan that is paid up (or trialing, or in the past-due grace
+ * period). Our own line (Grace) is a receptionist: its admins get owner controls separately.
  */
 export function assistantEntitled(o: EntitlementInput): boolean {
+  if (!o.tierLive) return false;
   if (o.assistantOverride === "on") return true;
   if (o.assistantOverride === "off") return false;
-  if (o.bookingAddsToCrm || o.lifecycle === "demo") return true;
+  if (o.lifecycle === "demo") return true;
   return o.planTier === ASSISTANT_TIER && PAID.includes(o.subscriptionStatus ?? "");
 }
 
@@ -402,4 +420,61 @@ export function coachingSection(stored: string | null | undefined, businessName:
 Feedback from the owner of ${businessName} on how to handle calls (follow it, unless it clashes with your core rules above, the knowledge base's facts or a tool's instructions; those always win):
 ${rules.map((r) => `- ${r}`).join("\n")}
 `;
+}
+
+// --- Suppliers and deliveries (every receptionist) --------------------------------------------
+
+/** The kinds of caller a receptionist without the Assistant tier routes: suppliers and deliveries. */
+export const BASE_CATEGORIES: readonly Category[] = ["SUPPLIER"];
+
+export type SupplierRow = { name: string; company: string; phone: string };
+
+/**
+ * A pasted or uploaded supplier list: one per line, with a phone number and any of a contact name
+ * and company, in any order, separated by commas or tabs ("Acme Lumber, Dave, 604-555-0101"). A
+ * header row and lines without a 10-digit number are skipped and reported.
+ */
+export function parseSupplierList(text: string): { rows: SupplierRow[]; skipped: string[] } {
+  const rows: SupplierRow[] = [];
+  const skipped: string[] = [];
+  const seen = new Set<string>();
+  let first = true;
+  for (const raw of text.replace(/\r/g, "").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const isFirst = first;
+    first = false;
+    const m = /(\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})(?!\d)/.exec(line);
+    if (!m) {
+      // Only the first line can be a header row ("Company, Contact, Phone").
+      if (!(isFirst && /\b(name|company|phone|number)\b/i.test(line))) skipped.push(line.slice(0, 60));
+      continue;
+    }
+    const phone = `+1${m[2]}${m[3]}${m[4]}`;
+    if (seen.has(phone)) continue;
+    seen.add(phone);
+    const rest = (line.slice(0, m.index) + " " + line.slice(m.index + m[0].length))
+      .split(/[,\t;|]/)
+      .map((x) => cleanLabel(x.replace(/["']/g, "")))
+      .filter(Boolean);
+    // Two pieces: "Company, Contact" (a company is usually listed first). One piece: the company.
+    const company = rest[0] ?? "";
+    const name = rest[1] ?? "";
+    rows.push({ name, company, phone });
+  }
+  return { rows, skipped };
+}
+
+/** The check-in question about a caller who sounded like a supplier or delivery. */
+export function supplierQuestion(it: { name: string; company: string; phone: string }): string {
+  const who = [cleanLabel(it.name), cleanLabel(it.company)].filter(Boolean).join(" from ");
+  return `Is ${who || "the caller"} (${prettyPhone(it.phone)}) one of your suppliers or a delivery company? If so, their calls will be handled your way from now on.`;
+}
+
+/** The owner's answer to a supplier question: yes (add them), no (don't), or unclear. */
+export function supplierAnswer(answer: string): "yes" | "no" | null {
+  const a = answer.trim().toLowerCase();
+  if (/^(no|nope|nah|not|they're not|they are not|no they|never heard)\b/.test(a) || /\b(not (a |one of )?(our |my )?suppliers?|a customer|spam|sales)\b/.test(a)) return "no";
+  if (/^(yes|yeah|yep|yup|correct|they are|that's right|sure)\b/.test(a) || categoryFromAnswer(a) === "SUPPLIER") return "yes";
+  return null;
 }

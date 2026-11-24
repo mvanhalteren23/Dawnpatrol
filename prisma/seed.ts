@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_PROMPTS } from "../src/lib/prompts";
-import { ASSISTANT_PLAN, ASSISTANT_TIER } from "../src/lib/assistant-rules";
+import { ASSISTANT_PLAN, ASSISTANT_TIER, assistantTierLive } from "../src/lib/assistant-rules";
 
 const db = new PrismaClient();
 
@@ -50,12 +50,13 @@ async function main() {
     create: { name: "Follow-Up Agent", kind: "addon", priceCents: 5900, setupFeeCents: 0, includedMinutes: 0, minimumMonths: 0, features: "Calls every website lead back within minutes\nAsks your questions and books the next step\nTries again, then texts" },
     update: { kind: "addon" },
   });
-  // The Assistant Plan (premium bundle: Voice Agent + Follow-Up Agent + assistant features). Sold from
-  // the CRM only: the website's pricing doesn't list it (src/lib/assistant-rules.ts).
+  // The Assistant Plan (premium bundle: Voice Agent + Follow-Up Agent + assistant features). In
+  // development: only offered where the tier is live (previews), never in production yet. Not on the website.
+  const assistantLive = assistantTierLive();
   await db.plan.upsert({
     where: { name: ASSISTANT_PLAN.name },
-    create: { name: ASSISTANT_PLAN.name, kind: "plan", tier: ASSISTANT_TIER, priceCents: ASSISTANT_PLAN.CAD * 100, setupFeeCents: 0, includedMinutes: ASSISTANT_PLAN.includedMinutes, minimumMonths: 0, features: ASSISTANT_PLAN.features },
-    update: { tier: ASSISTANT_TIER },
+    create: { name: ASSISTANT_PLAN.name, kind: "plan", tier: ASSISTANT_TIER, priceCents: ASSISTANT_PLAN.CAD * 100, setupFeeCents: 0, includedMinutes: ASSISTANT_PLAN.includedMinutes, minimumMonths: 0, features: ASSISTANT_PLAN.features, isActive: assistantLive },
+    update: { tier: ASSISTANT_TIER, isActive: assistantLive },
   });
   // Earlier plans stop being offered; any client already on one keeps it.
   await db.plan.updateMany({ where: { name: { in: ["Starter", "Growth", "Pro"] }, subscriptions: { none: {} } }, data: { isActive: false } });

@@ -392,7 +392,7 @@ export function assistantTools(r: { id: string; ragToken: string }) {
     transfer_call: {
       type: "webhook",
       name: "transfer_call",
-      description: "Put the caller through to the owner (or whoever the owner chose) when the known-callers note says to, or with urgent true for a customer's emergency. Say one short line first; the call moves a moment later.",
+      description: "Put the caller through: with urgent true when the call is urgent by the owner's definition, or urgent false when the known-callers note says to put this caller through (a supplier or delivery). Say one short line first; the call moves a moment later.",
       response_timeout_secs: 15,
       api_schema: {
         url: `${appUrl()}/api/agent-tools/${r.id}/transfer`,
@@ -401,7 +401,7 @@ export function assistantTools(r: { id: string; ragToken: string }) {
         request_body_schema: {
           type: "object",
           properties: {
-            urgent: { type: "boolean", description: "true only for a customer's emergency or an urgent request that can't wait; false for callers the known-callers note says to put through." },
+            urgent: { type: "boolean", description: "true when the call is urgent by the owner's definition; false for callers the known-callers note says to put through." },
             call_sid: { type: "string", dynamic_variable: "call_sid" },
           },
           required: ["urgent"],
@@ -417,8 +417,8 @@ export function isClientInbound(r: { agentType?: string; bookingAddsToCrm?: bool
 }
 
 /**
- * A line that can have the Assistant features: a client's own receptionist, or our own (Grace,
- * where the owner is the team's admins).
+ * A live receptionist answering real calls: a client's own, or ours (Grace). These get urgent and
+ * supplier transfers, and owner controls where those are on (Assistant lines; Grace for admins).
  */
 export function isAssistantLine(r: { agentType?: string; bookingAddsToCrm?: boolean; lifecycle?: string }): boolean {
   return isClientInbound(r) || ((r.agentType ?? "inbound") === "inbound" && Boolean(r.bookingAddsToCrm) && r.lifecycle === "production");
@@ -449,12 +449,12 @@ export function checkinTools(r: { id: string; ragToken: string }) {
   };
 }
 
-type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string; lifecycle: string; assistantOn?: boolean };
+type ToolSource = Parameters<typeof bookingTools>[0] & { bookingEnabled: boolean; bookingAddsToCrm: boolean; elevenLabsToolIds: string; lifecycle: string; ownerControls?: boolean };
 
 /** Create or update the agent's webhook tools; returns every known tool id and the ones to attach. */
 async function syncAgentTools(r: ToolSource): Promise<{ ids: ToolIds; attached: string[] }> {
   const ids: ToolIds = { ...safeJson<ToolIds>(r.elevenLabsToolIds, {}) }; // tools turned off stay known, just detached
-  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isAssistantLine(r) && r.assistantOn ? { ...ownerTools(r), ...assistantTools(r) } : {}) };
+  const wanted = { ...(r.bookingEnabled ? bookingTools(r) : {}), ...(r.bookingAddsToCrm ? salesTools(r) : {}), ...(r.agentType === "builder" ? builderTools(r) : {}), ...(r.agentType === "checkin" ? checkinTools(r) : {}), ...(isAssistantLine(r) ? assistantTools(r) : {}), ...(isAssistantLine(r) && r.ownerControls ? ownerTools(r) : {}) };
   const attached: string[] = [];
   for (const [name, tool_config] of Object.entries(wanted)) {
     const id = ids[name];
@@ -531,9 +531,9 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
       docs.push({ category: d.category, docId: created.id, name: d.name });
     }
 
-    // Assistant tier: owner updates, routing and transfers are only in the prompt and tools when the line has it.
-    const { assistantEnabled } = await import("./assistant");
-    const tiered = { ...r, assistantOn: await assistantEnabled(r), ownerPinSet: Boolean(r.ownerPinHash) };
+    // Assistant tier (in development) and owner controls (Assistant lines; Grace for the team's admins).
+    const { assistantEnabled, ownerControlsEnabled } = await import("./assistant");
+    const tiered = { ...r, assistantOn: await assistantEnabled(r), ownerControls: await ownerControlsEnabled(r), ownerPinSet: Boolean(r.ownerPinHash) };
     const { ids: toolIds, attached } = await syncAgentTools(tiered);
     const platform = await mergedPlatformSettings(r.elevenLabsAgentId, r.agentType === "followup");
     const config = { ...agentConfig(tiered, docs, attached), platform_settings: platform };

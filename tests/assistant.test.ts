@@ -3,10 +3,11 @@ import {
   afterWrongPin, assistantEntitled, categoryFromAnswer, cleanLabel, defaultRules, digestDue, digestText, isYes, keypadDigits, labelQuestion, matchKnownCaller, needsPin,
   parseDigestReply, parseRoutingRules, pinLocked, pinProblem, prettyPhone, redactOwnerDigits, routeFor, routingContext, suggestedCategory, transferTarget, PIN_LOCK_MINUTES,
   addCoachingRule, coachingProblem, coachingRules, removeCoachingRule, COACHING_MAX_RULES,
+  assistantTierLive, parseSupplierList, supplierAnswer, supplierQuestion,
 } from "@/lib/assistant-rules";
 import { buildReceptionistPrompt } from "@/lib/rag";
 
-const base = { lifecycle: "production", bookingAddsToCrm: false, assistantOverride: "", planTier: null as string | null, subscriptionStatus: null as string | null };
+const base = { tierLive: true, lifecycle: "production", assistantOverride: "", planTier: null as string | null, subscriptionStatus: null as string | null };
 const known = (p: Partial<{ category: string | null; routeAction: string; routeTo: string | null; name: string; company: string; status: string }> = {}) => ({ category: "SUPPLIER", routeAction: "", routeTo: null, name: "Dave", company: "Acme Lumber", status: "LABELLED", ...p });
 
 describe("assistant tier: who gets it", () => {
@@ -20,12 +21,26 @@ describe("assistant tier: who gets it", () => {
     expect(assistantEntitled({ ...base, planTier: "standard", subscriptionStatus: "ACTIVE" })).toBe(false);
   });
 
-  it("demos and our own line always have it; the team's override wins over everything", () => {
+  it("demos always have it; the team's override wins over the plan", () => {
     expect(assistantEntitled({ ...base, lifecycle: "demo" })).toBe(true);
-    expect(assistantEntitled({ ...base, bookingAddsToCrm: true })).toBe(true);
     expect(assistantEntitled({ ...base, assistantOverride: "on" })).toBe(true);
     expect(assistantEntitled({ ...base, lifecycle: "demo", assistantOverride: "off" })).toBe(false);
     expect(assistantEntitled({ ...base, planTier: "assistant", subscriptionStatus: "ACTIVE", assistantOverride: "off" })).toBe(false);
+  });
+
+  it("is in development: nobody has it where the tier isn't live, whatever the plan or override", () => {
+    const off = { ...base, tierLive: false };
+    expect(assistantEntitled({ ...off, planTier: "assistant", subscriptionStatus: "ACTIVE" })).toBe(false);
+    expect(assistantEntitled({ ...off, assistantOverride: "on" })).toBe(false);
+    expect(assistantEntitled({ ...off, lifecycle: "demo" })).toBe(false);
+  });
+
+  it("is off in production and on in previews, unless switched explicitly", () => {
+    expect(assistantTierLive({ VERCEL_ENV: "production" })).toBe(false);
+    expect(assistantTierLive({ VERCEL_ENV: "production", ASSISTANT_TIER: "on" })).toBe(true);
+    expect(assistantTierLive({ VERCEL_ENV: "preview" })).toBe(true);
+    expect(assistantTierLive({ VERCEL_ENV: "preview", ASSISTANT_TIER: "off" })).toBe(false);
+    expect(assistantTierLive({})).toBe(true); // local development
   });
 });
 
@@ -218,11 +233,23 @@ describe("owner PIN and bigger changes", () => {
 describe("assistant prompt sections", () => {
   const line = { name: "Dan", businessName: "DeRosa Auto", greeting: "", persona: "", timezone: "America/Vancouver", businessHours: "", escalationRules: "", extraInstructions: "", agentType: "inbound", lifecycle: "production" };
 
-  it("standard lines get neither owner updates nor routing", () => {
-    const p = buildReceptionistPrompt(line);
+  it("every receptionist: urgent calls by the owner's definition, and supplier routing, but no owner updates", () => {
+    const p = buildReceptionistPrompt({ ...line, escalationRules: "A customer stranded or unsafe to drive.", escalationPhone: "604-555-0100" });
     expect(p).not.toContain("owner_request");
-    expect(p).not.toContain("{{caller_routing}}");
-    expect(p).not.toContain("transfer_call");
+    expect(p).toContain("counts as urgent: A customer stranded or unsafe to drive.");
+    expect(p).toContain("transfer_call with urgent true");
+    expect(p).toContain("{{caller_routing}}");
+    expect(p).toContain("suppliers and delivery companies the owner has listed");
+    expect(p).not.toContain("604-555-0100"); // the number is never in the prompt
+    const noNumber = buildReceptionistPrompt(line);
+    expect(noNumber).toContain("There's no transfer number, so take an urgent message");
+    expect(noNumber).not.toContain("transfer_call with urgent true");
+  });
+
+  it("demos keep their simple escalation line (no live transfers)", () => {
+    const demo = buildReceptionistPrompt({ ...line, lifecycle: "demo", escalationRules: "Stranded customers." });
+    expect(demo).toContain("Escalation: Stranded customers.");
+    expect(demo).not.toContain("{{caller_routing}}");
   });
 
   it("assistant lines get owner updates, PIN steps and routing", () => {
@@ -249,22 +276,23 @@ describe("assistant prompt sections", () => {
     expect(buildReceptionistPrompt({ ...line, assistantOn: true, agentType: "followup" })).not.toContain("owner_request");
   });
 
-  it("Grace on the Assistant tier: her admins run her line, and her callers are routed", () => {
+  it("Grace is a receptionist, with full owner controls for the team when they dial in", () => {
     const grace = { ...line, name: "Grace", businessName: "Head Above Digital", bookingAddsToCrm: true };
-    const on = buildReceptionistPrompt({ ...grace, assistantOn: true, ownerPinSet: true });
-    expect(on).toContain('"team" can also run this line');
+    const on = buildReceptionistPrompt({ ...grace, ownerControls: true, ownerPinSet: true, coaching: "Mention the free demo early." });
+    expect(on).toContain('"team" can also run this line, as its owner, with full control');
     expect(on).toContain("owner_request");
     expect(on).toContain("give you feedback");
-    expect(on).toContain("{{caller_routing}}");
+    expect(on).toContain("- Mention the free demo early.");
+    expect(on).toContain("{{caller_routing}}"); // her own suppliers, like any receptionist
+    expect(on).toContain("suppliers and delivery companies the owner has listed"); // not the Assistant's every-kind routing
     expect(on).not.toContain("{{caller_role}}"); // Grace's owners are recognised as "team", not by caller_role
     const off = buildReceptionistPrompt(grace);
     expect(off).not.toContain("owner_request");
-    expect(off).not.toContain("{{caller_routing}}");
   });
 
-  it("the owner's feedback is in the instructions, on Assistant lines only", () => {
+  it("the owner's feedback is in the instructions, only where owner controls are on", () => {
     const coaching = "Keep answers to one or two sentences.\nAsk for the business name before the email.";
-    const on = buildReceptionistPrompt({ ...line, assistantOn: true, coaching });
+    const on = buildReceptionistPrompt({ ...line, assistantOn: true, ownerControls: true, coaching });
     expect(on).toContain("Feedback from the owner of DeRosa Auto");
     expect(on).toContain("- Ask for the business name before the email.");
     expect(buildReceptionistPrompt({ ...line, coaching })).not.toContain("Feedback from the owner");
@@ -301,5 +329,29 @@ describe("feedback (coaching)", () => {
 
   it("needs the PIN, like other bigger changes", () => {
     expect(needsPin({ action: "feedback" })).toBe(true);
+  });
+});
+
+describe("suppliers and deliveries (every receptionist)", () => {
+  it("reads a pasted or uploaded list, in any column order, skipping headers and bad lines", () => {
+    const { rows, skipped } = parseSupplierList("Company,Contact,Phone\nAcme Lumber, Dave, 604-555-0101\nNAPA Auto Parts\t(604) 555-0102\n604.555.0103, Lordco\nno number here\nAcme again, 6045550101\n+1 778 555 0104");
+    expect(rows).toEqual([
+      { company: "Acme Lumber", name: "Dave", phone: "+16045550101" },
+      { company: "NAPA Auto Parts", name: "", phone: "+16045550102" },
+      { company: "Lordco", name: "", phone: "+16045550103" },
+      { company: "", name: "", phone: "+17785550104" },
+    ]);
+    expect(skipped).toEqual(["no number here"]);
+  });
+
+  it("asks the owner in plain words, and reads yes and no", () => {
+    expect(supplierQuestion({ name: "Dave", company: "Acme Lumber", phone: "+16045550101" })).toBe("Is Dave from Acme Lumber (604-555-0101) one of your suppliers or a delivery company? If so, their calls will be handled your way from now on.");
+    expect(supplierAnswer("Yes, that's our lumber yard")).toBe("yes");
+    expect(supplierAnswer("yep")).toBe("yes");
+    expect(supplierAnswer("they're our parts supplier")).toBe("yes");
+    expect(supplierAnswer("No")).toBe("no");
+    expect(supplierAnswer("not a supplier, that's a customer")).toBe("no");
+    expect(supplierAnswer("that was a sales call")).toBe("no");
+    expect(supplierAnswer("hmm, not sure")).toBeNull();
   });
 });

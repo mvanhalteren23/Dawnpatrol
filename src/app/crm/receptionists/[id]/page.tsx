@@ -19,6 +19,8 @@ import { TestChat } from "@/components/TestChat";
 import { CallList } from "@/components/CallList";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
 import { AssistantCard } from "@/components/AssistantCard";
+import { OwnerControlsCard, SuppliersCard } from "@/components/ReceptionistRouting";
+import { assistantTierLive } from "@/lib/assistant-rules";
 import { assistantEnabled } from "@/lib/assistant";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
 import { calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
@@ -60,9 +62,11 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   ]);
   const reviewEmail = reviewContact?.email ?? null;
   const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
-  // Assistant tier: the line's caller directory and settings (src/components/AssistantCard.tsx).
-  // Client lines and our own (Grace, whose owners are the team's admins).
+  // Every receptionist: the supplier list (and, on the Assistant tier in development, the full
+  // directory). Grace: the team's dial-in controls (feedback and PIN).
   const clientInbound = r.agentType === "inbound";
+  const houseLine = clientInbound && r.bookingAddsToCrm;
+  const tierLive = assistantTierLive();
   const assistantOn = clientInbound ? await assistantEnabled(r) : false;
   const knownCallers = clientInbound ? await db.knownCaller.findMany({ where: { receptionistId: r.id, status: { not: "DISMISSED" } }, orderBy: [{ lastCallAt: "desc" }, { createdAt: "desc" }], take: 200 }) : [];
   const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
@@ -137,8 +141,8 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             <Field label="Timezone"><input name="timezone" defaultValue={r.timezone} className="input" /></Field>
             <Field label="Language"><input name="language" defaultValue={r.language} className="input" /></Field>
             <Field label="Booking link"><input name="bookingUrl" defaultValue={r.bookingUrl ?? ""} className="input" /></Field>
-            <Field label="Transfer / escalation phone"><input name="escalationPhone" defaultValue={r.escalationPhone ?? ""} className="input" /></Field>
-            <Field label="Escalation rules" className="col-span-2"><textarea name="escalationRules" rows={2} defaultValue={r.escalationRules} className="input" /></Field>
+            <Field label="Urgent calls go to (transfer number)"><input name="escalationPhone" defaultValue={r.escalationPhone ?? ""} className="input" /></Field>
+            <Field label="What counts as urgent (the owner's definition, set up with them)" className="col-span-2"><textarea name="escalationRules" rows={2} defaultValue={r.escalationRules} placeholder="e.g. A customer stranded or unsafe to drive, or a caller who is upset and asks for the owner." className="input" /></Field>
             <Field label="Extra instructions" className="col-span-2"><textarea name="extraInstructions" rows={3} defaultValue={r.extraInstructions} className="input" /></Field>
             <Field label="Voice" className="col-span-2"><VoiceOptions voices={voiceList} current={r.voiceId} allowCustom /></Field>
             {isAdmin ? <Field label="ElevenLabs agent id"><input name="elevenLabsAgentId" defaultValue={r.elevenLabsAgentId ?? ""} placeholder="created on first sync" className="input" /></Field> : null}
@@ -266,7 +270,9 @@ export default async function ReceptionistPage({ params, searchParams }: { param
             </div>
           </form>
           <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
-          {clientInbound ? <AssistantCard r={r} entitled={assistantOn} callers={knownCallers} returnTo={returnTo} staff /> : null}
+          {houseLine ? <OwnerControlsCard r={r} returnTo={returnTo} /> : null}
+          {clientInbound && !assistantOn ? <SuppliersCard r={r} callers={knownCallers} returnTo={returnTo} /> : null}
+          {clientInbound && !houseLine && tierLive ? <AssistantCard r={r} entitled={assistantOn} callers={knownCallers} returnTo={returnTo} staff /> : null}
 
           <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 

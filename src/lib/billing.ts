@@ -5,7 +5,7 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage, recordActivity } from "./outreach";
 import { getSetting, setSetting } from "./settings";
-import { assistantEntitled } from "./assistant-rules";
+import { assistantEntitled, assistantTierLive } from "./assistant-rules";
 import { annualCents, blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planIntervalPriceKey, planPriceCents, salesTaxFor, usageWindowAt, usageWindows, type BillingInterval, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
@@ -488,7 +488,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
 /** Whether the account's subscription gives the Assistant tier (assistant-rules.ts), for spotting changes. */
 async function tierState(accountId: string): Promise<boolean> {
   const sub = await db.subscription.findUnique({ where: { accountId }, select: { status: true, plan: { select: { tier: true } } } });
-  return assistantEntitled({ lifecycle: "production", bookingAddsToCrm: false, assistantOverride: "", planTier: sub?.plan?.tier ?? null, subscriptionStatus: sub?.status ?? null });
+  return assistantEntitled({ tierLive: assistantTierLive(), lifecycle: "production", assistantOverride: "", planTier: sub?.plan?.tier ?? null, subscriptionStatus: sub?.status ?? null });
 }
 
 /** Re-sync the account's agents in the background when the Assistant tier turned on or off. */

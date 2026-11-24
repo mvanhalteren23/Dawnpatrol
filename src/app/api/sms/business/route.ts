@@ -11,7 +11,7 @@ import { handleOwnerText, ownerCaller } from "@/lib/owner-mode";
 import { isAssistantLine } from "@/lib/elevenlabs";
 import { houseReceptionist } from "@/lib/house-line";
 import { isBlocked } from "@/lib/call-guard";
-import { assistantEnabled, lineNumber } from "@/lib/assistant";
+import { lineNumber, ownerControlsEnabled } from "@/lib/assistant";
 
 // Texts to a business line:
 // - STOP / START from anyone: recorded so the line never texts that number again (Twilio also
@@ -56,8 +56,8 @@ export async function POST(req: Request) {
   // The owner texting their own line: changes, messages and UNDO (src/lib/owner-mode.ts).
   const line = lineNumber(r);
   const ownLine = Boolean(line) && toE164(params.To ?? "") === toE164(line!);
-  // Assistant tier only: without it, the owner's texts work as before (1 = handled, nothing forwarded back).
-  if (ownLine && body && isAssistantLine(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null)) && (await assistantEnabled(r).catch(() => false))) {
+  // Owner controls only (Assistant lines, and Grace for the team): otherwise the owner's texts work as before (1 = handled, nothing forwarded back).
+  if (ownLine && body && isAssistantLine(r) && !isHandledReply(body) && (await ownerCaller(r, from).catch(() => null)) && (await ownerControlsEnabled(r).catch(() => false))) {
     const reply = await handleOwnerText(r, from, body.slice(0, 1000)).catch((e) => {
       console.error("owner text", e);
       return "Sorry, that didn't go through. Please try again, or use your portal.";

@@ -544,7 +544,7 @@ model OpenQuestion {
   id             String       @id @default(cuid())
   receptionistId String
   receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
-  kind           String       @default("caller") // caller | holiday
+  kind           String       @default("caller") // caller | holiday | supplier (is this caller a supplier?) | label (Assistant: who is this caller?)
   question       String
   key            String // normalised question (or holiday:YYYY-MM-DD), for de-duplication
   askedCount     Int          @default(1) // how many callers asked it

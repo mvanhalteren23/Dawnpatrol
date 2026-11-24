@@ -50,7 +50,8 @@ export type CallerContext = { caller_type: CallerType; team_name: string; openin
  * Grace can put them through to, in owner mode). Null for everyone else.
  */
 export async function clientAssistant(from: string): Promise<{ r: Receptionist; firstName: string } | null> {
-  if (!from || from.replace(/\D/g, "").length < 10) return null;
+  const { assistantTierLive } = await import("./assistant-rules");
+  if (!assistantTierLive() || !from || from.replace(/\D/g, "").length < 10) return null; // in development: off in production
   const e164 = toE164(from);
   const users = await db.user.findMany({ where: { phone: { in: [...new Set([e164, from])] }, accountId: { not: null }, disabled: false }, select: { accountId: true } });
   const rs = await db.receptionist.findMany({
@@ -130,8 +131,8 @@ export async function callerContext(from: string, greeting: string): Promise<Cal
   const team = await teamMemberByPhone(from).catch(() => null);
   if (team) {
     const house = await houseReceptionist();
-    // Admins own this line on the Assistant tier: they can also make changes and give feedback.
-    const owner = house ? await import("./assistant").then((a) => a.assistantEnabled(house)).catch(() => false) : false;
+    // Admins have full owner controls on this line (super admin): changes, feedback, messages.
+    const owner = house ? await import("./assistant").then((a) => a.ownerControlsEnabled(house)).catch(() => false) : false;
     return { ...none, caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu or a demo by company name${owner ? ", make a change, take your feedback, or read your messages" : ""}.` };
   }
   const demo = await prospectDemo(from).catch(() => null);
@@ -161,7 +162,7 @@ export async function callerContext(from: string, greeting: string): Promise<Cal
       opening: `Hi${assistant.firstName ? ` ${assistant.firstName}` : ""}, it's ${house?.name ?? "Grace"}. Would you like me to put you through to ${assistant.r.name}, your assistant, or is there something I can help with?`,
     };
   }
-  // Assistant tier on our own line: suppliers, sales reps and others we know are routed by our rules.
+  // Suppliers and deliveries we've listed are routed our way (every receptionist has this).
   const house = await houseReceptionist();
   const caller_routing = house ? await (await import("./assistant")).routingForCall(house, from).catch(() => "") : "";
   return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting, caller_routing };

@@ -8,12 +8,16 @@ import { appBase } from "./twilio-request";
 import { localHour } from "./customer-text-rules";
 import { isoDate, localDate } from "./booking";
 import {
-  afterWrongPin, assistantEntitled, CATEGORY_LABELS, cleanLabel, digestDue, digestText, DIGEST_MAX, isCategory, keypadDigits, labelQuestion, parseDigestReply, parseRoutingRules,
+  afterWrongPin, assistantEntitled, assistantTierLive, BASE_CATEGORIES, supplierQuestion, CATEGORY_LABELS, cleanLabel, digestDue, digestText, DIGEST_MAX, isCategory, keypadDigits, labelQuestion, parseDigestReply, parseRoutingRules,
   pinLocked, pinProblem, PENDING_TO_CHECKIN_HOURS, PIN_OK_MINUTES, prettyPhone, routeFor, routingContext, suggestedCategory, transferTarget, type Category, type RouteAction,
 } from "./assistant-rules";
 
-// The Assistant tier (rules and wording in assistant-rules.ts):
-//   - who has it (assistantEnabled), and re-syncing agents when that changes,
+// Caller routing for every receptionist, and the Assistant tier (rules and wording in assistant-rules.ts):
+//   - every receptionist: urgent transfers, and suppliers/deliveries from the owner's list (or
+//     spotted on calls and confirmed on a check-in call) routed the owner's way,
+//   - who has the Assistant tier (assistantEnabled; in development, off in production), and
+//     owner controls (ownerControlsEnabled: Assistant lines, and Grace for the team's admins),
+//   - Assistant: every kind of caller, the evening digest, owner changes by phone/text, the PIN.
 //   - the caller directory: noting non-customer callers after calls, the evening digest text and
 //     the owner's reply, and handing still-unlabelled callers to the next check-in call,
 //   - routing at call start ({{caller_routing}}) and the transfer_call tool,
@@ -22,11 +26,13 @@ import {
 type R = Receptionist;
 const E164 = /^\+[1-9]\d{9,14}$/;
 
-/** Does this line have the Assistant features right now? */
+/** Does this line have the Assistant features right now? (Never in production while it's in development.) */
 export async function assistantEnabled(r: Pick<R, "accountId" | "lifecycle" | "bookingAddsToCrm" | "assistantOverride">): Promise<boolean> {
-  const quick = { lifecycle: r.lifecycle, bookingAddsToCrm: r.bookingAddsToCrm, assistantOverride: r.assistantOverride, planTier: null, subscriptionStatus: null };
-  // The override, demos and our own line don't depend on the plan: no query needed.
-  if (r.assistantOverride === "on" || r.assistantOverride === "off" || r.bookingAddsToCrm || r.lifecycle === "demo") return assistantEntitled(quick);
+  const tierLive = assistantTierLive();
+  if (!tierLive || r.bookingAddsToCrm) return false; // our own line is a receptionist (owner controls are separate)
+  const quick = { tierLive, lifecycle: r.lifecycle, assistantOverride: r.assistantOverride, planTier: null, subscriptionStatus: null };
+  // The override and demos don't depend on the plan: no query needed.
+  if (r.assistantOverride === "on" || r.assistantOverride === "off" || r.lifecycle === "demo") return assistantEntitled(quick);
   const sub = await db.subscription.findUnique({ where: { accountId: r.accountId }, select: { status: true, plan: { select: { tier: true } } } });
   return assistantEntitled({ ...quick, planTier: sub?.plan?.tier ?? null, subscriptionStatus: sub?.status ?? null });
 }
@@ -43,6 +49,14 @@ export async function refreshAssistantAgents(accountId: string): Promise<void> {
     await markDirty(r.id);
     await syncReceptionist(r.id).catch((e) => console.error("assistant tier re-sync", r.id, e));
   }
+}
+
+/**
+ * Can the owner run this line by phone or text (changes, PIN, feedback, messages)? Assistant lines,
+ * and our own line (Grace), whose owners are the team's admins: their "super admin" dial-in.
+ */
+export async function ownerControlsEnabled(r: Pick<R, "accountId" | "lifecycle" | "bookingAddsToCrm" | "assistantOverride" | "agentType">): Promise<boolean> {
+  return isHouseLine(r) || assistantEnabled(r);
 }
 
 /** Our own line (Grace): the receptionist that adds bookings to the CRM. */
@@ -72,21 +86,28 @@ function transferFallback(r: Pick<R, "ringFirstNumber" | "escalationPhone">): st
 // --- Routing ---------------------------------------------------------------------------------
 
 /** What the directory and the line's rules say about a caller's number. */
-export async function callerRouting(r: R, from: string): Promise<{ caller: KnownCaller | null; route: { action: RouteAction; to: string | null }; context: string }> {
+/**
+ * What the directory and the line's rules say about a caller's number. Without the Assistant tier
+ * (`full` false) only suppliers and deliveries are routed; anyone else is a normal caller.
+ */
+export async function callerRouting(r: R, from: string, full?: boolean): Promise<{ caller: KnownCaller | null; route: { action: RouteAction; to: string | null }; context: string }> {
   const phone = toE164(from || "");
-  const caller = E164.test(phone) ? await db.knownCaller.findUnique({ where: { receptionistId_phone: { receptionistId: r.id, phone } } }) : null;
+  const all = full ?? (await assistantEnabled(r));
+  const found = E164.test(phone) ? await db.knownCaller.findUnique({ where: { receptionistId_phone: { receptionistId: r.id, phone } } }) : null;
+  const caller = found && (all || BASE_CATEGORIES.includes(found.category as Category)) ? found : null;
   const route = routeFor(caller, parseRoutingRules(r.routingRules), transferFallback(r));
   return { caller, route, context: routingContext(caller, route) };
 }
 
 /**
- * {{caller_routing}} for a call that's starting: empty unless the line has the Assistant tier and
- * the number is in its directory. Gives up after 1.2 seconds (the call carries on without it).
+ * {{caller_routing}} for a call that's starting: empty unless the number is in the line's directory
+ * (suppliers and deliveries; every kind of caller on the Assistant tier). Gives up after 1.2
+ * seconds (the call carries on without it).
  */
 export async function routingForCall(r: R, from: string, opts: { transferFailed?: boolean } = {}): Promise<string> {
   if (opts.transferFailed) return "The caller was just put through to the owner and nobody answered. Apologise briefly, take a message, and say they'll get a call back. Don't try to put them through again.";
   try {
-    const run = (async () => ((await assistantEnabled(r)) ? (await callerRouting(r, from)).context : ""))();
+    const run = (async () => (await callerRouting(r, from)).context)();
     return await Promise.race([run, new Promise<string>((ok) => setTimeout(() => ok(""), 1200))]);
   } catch (err) {
     console.warn("caller routing failed; carrying on without it", err);
@@ -145,6 +166,14 @@ export async function noteCaller(r: R, call: CallLog, collected: Record<string, 
   }
   const guess = suggestedCategory(collected.caller_kind?.value);
   if (guess === null) return; // a customer (or spam): nothing to ask
+  if (!(await assistantEnabled(r))) {
+    // A receptionist without the Assistant tier: only callers who sounded like a supplier or a
+    // delivery, asked about on the owner's next check-in call (no evening text).
+    if (guess !== "SUPPLIER") return;
+    const created = await db.knownCaller.create({ data: { receptionistId: r.id, phone, name, company, suggested: guess, note, lastCallId: call.id, lastCallAt: call.startedAt, askedAt: new Date(), source: "call" } });
+    if (r.checkinsOn) await db.openQuestion.create({ data: { receptionistId: r.id, kind: "supplier", question: supplierQuestion(created), key: `supplier:${created.id}` } }).catch(() => undefined);
+    return;
+  }
   await db.knownCaller.create({ data: { receptionistId: r.id, phone, name, company, suggested: guess, note, lastCallId: call.id, lastCallAt: call.startedAt, source: "call" } });
 }
 
@@ -154,7 +183,7 @@ export async function labelKnownCaller(id: string, label: Category | "DISMISS", 
     where: { id },
     data: label === "DISMISS" ? { status: "DISMISSED", labelledBy: by, labelledAt: new Date() } : { category: label, status: "LABELLED", labelledBy: by, labelledAt: new Date(), source },
   });
-  await db.openQuestion.updateMany({ where: { key: `label:${id}`, status: "OPEN" }, data: { status: label === "DISMISS" ? "DISMISSED" : "ANSWERED", answer: label === "DISMISS" ? null : CATEGORY_LABELS[label], answeredBy: by, answeredAt: new Date() } });
+  await db.openQuestion.updateMany({ where: { key: { in: [`label:${id}`, `supplier:${id}`] }, status: "OPEN" }, data: { status: label === "DISMISS" ? "DISMISSED" : "ANSWERED", answer: label === "DISMISS" ? null : CATEGORY_LABELS[label], answeredBy: by, answeredAt: new Date() } });
 }
 
 /** Every 30 minutes in the day (the daytime sweep): the evening digest, and old ones to the check-in queue. */

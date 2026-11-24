@@ -1,8 +1,9 @@
 import type { KnownCaller } from "@prisma/client";
 import { Badge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
-import { CATEGORIES, CATEGORY_LABELS, coachingRules, isCategory, parseRoutingRules, prettyPhone, ROUTE_ACTIONS, ROUTE_LABELS } from "@/lib/assistant-rules";
-import { addCoaching, removeCoaching, labelPendingCaller, removeKnownCaller, removeOwnerPin, saveDigestSetting, saveKnownCaller, saveOwnerPin, saveRoutingRules, setAssistantOverride } from "@/app/assistant-actions";
+import { CATEGORIES, CATEGORY_LABELS, isCategory, parseRoutingRules, prettyPhone, ROUTE_ACTIONS, ROUTE_LABELS } from "@/lib/assistant-rules";
+import { FeedbackSection, OwnerPinSection } from "@/components/ReceptionistRouting";
+import { labelPendingCaller, removeKnownCaller, saveDigestSetting, saveKnownCaller, saveRoutingRules, setAssistantOverride } from "@/app/assistant-actions";
 
 type Line = {
   id: string;
@@ -30,7 +31,6 @@ export function AssistantCard({ r, entitled, callers, returnTo, staff }: { r: Li
   const pending = callers.filter((c) => c.status === "PENDING");
   const known = callers.filter((c) => c.status === "LABELLED");
   const owner = r.ringFirstNumber || r.escalationPhone;
-  const locked = r.ownerPinLockedUntil && r.ownerPinLockedUntil.getTime() > Date.now();
 
   return (
     <div className="card space-y-4 text-sm">
@@ -105,24 +105,7 @@ export function AssistantCard({ r, entitled, callers, returnTo, staff }: { r: Li
             </details>
           </div>
 
-          <div className="space-y-2">
-            <div className="label">Feedback {r.name} follows</div>
-            <p className="text-xs text-slate-500">Tell {r.name} how to handle calls differently, here or by calling or texting it (&ldquo;feedback: don&apos;t ask for an email until they&apos;ve booked&rdquo;). Each becomes a rule it follows from the next call; facts like prices belong in the knowledge base.</p>
-            {coachingRules(r.coaching).length ? (
-              <ul className="divide-y divide-slate-100">
-                {coachingRules(r.coaching).map((rule, i) => (
-                  <li key={`${i}-${rule}`} className="flex items-start justify-between gap-2 py-1.5">
-                    <span>{rule}</span>
-                    <form action={removeCoaching.bind(null, r.id, i, returnTo)}><button className="text-xs text-red-600 underline">Remove</button></form>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="text-xs text-slate-500">No feedback yet.</p>}
-            <form action={addCoaching.bind(null, r.id, returnTo)} className="flex gap-2">
-              <input name="rule" required maxLength={240} placeholder="e.g. Keep answers to one or two sentences" className="input flex-1" aria-label="Feedback" />
-              <button className="btn-secondary">Add</button>
-            </form>
-          </div>
+          <FeedbackSection r={r} returnTo={returnTo} />
 
           <form action={saveRoutingRules.bind(null, r.id, returnTo)} className="space-y-2">
             <div className="label">How each kind of caller is handled</div>
@@ -139,16 +122,7 @@ export function AssistantCard({ r, entitled, callers, returnTo, staff }: { r: Li
             <button className="btn-secondary">Save routing</button>
           </form>
 
-          <div className="space-y-2">
-            <div className="label">Owner PIN {r.ownerPinHash ? <Badge className="ml-1 bg-emerald-100 text-emerald-800">set</Badge> : <Badge className="ml-1">not set</Badge>} {locked ? <Badge className="ml-1 bg-red-100 text-red-800">locked for now</Badge> : null}</div>
-            <p className="text-xs text-slate-500">Bigger changes by phone or text (regular hours, prices, services, policies, routing) need this PIN, keyed in on the phone keypad or texted back. Without one, they&apos;re confirmed by replying YES to a text. 4 to 8 digits; 3 wrong tries lock it for 15 minutes.</p>
-            <form action={saveOwnerPin.bind(null, r.id, returnTo)} className="flex flex-wrap gap-2">
-              <input name="pin" type="password" inputMode="numeric" autoComplete="new-password" pattern="\d{4,8}" required placeholder={r.ownerPinHash ? "New PIN" : "PIN"} className="input w-32" aria-label="PIN" />
-              <input name="pin2" type="password" inputMode="numeric" autoComplete="new-password" pattern="\d{4,8}" required placeholder="Again" className="input w-32" aria-label="PIN again" />
-              <button className="btn-secondary">{r.ownerPinHash ? "Change PIN" : "Set PIN"}</button>
-            </form>
-            {r.ownerPinHash ? <form action={removeOwnerPin.bind(null, r.id, returnTo)}><button className="text-xs text-red-600 underline">Remove PIN</button></form> : null}
-          </div>
+          <OwnerPinSection r={r} returnTo={returnTo} />
 
           <form action={saveDigestSetting.bind(null, r.id, returnTo)} className="flex items-center justify-between gap-2">
             <label className="flex items-center gap-2"><input type="checkbox" name="labelDigestOn" defaultChecked={r.labelDigestOn} /> Evening text listing new callers to sort{r.businessNumber ? "" : " (needs a business line)"}</label>

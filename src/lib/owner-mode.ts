@@ -272,8 +272,8 @@ async function confirmByText(r: R, phone: string, pending: Omit<Pending, "at">):
  * (owner_pin), or, with no PIN set, a YES to a confirmation text.
  */
 export async function ownerRequestOnCall(r: R, callSid: string, request: string, confirmed: boolean): Promise<string> {
-  const { assistantEnabled, pinVerifiedOnCall } = await import("./assistant");
-  if (!(await assistantEnabled(r))) return "Changes by phone aren't part of this plan. Say the owner can request changes in their portal.";
+  const { ownerControlsEnabled, pinVerifiedOnCall } = await import("./assistant");
+  if (!(await ownerControlsEnabled(r))) return "Changes by phone aren't part of this plan. Say the owner can request changes in their portal.";
   const from = await ownerLiveCaller(r, callSid);
   if (!from || !(await ownerCaller(r, from))) return "This isn't the owner's phone, so no changes can be made on this call. Say the owner can call from their own phone, text this number from it, or use their portal.";
   const key = `owner.pending.${callSid}`;

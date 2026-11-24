@@ -26,6 +26,7 @@ import { VoiceOptions } from "@/components/VoicePicker";
 import { curatedVoices } from "@/lib/voices";
 import { chooseVoice } from "@/app/customer-actions";
 import { TrustedNumbers } from "@/components/TrustedNumbers";
+import { SuppliersCard, UrgentCallsCard } from "@/components/ReceptionistRouting";
 import { assistantEnabled } from "@/lib/assistant";
 import { CalendarAndBranding } from "@/components/CalendarAndBranding";
 import { calendarConnectAllowedFor, calendarConnectLive, calendarFor, replyToAddress } from "@/lib/booking-calendar";
@@ -47,6 +48,9 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
   const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
   // Assistant tier: only lines that have it see its settings (and the owner-updates card).
   const assistantOn = r ? await assistantEnabled(r) : false;
+  // Every receptionist: urgent calls and the supplier list (the Assistant page has the full directory).
+  const liveLine = Boolean(r && r.agentType === "inbound" && !r.bookingAddsToCrm);
+  const supplierCallers = r && liveLine && !assistantOn ? await db.knownCaller.findMany({ where: { receptionistId: r.id, status: { not: "DISMISSED" }, OR: [{ category: "SUPPLIER" }, { suggested: "SUPPLIER" }] }, orderBy: [{ company: "asc" }, { createdAt: "desc" }], take: 500 }) : [];
   const bookingCal: { mode: "client" | "google" | "crm"; email: string | null; fallbackFrom?: string | null } = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
   // Before Google approves, only test clients (CRM → Settings → Client calendars) see the option.
   const calendarLive = adminAccountId ? await calendarConnectLive() : await calendarConnectAllowedFor(session.email);
@@ -81,7 +85,6 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
               {r.businessNumber ? (
                 <Row label="Business line">{r.businessNumber}: rings {r.ringFirstNumber ?? "nobody"} first ({RING[r.ringMode] ?? r.ringMode}, {r.ringSeconds} seconds), then {r.name} answers.</Row>
               ) : null}
-              {r.escalationPhone ? <Row label="Urgent calls">Transferred to {r.escalationPhone}</Row> : null}
             </div>
             <RequestChangeForm receptionistId={r.id} returnTo={returnTo} defaultTopic="Hours, holidays or closures" />
             <KeepNumberCard r={r} returnTo={returnTo} admin={false} editable={false} />
@@ -104,8 +107,10 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
               </div>
             ) : null}
             <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={appUrl()} returnTo={returnTo} canConnect={calendarLive && r.agentType === "inbound" && !r.bookingAddsToCrm} staff={false} live={calendarLive} fallbackFrom={bookingCal.fallbackFrom ?? null} />
+            {liveLine ? <UrgentCallsCard r={r} returnTo={returnTo} /> : null}
+            {liveLine && !assistantOn ? <SuppliersCard r={r} callers={supplierCallers} returnTo={returnTo} /> : null}
             <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
-            <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} checkins={assistantOn} />
+            <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>
             <div className="card">

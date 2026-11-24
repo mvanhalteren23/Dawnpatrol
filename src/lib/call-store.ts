@@ -63,11 +63,11 @@ export async function saveCallLog(receptionist: ReceptionistRef, data: PostCallD
     // No booking but they wanted something: a booking link by text (skipped if a summary just went out).
     await rescueAfterCall(full, call, collected).catch((e) => console.error("rescue text failed", e));
     await recordUnanswered(full, call, collected).catch((e) => console.error("open questions failed", e));
-    // Assistant tier: suppliers, sales reps, staff… go on the owner's evening list to be labelled.
-    // (Our own line too: Grace has the Assistant tier.)
+    // Callers who sounded like a supplier or delivery are asked about on the next check-in call
+    // (on the Assistant tier: every non-customer, in the evening text). Clients' lines and ours.
     if (full.agentType === "inbound" && full.lifecycle === "production") {
-      const { assistantEnabled, noteCaller } = await import("./assistant");
-      if (await assistantEnabled(full).catch(() => false)) await noteCaller(full, call, collected).catch((e) => console.error("caller directory failed", e));
+      const { noteCaller } = await import("./assistant");
+      await noteCaller(full, call, collected).catch((e) => console.error("caller directory failed", e));
     }
     await sendLeadAlert(full, call).catch((e) => console.error("lead alert failed", e));
     if (!full.demoExtension) await checkMinuteUsage(full).catch((e) => console.error("minute usage check failed", e));

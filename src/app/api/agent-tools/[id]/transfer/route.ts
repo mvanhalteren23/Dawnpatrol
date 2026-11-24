@@ -1,10 +1,10 @@
 import { after, NextResponse } from "next/server";
 import { authorizeRag } from "@/lib/rag-auth";
 import { isAssistantLine } from "@/lib/elevenlabs";
-import { assistantEnabled, transferCall } from "@/lib/assistant";
+import { transferCall } from "@/lib/assistant";
 import { redirectCall } from "@/lib/house-line";
 
-// ElevenLabs webhook tool "transfer_call" (Assistant tier): put the live call through. Where it
+// ElevenLabs webhook tool "transfer_call" (every live receptionist): put the live call through. Where it
 // goes comes from the line's directory and routing rules (or, for an urgent caller, the transfer
 // number), never from the agent. The call leaves the agent and rings that number with a
 // "press 1 to answer" screen; if nobody takes it, the agent comes back on and takes a message.
@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const r = await authorizeRag(req, id);
   if (!r) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAssistantLine(r) || !(await assistantEnabled(r))) return NextResponse.json({ message: "Putting callers through isn't available on this line. Take a message instead." });
+  if (!isAssistantLine(r)) return NextResponse.json({ message: "Putting callers through isn't available on this line. Take a message instead." });
   const body = (await req.json().catch(() => ({}))) as { call_sid?: string; urgent?: boolean | string };
   const callSid = String(body.call_sid ?? "");
   try {
