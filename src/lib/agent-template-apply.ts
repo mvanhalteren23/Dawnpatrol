@@ -5,6 +5,11 @@ import { AGENT_TEMPLATES, isCanadian, missingStarters, templateFor, templateGaps
 
 // Applying agent templates (rules in agent-templates.ts).
 
+async function firstCuratedVoice(): Promise<string | null> {
+  const { curatedVoices } = await import("./voices");
+  return (await curatedVoices().catch(() => []))[0]?.id ?? null;
+}
+
 /** A brand-new agent: the template's settings plus its starter knowledge (recorded in its history). */
 export async function applyTemplateToNew(receptionistId: string, key?: TemplateKey | null) {
   const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, include: { account: { select: { industry: true, state: true } } } });
@@ -17,6 +22,9 @@ export async function applyTemplateToNew(receptionistId: string, key?: TemplateK
       ...(r.agentType === "followup" ? { greeting: r.greeting } : {}),
       // A demo's bookings land in the rep's calendar, labelled with the prospect's name.
       ...(r.lifecycle === "demo" ? { bookingTitle: r.bookingTitle } : {}),
+      // No voice chosen yet: the first voice on the curated list (Settings), so a new agent sounds
+      // right on its first call instead of using the account's default voice.
+      ...(!r.voiceId ? { voiceId: await firstCuratedVoice() } : {}),
     },
   });
   await addStarters(r.id, t.key, []);
