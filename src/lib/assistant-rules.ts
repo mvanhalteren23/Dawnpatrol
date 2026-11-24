@@ -41,7 +41,7 @@ const PAID = ["ACTIVE", "TRIALING", "PAST_DUE"];
  * Is the Assistant tier switched on in this environment? Off in production unless ASSISTANT_TIER=on;
  * on in previews and local development unless ASSISTANT_TIER=off.
  */
-export function assistantTierLive(env: { VERCEL_ENV?: string; ASSISTANT_TIER?: string } = process.env): boolean {
+export function assistantTierLive(env: Record<string, string | undefined> = process.env): boolean {
   if (env.ASSISTANT_TIER === "on") return true;
   if (env.ASSISTANT_TIER === "off") return false;
   return env.VERCEL_ENV !== "production";
