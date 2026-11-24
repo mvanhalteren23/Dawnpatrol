@@ -32,14 +32,15 @@ export function shouldRingFirst(r: Receptionist, now = new Date()): boolean {
  * TwiML that hands the call to the receptionist's ElevenLabs agent. The agent is told whether the
  * caller is the owner (matched from their number; see src/lib/owner-mode.ts).
  */
-export async function toAgent(r: Receptionist, from: string, to: string, callSid = ""): Promise<string> {
+export async function toAgent(r: Receptionist, from: string, to: string, callSid = "", known?: { owner: { firstName: string } | null; callerContext: string }): Promise<string> {
   const { agentUnavailable, guardedHandoff } = await import("./agent-fallback");
   // No agent, or it can't be reached: the caller leaves a message instead of hitting a dead end.
   if (!r.elevenLabsAgentId) return agentUnavailable(r, "no voice agent is set up for this line");
   try {
-    const owner = await ownerCaller(r, from).catch(() => null);
+    // The webhook may already have looked these up (in parallel); otherwise look them up now.
+    const owner = known ? known.owner : await ownerCaller(r, from).catch(() => null);
     // Returning callers: what our own records say about this number (empty for new callers and the owner).
-    const caller_context = owner ? "" : await (await import("./caller-memory")).callerMemory(r, from);
+    const caller_context = owner ? "" : known ? known.callerContext : await (await import("./caller-memory")).callerMemory(r, from);
     const handoff = await registerTwilioCall(r.elevenLabsAgentId, from, to, {
       dynamicVariables: { caller_role: owner ? "owner" : "customer", owner_name: owner?.firstName ? ` ${owner.firstName}` : "", caller_context, call_sid: callSid },
     });

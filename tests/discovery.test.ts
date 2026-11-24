@@ -8,7 +8,8 @@ describe("personalization questions", () => {
     expect(tradeFor("Tire and brake shop")).toBe("mechanics");
     expect(tradeFor("Plumbing & Heating")).toBe("contractors");
     expect(tradeFor("Hair salon")).toBe("retail");
-    expect(tradeFor("Accounting")).toBe("general");
+    expect(tradeFor("Accounting")).toBe("professionals");
+    expect(tradeFor("Dog grooming")).toBe("general");
     expect(tradeFor(null)).toBe("general");
   });
 

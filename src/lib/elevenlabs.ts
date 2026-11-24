@@ -407,6 +407,7 @@ export function agentConfig(
     Partial<FollowupProfile> & { voiceId?: string | null; language: string; greeting: string; agentType?: string },
   docs: KbDocRef[],
   toolIds: string[] = [],
+  llm: string | null = process.env.ELEVENLABS_LLM || null,
 ) {
   const followup = r.agentType === "followup";
   const builder = r.agentType === "builder"; // the live demo builder: businessName is our company's name
@@ -432,7 +433,7 @@ export function agentConfig(
             : builder
             ? buildBuilderPrompt({ name: r.name, companyName: r.businessName, persona: r.persona, bookingEnabled: Boolean(r.bookingEnabled), extraInstructions: r.extraInstructions })
             : followup ? buildFollowupPrompt(fullFollowupProfile(r)) : buildReceptionistPrompt(r),
-          ...(process.env.ELEVENLABS_LLM ? { llm: process.env.ELEVENLABS_LLM } : {}),
+          ...(llm ? { llm } : {}),
           knowledge_base: docs.map((d) => ({ type: "text", id: d.docId, name: d.name, usage_mode: "auto" })),
           tool_ids: toolIds,
         },
@@ -442,6 +443,13 @@ export function agentConfig(
         : {}),
     },
   };
+}
+
+/** The AI model this agent should run on (its tier's model from CRM Settings → AI models). */
+async function voiceModelForAgent(r: { voiceModelTier?: string | null; lifecycle?: string | null; agentType?: string | null }): Promise<string> {
+  const { getSetting } = await import("./settings");
+  const { VOICE_MODELS_KEY, voiceModelFor, voiceModels } = await import("./voice-model-rules");
+  return voiceModelFor(r, voiceModels(safeJson(await getSetting(VOICE_MODELS_KEY).catch(() => null), {})));
 }
 
 export async function syncReceptionist(receptionistId: string): Promise<{ agentId: string; docs: number }> {
@@ -461,7 +469,7 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
 
     const { ids: toolIds, attached } = await syncAgentTools(r);
     const platform = await mergedPlatformSettings(r.elevenLabsAgentId, r.agentType === "followup");
-    const config = { ...agentConfig(r, docs, attached), platform_settings: platform };
+    const config = { ...agentConfig(r, docs, attached, await voiceModelForAgent(r)), platform_settings: platform };
     // If ElevenLabs ever rejects the security settings, still sync the agent (with a warning)
     // rather than leave it out of date.
     const send = async (body: object) => {
@@ -499,6 +507,12 @@ export async function syncReceptionist(receptionistId: string): Promise<{ agentI
       where: { id: r.id },
       data: { elevenLabsAgentId: agentId, elevenLabsKbDocs: JSON.stringify(docs), elevenLabsToolIds: JSON.stringify(toolIds), syncStatus: "SYNCED", syncError: null, lastSyncedAt: new Date() },
     });
+
+    (await import("./answer-path")).clearLineCache();
+    // The line's fixed messages (voicemail prompt, busy) in this voice: new or changed ones only.
+    await import("./line-prompts")
+      .then((m) => m.recordLinePrompts(r))
+      .catch((e) => console.warn("line prompts not recorded; Twilio will read them", r.id, e));
 
     // Old docs are detached now; remove them (best effort).
     for (const old of previous) {

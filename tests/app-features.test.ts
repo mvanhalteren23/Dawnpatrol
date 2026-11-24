@@ -336,3 +336,92 @@ describe("yearly billing", async () => {
     expect(m).toEqual([{ start: new Date("2026-11-05T00:00:00Z"), end: new Date("2026-12-05T00:00:00Z") }]);
   });
 });
+
+// --- Answer path, voice models, warm ping, professionals industry (Nov 24) ---------------------
+import { ANSWER_BUDGET_MS, plainCallerContext, TtlCache, withBudget } from "@/lib/answer-path-rules";
+import { DEFAULT_VOICE_MODELS, parseTierChoice, validVoiceModel, voiceModelFor, voiceModels, voiceTierFor } from "@/lib/voice-model-rules";
+import { inWarmHours } from "../infra/cloudflare/warm-worker/worker.js";
+import { INDUSTRIES, TRADE_KEYS } from "@/lib/site-content";
+import { tradeFor, TRADE_QUESTIONS } from "@/lib/discovery-rules";
+import { templateFor } from "@/lib/agent-templates";
+import { sitemapEntries, TOWN_TRADES } from "@/lib/seo";
+
+describe("answer path", () => {
+  it("uses the result when it's in time, the fallback when it's late or fails", async () => {
+    expect(await withBudget(Promise.resolve("ctx"), 50, "")).toBe("ctx");
+    expect(await withBudget(new Promise<string>((r) => setTimeout(() => r("late"), 200)), 20, "")).toBe("");
+    expect(await withBudget(Promise.reject(new Error("db down")), 50, "fallback")).toBe("fallback");
+    expect(ANSWER_BUDGET_MS).toBeLessThanOrEqual(800);
+  });
+  it("caches lookups briefly and never caches a miss", async () => {
+    const c = new TtlCache<string>(1000);
+    let loads = 0;
+    const load = async () => (loads++, "line");
+    expect(await c.getOrLoad("n", load, 0)).toBe("line");
+    expect(await c.getOrLoad("n", load, 500)).toBe("line");
+    expect(loads).toBe(1);
+    expect(await c.getOrLoad("n", load, 2000)).toBe("line");
+    expect(loads).toBe(2);
+    let misses = 0;
+    await c.getOrLoad("x", async () => (misses++, null as unknown as string), 0);
+    await c.getOrLoad("x", async () => (misses++, null as unknown as string), 1);
+    expect(misses).toBe(2);
+  });
+  it("Grace answers a caller she couldn't look up in time as a new caller with her greeting", () => {
+    expect(plainCallerContext("Hi, it's Grace")).toMatchObject({ caller_type: "new", opening: "Hi, it's Grace", demo_extension: "" });
+  });
+});
+
+describe("voice model tiers", () => {
+  it("puts demos on fast and everything else on premium unless the line chooses", () => {
+    expect(voiceTierFor({ lifecycle: "demo" })).toBe("fast");
+    expect(voiceTierFor({ lifecycle: "production" })).toBe("premium");
+    expect(voiceTierFor({ lifecycle: "production", agentType: "followup" })).toBe("premium");
+    expect(voiceTierFor({ lifecycle: "production", voiceModelTier: "fast" })).toBe("fast");
+    expect(voiceTierFor({ lifecycle: "demo", voiceModelTier: "premium" })).toBe("premium");
+    expect(parseTierChoice("bogus")).toBe("auto");
+  });
+  it("falls back to the default models for anything missing or invalid", () => {
+    expect(voiceModels(null)).toEqual(DEFAULT_VOICE_MODELS);
+    expect(voiceModels({ fast: "gemini-3.5-flash", premium: "Robert'); DROP" })).toEqual({ premium: DEFAULT_VOICE_MODELS.premium, fast: "gemini-3.5-flash" });
+    expect(validVoiceModel("claude-haiku-5-5")).toBe(true);
+    expect(voiceModelFor({ lifecycle: "demo" }, { premium: "p", fast: "f" })).toBe("f");
+  });
+});
+
+describe("warm-up ping hours", () => {
+  // 2026-11-24 is a Tuesday. 17:00 UTC is 9:00 in Vancouver (PST, UTC-8).
+  const env = { WARM_TZ: "America/Vancouver" };
+  it("pings in business hours only", () => {
+    expect(inWarmHours(new Date("2026-11-24T17:00:00Z"), env)).toBe(true);
+    expect(inWarmHours(new Date("2026-11-24T12:00:00Z"), env)).toBe(false); // 4 AM
+    expect(inWarmHours(new Date("2026-11-29T18:00:00Z"), env)).toBe(false); // Sunday
+    expect(inWarmHours(new Date("2026-11-29T18:00:00Z"), { ...env, WARM_DAYS: "0" })).toBe(true);
+  });
+});
+
+describe("brokers and professionals industry", () => {
+  it("is a full industry on the website", () => {
+    expect(TRADE_KEYS).toContain("professionals");
+    const p = INDUSTRIES.professionals;
+    expect(p.path).toBe("/professional-services");
+    expect(p.simulation.customer.transcript.some((l) => /rates depend/i.test(l.text))).toBe(true);
+    expect(JSON.stringify(p)).not.toMatch(/\b\d\.\d+\s?%/); // never shows a rate
+  });
+  it("recognises brokers and similar practices, and gives them their own template", () => {
+    for (const s of ["Mortgage broker", "Auto insurance broker", "Realtor", "Bookkeeping", "Financial advisor", "Brokers & Professionals", "Broker / professional"]) expect(tradeFor(s)).toBe("professionals");
+    expect(tradeFor("Professional painting")).toBe("contractors");
+    expect(tradeFor("Auto repair")).toBe("mechanics");
+    expect(TRADE_QUESTIONS.professionals.length).toBe(5);
+    const t = templateFor("Mortgage broker");
+    expect(t.key).toBe("professional");
+    expect(t.settings.escalationRules).toMatch(/Never quote rates/);
+    expect(t.knowledge.some((k) => k.active && /SIN/.test(k.content))).toBe(true);
+  });
+  it("has no town pages (their copy is about job sites and storms)", () => {
+    expect(TOWN_TRADES).not.toContain("professionals");
+    const urls = sitemapEntries().map((e) => e.url);
+    expect(urls.some((u) => u.endsWith("/professional-services"))).toBe(true);
+    expect(urls.some((u) => u.includes("/professional-services/"))).toBe(false);
+  });
+});

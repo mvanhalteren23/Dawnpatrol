@@ -8,7 +8,9 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ModelPicker } from "@/components/ModelPicker";
 import { getSetting } from "@/lib/settings";
 import { AUTO_RESEARCH_BATCH_LIMIT, AUTO_RESEARCH_KEY } from "@/lib/jobs";
-import { resetAiRoutes, saveAiRoutes, saveAutoResearch } from "../actions";
+import { resetAiRoutes, saveAiRoutes, saveAutoResearch, saveVoiceModels } from "../actions";
+import { DEFAULT_VOICE_MODELS, VOICE_MODELS_KEY, voiceModels } from "@/lib/voice-model-rules";
+import { safeJson } from "@/lib/utils";
 
 const PROVIDER_LABEL = { anthropic: "Claude (Anthropic API)", gemini: "Gemini (Google AI Studio)" } as const;
 
@@ -20,12 +22,14 @@ async function geminiModels(): Promise<string[]> {
 
 export async function AiModels() {
   const since = new Date(Date.now() - 30 * 86400_000);
-  const [routes, gModels, usage, autoResearch] = await Promise.all([
+  const [routes, gModels, usage, autoResearch, savedVoice] = await Promise.all([
     getRoutes(),
     geminiModels(),
     db.aiUsage.groupBy({ by: ["task", "provider", "model", "ok"], where: { createdAt: { gte: since } }, _count: true, _sum: { tokensIn: true, tokensOut: true } }),
     getSetting(AUTO_RESEARCH_KEY),
+    getSetting(VOICE_MODELS_KEY),
   ]);
+  const voice = voiceModels(safeJson(savedVoice, {}));
   const claudeModels = Object.keys(CLAUDE_PRICES);
   const providerOptions = PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABEL[p] }));
   // Gemini: the models this key can call (newest aliases first), else the known aliases.
@@ -50,6 +54,16 @@ export async function AiModels() {
         </div>
       </div>
 
+
+      <form action={saveVoiceModels} className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+        <div className="font-medium">Voice agents (phone calls)</div>
+        <p className="text-xs text-slate-500">The model each phone agent thinks with, set in ElevenLabs when the agent syncs. Premium: Grace, booking lines, follow-up calls. Fast: website and prospect demos, and any line set to Fast on its receptionist page. Saving a change re-syncs the agents on that tier.</p>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <label className="block"><span className="label">Premium</span><input name="premium" defaultValue={voice.premium} placeholder={DEFAULT_VOICE_MODELS.premium} className="input" /></label>
+          <label className="block"><span className="label">Fast</span><input name="fast" defaultValue={voice.fast} placeholder={DEFAULT_VOICE_MODELS.fast} className="input" /></label>
+        </div>
+        <SubmitButton className="btn-secondary" pendingText="Saving…">Save voice models</SubmitButton>
+      </form>
 
       <form action={saveAutoResearch} className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" name="autoResearch" defaultChecked={autoResearch !== "off"} /> Research every new account automatically</label>

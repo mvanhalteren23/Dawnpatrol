@@ -21,6 +21,8 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/house-line", () => ({ houseReceptionist: async () => house, callerContext: async (from: string, greeting: string) => (from === "+16045550199" ? { caller_type: "team", team_name: "Matt", opening: "Hi Matt" } : { caller_type: from === "+16045550101" ? "client" : "new", team_name: "", opening: greeting }) }));
+// Grace is cached per server instance in production; here each test sets her directly.
+vi.mock("@/lib/answer-path", () => ({ cachedHouseReceptionist: async () => house }));
 vi.mock("@/lib/demo-line", () => ({ demoLineConfig: async () => ({ number: "+17786504870", greeting: "Welcome to the demo line.", fallbackReceptionistId: null }) }));
 vi.mock("@/lib/elevenlabs", () => ({ registerTwilioCall }));
 vi.mock("@/lib/outreach", () => ({ recordActivity }));

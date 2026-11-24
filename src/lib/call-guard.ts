@@ -31,9 +31,18 @@ export async function blockNumber(phone: string, reason: string, by: string | nu
 }
 
 /** 2-minute voicemail: while a line's daily cutoff is tripped, or for a caller over their limit. */
-export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why: "paused" | "limit" | "agent" = "paused"): string {
+export async function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why: "paused" | "limit" | "agent" = "paused"): Promise<string> {
   const base = `${appBase()}/api/voice/guard?r=${encodeURIComponent(r.id)}&why=${why}`;
-  return twiml(`${say(MESSAGES.voicemail(r.businessName))}<Record maxLength="${VOICEMAIL_SECONDS}" playBeep="true" timeout="8" transcribe="true" transcribeCallback="${escapeXml(`${base}&step=transcript`)}" action="${escapeXml(`${base}&step=done`)}" method="POST"/><Hangup/>`);
+  return twiml(`${await speakForLine(r, MESSAGES.voicemail(r.businessName))}<Record maxLength="${VOICEMAIL_SECONDS}" playBeep="true" timeout="8" transcribe="true" transcribeCallback="${escapeXml(`${base}&step=transcript`)}" action="${escapeXml(`${base}&step=done`)}" method="POST"/><Hangup/>`);
+}
+
+/** The line's recorded voice for a fixed message (line-prompts.ts), or Twilio reading it. */
+async function speakForLine(r: Pick<Receptionist, "id">, text: string): Promise<string> {
+  try {
+    return await (await import("./line-prompts")).speak(r, text);
+  } catch {
+    return say(text);
+  }
 }
 
 /**
@@ -41,21 +50,25 @@ export function voicemailTwiml(r: Pick<Receptionist, "id" | "businessName">, why
  * the agent, or null to carry on (ring-first or the agent).
  */
 export async function screenCall(o: { line: string; from: string; callSid: string; limits: LineLimits; r: Pick<Receptionist, "id" | "businessName" | "guardTrippedAt"> }): Promise<string | null> {
-  if (await isBlocked(o.from)) return twiml(`<Reject reason="busy"/>`);
+  // Everything below starts at once (database and Twilio), rather than one lookup after another.
+  const anonymous = isAnonymous(o.from);
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
+  const blockedP = isBlocked(o.from);
+  const trustedP = anonymous ? Promise.resolve(false) : isTrusted(o.r.id, o.from).catch(() => false);
+  const liveP = listCalls({ To: o.line, Status: "in-progress" });
+  const historyP = anonymous ? listCalls({ To: o.line, "StartTime>": since }) : listCalls({ To: o.line, From: o.from, "StartTime>": since });
+  liveP.catch(() => undefined);
+  historyP.catch(() => undefined);
+  if (await blockedP) return twiml(`<Reject reason="busy"/>`);
   if (o.r.guardTrippedAt) return voicemailTwiml(o.r);
   try {
-    const anonymous = isAnonymous(o.from);
-    const trusted = !anonymous && (await isTrusted(o.r.id, o.from));
-    const since = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
-    const [inProgress, history] = await Promise.all([
-      listCalls({ To: o.line, Status: "in-progress" }),
-      trusted ? Promise.resolve([] as TwilioCall[]) : anonymous ? listCalls({ To: o.line, "StartTime>": since }) : listCalls({ To: o.line, From: o.from, "StartTime>": since }),
-    ]);
+    const trusted = await trustedP;
+    const [inProgress, history] = await Promise.all([liveP, trusted ? Promise.resolve([] as TwilioCall[]) : historyP]);
     // 5. Calls at the same time on this line.
     const live = inProgress.filter((c) => c.sid !== o.callSid);
     if (live.length >= o.limits.maxConcurrentCalls) {
       const texting = await textBackOnce(o.line, o.from, o.r.businessName);
-      return twiml(`${say(MESSAGES.busy(o.r.businessName, texting))}<Hangup/>`);
+      return twiml(`${await speakForLine(o.r, MESSAGES.busy(o.r.businessName, texting))}<Hangup/>`);
     }
     // 3. This caller over their allowance in the last 24 hours.
     const theirs = anonymous ? history.filter((c) => isAnonymous(c.from)) : history;
@@ -146,6 +159,7 @@ export async function checkLineVolume(r: Receptionist): Promise<void> {
 
 export async function resetGuard(receptionistId: string) {
   await db.receptionist.update({ where: { id: receptionistId }, data: { guardTrippedAt: null, guardReason: "" } });
+  (await import("./answer-path")).clearLineCache();
 }
 
 /**

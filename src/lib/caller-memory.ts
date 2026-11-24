@@ -1,11 +1,12 @@
 import "server-only";
 import { db } from "./db";
 import { toE164 } from "./twilio";
+import { ANSWER_BUDGET_MS } from "./answer-path-rules";
 import { callerContextText, cleanFirstName, matchableNumber } from "./caller-memory-rules";
 
 // Returning-caller recognition: before the agent answers, look up what this line's own records say
 // about the caller's number (see caller-memory-rules.ts for how it's worded and kept safe). It runs
-// while the call connects, so it gives up after 1.5 seconds and the call carries on without it.
+// while the call connects, so it gives up after ANSWER_BUDGET_MS (0.7 seconds) and the call carries on without it.
 
 const ACTIVE = ["BOOKED", "CONFIRMED", "RESCHEDULE_REQUESTED"];
 
@@ -14,7 +15,7 @@ export async function callerMemory(r: { id: string; recognizeCallers?: boolean }
   const phone = toE164(fromRaw);
   if (!matchableNumber(phone)) return "";
   try {
-    return await Promise.race([lookup(r.id, phone), new Promise<string>((resolve) => setTimeout(() => resolve(""), 1500))]);
+    return await Promise.race([lookup(r.id, phone), new Promise<string>((resolve) => setTimeout(() => resolve(""), ANSWER_BUDGET_MS))]);
   } catch (err) {
     console.warn("caller memory failed; carrying on without it", err);
     return "";

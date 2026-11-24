@@ -26,7 +26,7 @@ export function PricingSection({ trade }: { trade?: TradeKey }) {
     <section id="pricing" className="mx-auto max-w-7xl scroll-mt-24 px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-10 max-w-3xl">
         <div style={{ letterSpacing: "0.2em" }} className="font-condensed-700 mb-2 text-sm uppercase text-[#A87A33]">Simple, transparent pricing</div>
-        <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed {trade === "retail" ? "customer" : "job"}.</h2>
+        <h2 style={{ lineHeight: 0.95 }} className="font-condensed-800 text-4xl text-[#1F3B2D] sm:text-[48px]">One flat plan. Less than the profit on a single missed {trade === "retail" ? "customer" : trade === "professionals" ? "client" : "job"}.</h2>
         <p className="mt-2 text-[18px] font-medium leading-[28px] text-[#6B5A43]">No per-seat fees, no setup charges and no contract: billed monthly (or yearly at 20% off), cancel any time. All prices in {price.name} ({price.symbol}){currency === "CAD" ? ", plus GST/HST" : ""}.</p>
         <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-[#6B5A43]"><span>Show prices in</span><CurrencyToggle /></div>
       </div>
@@ -52,7 +52,7 @@ export function PricingSection({ trade }: { trade?: TradeKey }) {
             <li className="flex items-start gap-3">{CHECK}<span><strong>White-glove onboarding &amp; direct phone support</strong> whenever you need changes.</span></li>
           </ul>
           <a href="#follow-up-agent" className="flex items-center justify-between gap-4 rounded-[12px] border border-[#6B5A43] bg-[#173022] p-4 text-sm text-[#EFE6D4] hover:border-[#D8B47A] hover:no-underline">
-            <span><strong className="text-[#D8B47A]">Add-on: Follow-Up Agent.</strong> Calls every website lead back within minutes and books {trade === "retail" ? "the appointment" : "the job"}.</span>
+            <span><strong className="text-[#D8B47A]">Add-on: Follow-Up Agent.</strong> Calls every website lead back within minutes and books {trade === "retail" ? "the appointment" : trade === "professionals" ? "the consultation" : "the job"}.</span>
             <span className="font-condensed-700 shrink-0 text-lg text-[#D8B47A]">{FOLLOWUP_ADDON_PRICE ? `+${money(FOLLOWUP_ADDON_PRICE[currency])}/mo` : "Ask us →"}</span>
           </a>
           <DemoButton trade={trade} className="w-full px-8 sm:w-auto">Start with the {PLAN_NAME}</DemoButton>
@@ -75,7 +75,7 @@ export function PricingSection({ trade }: { trade?: TradeKey }) {
           </div>
           <div className="space-y-2 rounded-[12px] bg-[#173022] p-5 text-[#EFE6D4]">
             <div className="flex items-center justify-between text-sm"><span>Estimated monthly plan:</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#D8B47A]">{money(monthly)} / mo</span></div>
-            <div className="flex items-center justify-between border-t border-[#1F3B2D] pt-2 text-sm"><span>If we save just 2 missed {trade === "retail" ? "sales or appointments" : trade === "mechanics" ? "repairs" : "jobs"} a week:</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#EFE6D4]">+{money(avgJobValue * 8)} / mo</span></div>
+            <div className="flex items-center justify-between border-t border-[#1F3B2D] pt-2 text-sm"><span>{trade === "professionals" ? "If we save just 1 new client a month:" : `If we save just 2 missed ${trade === "retail" ? "sales or appointments" : trade === "mechanics" ? "repairs" : "jobs"} a week:`}</span><span className="font-condensed-800 whitespace-nowrap text-2xl text-[#EFE6D4]">+{money(avgJobValue * (trade === "professionals" ? 1 : 8))} / mo</span></div>
           </div>
           <p className="text-xs text-[#6B5A43]">An estimate to help you decide, not a guarantee. Your dashboard shows your real minutes every month.</p>
         </div>

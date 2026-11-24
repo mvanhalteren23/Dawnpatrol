@@ -18,7 +18,8 @@ describe("agent templates", () => {
     expect(templateFor("Auto Repair").key).toBe("auto_repair");
     expect(templateFor("Plumbing").key).toBe("contractor");
     expect(templateFor("Hair salon").key).toBe("retail");
-    expect(templateFor("Accounting").key).toBe("general");
+    expect(templateFor("Accounting").key).toBe("professional");
+    expect(templateFor("Dog grooming").key).toBe("general");
     expect(templateFor("Auto Repair", "followup").key).toBe("followup");
   });
 

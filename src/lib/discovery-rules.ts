@@ -6,7 +6,7 @@ import { looksLikeInstructions } from "./safety-rules";
 
 export const MAX_DISCOVERY_QUESTIONS = 5;
 
-export type DiscoveryTrade = "mechanics" | "contractors" | "retail" | "general";
+export type DiscoveryTrade = "mechanics" | "contractors" | "retail" | "professionals" | "general";
 
 export const TRADE_QUESTIONS: Record<DiscoveryTrade, string[]> = {
   mechanics: [
@@ -30,6 +30,13 @@ export const TRADE_QUESTIONS: Record<DiscoveryTrade, string[]> = {
     "Do you offer delivery, pickup or special orders?",
     "When a supplier or delivery driver calls, who should those calls go to?",
   ],
+  professionals: [
+    "What do people call you about most: a new application, a renewal, a quick question, or something else?",
+    "What should the receptionist book for new callers: a discovery call, an office meeting or a video call, and how long is it?",
+    "Are there questions the receptionist must never answer, like rates, approvals or advice, so they always go to you?",
+    "Which callers should come straight to you, like lenders, underwriters, realtors, lawyers or existing clients with a deal closing?",
+    "Which areas do you serve, and do you meet clients in person, by phone or online?",
+  ],
   general: [
     "What are the main services or products customers call you about?",
     "What should the receptionist book for callers, and how long does that usually take?",
@@ -42,6 +49,8 @@ export const TRADE_QUESTIONS: Record<DiscoveryTrade, string[]> = {
 /** The question set for a business type as the CRM or the caller describes it. */
 export function tradeFor(industry: string | null | undefined): DiscoveryTrade {
   const s = (industry ?? "").toLowerCase();
+  // Brokers and other professional practices first ("auto insurance broker" is a broker, not a garage).
+  if (/mortgage|broker|insurance|realt|real estate|accountant|accounting|bookkeep|\btax\b|\bcpa\b|financial|advis[oe]r|wealth|planner|notary|lawyer|law firm|legal|paralegal|immigration consult|appraiser|professional services/.test(s)) return "professionals";
   if (/auto|mechanic|car |cars|vehicle|tire|tyre|brake|collision|body shop|transmission|oil change|garage/.test(s)) return "mechanics";
   if (/plumb|electric|hvac|heating|roof|contract|construct|renovat|landscap|paint|drywall|carpent|floor|concrete|handyman|gutter|fenc|septic|pest|cleaning|trade/.test(s)) return "contractors";
   if (/retail|store|shop|boutique|salon|spa|barber|florist|bakery|café|cafe|restaurant|pharmacy|clinic|studio/.test(s)) return "retail";

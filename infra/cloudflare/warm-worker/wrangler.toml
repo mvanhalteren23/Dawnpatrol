@@ -1,0 +1,14 @@
+name = "headabove-warm"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[triggers]
+crons = ["*/4 * * * *"]
+
+[vars]
+WARM_URL = "https://headabovedigital.com"
+WARM_TZ = "America/Vancouver"
+WARM_START_HOUR = "7"
+WARM_END_HOUR = "19"
+WARM_DAYS = "1,2,3,4,5,6"   # Mon-Sat (0 = Sunday)
+# WARM_TOKEN is a secret: `npx wrangler secret put WARM_TOKEN` (same value as WARM_TOKEN in Vercel)

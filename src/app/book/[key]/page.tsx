@@ -64,8 +64,8 @@ export default async function BookPage({ params, searchParams }: { params: Promi
                 <>
                   <label className="text-sm font-semibold">Business name<input name="business" required maxLength={160} autoComplete="organization" className="mt-1 block w-full rounded-lg border border-[#6B5A43] px-3 py-2 font-normal" /></label>
                   <label className="text-sm font-semibold">Type of business
-                    <select name="businessType" defaultValue={sp.trade === "mechanics" ? "Auto repair" : sp.trade === "retail" ? "Store / salon" : "Contractor / trade"} className="mt-1 block w-full rounded-lg border border-[#6B5A43] bg-white px-3 py-2 font-normal">
-                      {["Contractor / trade", "Auto repair", "Store / salon", "Other"].map((t) => <option key={t}>{t}</option>)}
+                    <select name="businessType" defaultValue={sp.trade === "mechanics" ? "Auto repair" : sp.trade === "retail" ? "Store / salon" : sp.trade === "professionals" ? "Broker / professional" : "Contractor / trade"} className="mt-1 block w-full rounded-lg border border-[#6B5A43] bg-white px-3 py-2 font-normal">
+                      {["Contractor / trade", "Auto repair", "Store / salon", "Broker / professional", "Other"].map((t) => <option key={t}>{t}</option>)}
                     </select>
                   </label>
                 </>

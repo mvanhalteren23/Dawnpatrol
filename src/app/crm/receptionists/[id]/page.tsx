@@ -1,4 +1,5 @@
 import { appUrl } from "@/lib/app-url";
+import { parseTierChoice, TIER_LABEL, VOICE_TIER_CHOICES, voiceTierFor } from "@/lib/voice-model-rules";
 import { requireStaff } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
 import { KeepNumberCard } from "@/components/KeepNumberCard";
@@ -253,6 +254,12 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               <Field label="Line minutes per day"><input name="lineDailyMinutes" type="number" min={20} max={3000} defaultValue={r.lineDailyMinutes} className="input" /></Field>
               <Field label="Calls at the same time"><input name="maxConcurrentCalls" type="number" min={1} max={20} defaultValue={r.maxConcurrentCalls} className="input" /></Field>
             </div>
+            <Field label="AI model for calls">
+              <select name="voiceModelTier" defaultValue={parseTierChoice(r.voiceModelTier)} className="input">
+                {VOICE_TIER_CHOICES.map((c) => <option key={c} value={c}>{TIER_LABEL[c]}</option>)}
+              </select>
+            </Field>
+            <p className="text-xs text-slate-500">Now on the <b>{voiceTierFor(r)}</b> tier. Fast suits lines that mostly take messages; keep premium for lines that book. Changing it re-syncs the agent. Models per tier: Settings → AI models.</p>
             <div className="flex gap-2">
               <SubmitButton className="btn-secondary">Save protection</SubmitButton>
               {r.guardTrippedAt ? <button formAction={resetCallGuard.bind(null, r.id)} className="btn">Reset: back to normal</button> : null}

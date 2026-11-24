@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Head Above Digital | AI Voice Receptionist for the Trades",
-  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops and local storefronts. Answers every call, books the job and texts you the details. From ${PRICE_LABEL} with ${PRICING.includedMinutes} minutes.`,
+  description: `24/7 AI voice receptionist and lead management for contractors, auto repair shops, local storefronts and brokers. Answers every call, books the job and texts you the details. From ${PRICE_LABEL} with ${PRICING.includedMinutes} minutes.`,
   alternates: { canonical: "/" },
 };
 
@@ -24,6 +24,7 @@ const TRADE_CARDS = [
   { id: "contractors", title: "Contractors & Field Trades", sub: "Plumbers, electricians, HVAC, roofers & general contractors. Qualifies scope & books site estimates." },
   { id: "mechanics", title: "Auto Repair & Mechanics", sub: "Logs year/make/model, books bay drop-offs, and sends NAPA/Lordco parts calls to the back desk." },
   { id: "retail", title: "Small Business & Storefronts", sub: "Answers hours & directions while booking fittings and routing freight deliveries." },
+  { id: "professionals", title: "Brokers & Professionals", sub: "Mortgage & insurance brokers, realtors and bookkeepers. Books discovery calls, never quotes rates, puts lenders through." },
 ] as const;
 
 const X = <span className="font-bold text-[#A8401F]" aria-hidden="true">✕</span>;
@@ -36,7 +37,7 @@ export default async function Home() {
       <section className="border-b-4 border-[#173022] bg-[#1F3B2D] py-14 text-[#EFE6D4] lg:py-20">
         <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-12 lg:px-8">
           <div className="space-y-6 lg:col-span-7">
-            <Eyebrow dark>Voice AI for trades, shops &amp; storefronts • 24/7 answering &amp; booking</Eyebrow>
+            <Eyebrow dark>Voice AI for trades, shops, storefronts &amp; brokers • 24/7 answering &amp; booking</Eyebrow>
             <h1 style={{ lineHeight: 0.92 }} className="font-condensed-800 text-5xl text-[#EFE6D4] sm:text-6xl lg:text-[72px]">Every call answered, even when you&apos;re on the tools.</h1>
             <p className="max-w-2xl text-lg font-medium leading-[28px] text-[#EFE6D4] sm:text-[18px]">
               When you are under a sink, under a hood, or ringing up a line of customers, missed calls go straight to the next shop on Google. Head Above Digital answers every call, books the job into your calendar, and texts you the address—while routing parts suppliers straight to your counter.

@@ -42,9 +42,10 @@ export const FOLLOWUP_EXAMPLES: Record<TradeKey, { form: string; call: string; b
   contractors: { form: "“Need a quote to replace our back deck, about 300 sq ft.”", call: "Confirms the size, decking material, timeline and address.", booked: "Site visit booked Thursday 4:30 PM. Lead and notes texted to you." },
   mechanics: { form: "“Check engine light on my 2017 Civic. Can I get it looked at?”", call: "Asks about symptoms and mileage, explains the diagnostic.", booked: "Drop-off booked tomorrow 8:00 AM. Customer gets a confirmation text." },
   retail: { form: "“Do you do bike fittings? Looking at a new road bike.”", call: "Asks about riding style and budget, shares fitting options.", booked: "Fitting booked Saturday 11:00 AM. Store gets the details by text." },
+  professionals: { form: "“Our mortgage renews in March. Can someone go over our options?”", call: "Confirms the renewal date, purchase or refinance, and the best way to meet.", booked: "Discovery call booked Tuesday 12:30 PM. Broker gets the notes by text." },
 };
 
-export type TradeKey = "contractors" | "mechanics" | "retail";
+export type TradeKey = "contractors" | "mechanics" | "retail" | "professionals";
 export type Scenario = "customer" | "supplier";
 export type Line = { speaker: "AI Dispatcher" | "Caller"; text: string };
 export type SampleCall = { caller: string; badge: string; transcript: Line[]; smsToOwner: string; smsToClient: string; clientLabel: string };
@@ -274,6 +275,73 @@ export const INDUSTRIES: Record<TradeKey, Industry> = {
       description: `24/7 AI voice receptionist for storefronts, salons and local shops. Answers store hours and questions, books appointments, routes deliveries and texts confirmations. From ${PRICE_LABEL}.`,
     },
   },
+  professionals: {
+    id: "professionals",
+    path: "/professional-services",
+    tabLabel: "Brokers & Professionals",
+    shortLabel: "Brokers & Advisors",
+    eyebrow: "Voice AI for mortgage brokers, advisors & solo professionals",
+    heroTitle: "With a client or out at a showing? We answer every call.",
+    heroSub:
+      "Head Above Digital gives mortgage brokers, insurance brokers, realtors, bookkeepers and other self-employed professionals a 24/7 AI receptionist that answers every call, books discovery calls into your calendar, and puts lenders, partners and closing-day calls straight through—without ever quoting a rate or giving advice.",
+    primaryCta: "Book a Practice Demo",
+    trustBadges: ["Never Quotes Rates", "Discovery Calls Booked", "Partner Calls Put Through"],
+    painHeading: "Stop letting new clients go to voicemail while you're with a client.",
+    stepsHeading: "Four steps from first ring to booked consultation.",
+    plan: { callsNote: "about 80 to 120 typical calls for a solo practice", routing: { title: "Lender & partner routing", desc: "lenders, underwriters, realtors and lawyers on a live file go straight to your mobile." }, valueLabel: "Your average client file", avgValue: 1500 },
+    footerTagline: "Voice AI for brokers and solo professionals. Every call answered, every consultation booked.",
+    painPoints: [
+      { title: "No More Missed First Calls", desc: "A homebuyer calling about a pre-approval calls the next broker on the list if you don't pick up. Every call is answered on the first ring, even while you're in a meeting." },
+      { title: "Discovery Calls Booked for You", desc: "Collects what the caller needs help with, how they'd like to meet, and books a phone, video or office consultation into your calendar." },
+      { title: "Never Quotes Rates or Gives Advice", desc: "Rates, approvals, eligibility and advice always come to you. The receptionist books the conversation instead, so nothing is promised on your behalf." },
+      { title: "Partner & Closing-Day Calls Put Through", desc: "Lenders, underwriters, realtors and lawyers on a live file skip the intake questions and ring your mobile, so a subject removal never waits behind a price shopper." },
+    ],
+    steps: [
+      { step: "Step 1: Instant Answering", action: "24/7 call pickup", outcome: "New clients get a friendly, professional answer instead of voicemail, evenings and weekends included." },
+      { step: "Step 2: Intake & Booking", action: "Needs and meeting preference", outcome: "Captures purchase, renewal, refinance or policy questions, timelines, and books a discovery call in your calendar." },
+      { step: "Step 3: Instant SMS Summary", action: "Automated text messages", outcome: "The caller gets a confirmation text with the meeting time; you get a short summary of what they need." },
+      { step: "Step 4: Tailored Practice Setup", action: "White-glove onboarding", outcome: "We set up your services, partner list and what must always come to you, connect your calendar, and test the line." },
+    ],
+    featuresTitle: "Built for Busy Practices",
+    features: [
+      { title: "Discreet, Professional Intake", desc: "Never asks for a SIN, account numbers or documents over the phone. Takes just what you need to prepare for the first call." },
+      { title: "Partner & Lender Routing", desc: "The lenders, underwriters, realtors and lawyers you work with are put straight through to your mobile or sent to an urgent message." },
+      { title: "Calendar Booking", desc: "Checks your real availability before it books phone, video or in-person consultations, so nothing double-books." },
+      { title: "Every Call Summarised", desc: "A transcript and a short summary of every call in your dashboard, and a text to you the moment a new client calls." },
+    ],
+    simulation: {
+      customer: {
+        caller: "Homebuyer — Pre-Approval Question",
+        badge: "Discovery call booked",
+        clientLabel: "Instant SMS to caller",
+        transcript: [
+          { speaker: "AI Dispatcher", text: "Thanks for calling Harbourline Mortgage. Jordan is with a client right now, but I can book a time for you to talk. What can I help you with?" },
+          { speaker: "Caller", text: "Hi, we're starting to look at houses and want to get pre-approved. What kind of rate could we get?" },
+          { speaker: "AI Dispatcher", text: "Rates depend on your situation, so Jordan goes over that with you directly. I can book a 30-minute call. Would Tuesday at 12:30 or Wednesday at 4:00 work, by phone or video?" },
+          { speaker: "Caller", text: "Tuesday at 12:30 by phone. I'm Priya." },
+          { speaker: "AI Dispatcher", text: "You're booked for Tuesday at 12:30, Priya. I've texted you the confirmation and a short list of what to have handy." },
+        ],
+        smsToOwner: "NEW DISCOVERY CALL: Pre-approval, first home | Slot: Tue 12:30 PM (phone) | Caller: Priya (604-555-0163)",
+        smsToClient: "Confirmed: your call with Jordan at Harbourline Mortgage is Tue at 12:30 PM. Jordan will call you at this number. Reply here to change the time.",
+      },
+      supplier: {
+        caller: "Lender Underwriter — Condition on a Live File",
+        badge: "Lender put through",
+        clientLabel: "Call log",
+        transcript: [
+          { speaker: "AI Dispatcher", text: "Thanks for calling Harbourline Mortgage. How can I help?" },
+          { speaker: "Caller", text: "Hi, it's Dana, underwriting at the lender. I need one more document on the Chen file before Friday's subject removal." },
+          { speaker: "AI Dispatcher", text: "Thanks Dana. That's urgent, so I'm putting you straight through to Jordan's mobile now." },
+        ],
+        smsToOwner: "LENDER TRANSFER: Dana (underwriting) re: Chen file, condition due before Friday's subject removal. Ringing your mobile now.",
+        smsToClient: "Lender call identified (underwriting, live file) → put through to Jordan's mobile (0m 12s).",
+      },
+    },
+    seo: {
+      title: "AI Receptionist for Mortgage Brokers & Professionals",
+      description: `24/7 AI voice receptionist for mortgage brokers, insurance brokers, realtors, bookkeepers and solo professionals. Books discovery calls, routes lender and partner calls, never quotes rates. From ${PRICE_LABEL}.`,
+    },
+  },
 };
 
 export const TRADE_KEYS = Object.keys(INDUSTRIES) as TradeKey[];
@@ -284,6 +352,7 @@ export const SAMPLE_VOICES: Record<TradeKey, { dispatcher: string; customer: str
   contractors: { dispatcher: "cgSgspJ2msm6clMCkdW9" /* Jessica */, customer: "iP95p4xoKVk53GoZ742B" /* Chris */, supplier: "pqHfZKP75CvOlQylNhV4" /* Bill */ },
   mechanics: { dispatcher: "cjVigY5qzO86Huf0OWal" /* Eric */, customer: "bIHbv24MWmeRgasZH58o" /* Will */, supplier: "CwhRBWXzGAHq8TQ4Fs17" /* Roger */ },
   retail: { dispatcher: "EXAVITQu4vr4xnSDxMaL" /* Sarah */, customer: "FGY2WhTYpPnrIDTdsKH5" /* Laura */, supplier: "nPczCjzI2devNBz1zQrb" /* Brian */ },
+  professionals: { dispatcher: "Xb7hH8MSUJpSbSDYk0k2" /* Alice */, customer: "XrExE9yKIg1WjnnlVkGX" /* Matilda */, supplier: "onwK4e9ZLuTAKqWW03F9" /* Daniel */ },
 };
 /** Used if one of the voices above isn't available to the account. */
 export const FALLBACK_VOICES = { dispatcher: "cjVigY5qzO86Huf0OWal", caller: "iP95p4xoKVk53GoZ742B" };
@@ -322,5 +391,16 @@ export const CALL_SCENES: Record<TradeKey, { business: string; setting: string; 
       { speaker: "AI Dispatcher", text: "You're booked, Sarah. Parking details are on their way by text." },
     ],
     toast: { title: "Fitting booked", body: "Sat 11:00 AM · Ski boot fitting · Sarah (604-555-0174)" },
+  },
+  professionals: {
+    business: "Harbourline Mortgage",
+    setting: "In a client meeting · phone face down",
+    lines: [
+      { speaker: "Caller", text: "Hi, our mortgage renews in March. Can we talk about options?" },
+      { speaker: "AI Dispatcher", text: "Of course. Jordan has Tuesday at 12:30 or Wednesday at 4:00. Phone or video?" },
+      { speaker: "Caller", text: "Wednesday at 4, by video. It's Ken." },
+      { speaker: "AI Dispatcher", text: "Booked, Ken. The video link is on its way by text." },
+    ],
+    toast: { title: "Discovery call booked", body: "Wed 4:00 PM · Renewal review (video) · Ken (604-555-0127)" },
   },
 };

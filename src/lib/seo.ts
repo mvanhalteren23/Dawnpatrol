@@ -109,8 +109,11 @@ export function townBySlug(slug: string): Town | null {
 }
 
 /** "AI receptionist for contractors in Vancouver" etc. */
-const TRADE_NOUN: Record<TradeKey, string> = { contractors: "contractors and trades", mechanics: "auto repair shops", retail: "local shops and storefronts" };
-const TITLE_NOUN: Record<TradeKey, string> = { contractors: "Contractors", mechanics: "Auto Repair Shops", retail: "Local Shops" };
+const TRADE_NOUN: Record<TradeKey, string> = { contractors: "contractors and trades", mechanics: "auto repair shops", retail: "local shops and storefronts", professionals: "mortgage brokers and professionals" };
+const TITLE_NOUN: Record<TradeKey, string> = { contractors: "Contractors", mechanics: "Auto Repair Shops", retail: "Local Shops", professionals: "Mortgage Brokers & Professionals" };
+
+/** Industries with town pages (the town copy is about storms, seasons and job sites, so not brokers). */
+export const TOWN_TRADES: TradeKey[] = ["contractors", "mechanics", "retail"];
 
 export function townPage(trade: TradeKey, town: Town) {
   const ind = INDUSTRIES[trade];
@@ -131,7 +134,7 @@ export function sitemapEntries(now = new Date()): { url: string; lastModified: D
   ];
   for (const k of Object.keys(INDUSTRIES) as TradeKey[]) {
     out.push({ url: `${SITE_URL}${INDUSTRIES[k].path}`, lastModified: now, changeFrequency: "monthly", priority: 0.9 });
-    for (const t of TOWNS) out.push({ url: `${SITE_URL}${townPage(k, t).path}`, lastModified: now, changeFrequency: "monthly", priority: 0.7 });
+    if (TOWN_TRADES.includes(k)) for (const t of TOWNS) out.push({ url: `${SITE_URL}${townPage(k, t).path}`, lastModified: now, changeFrequency: "monthly", priority: 0.7 });
   }
   out.push({ url: `${SITE_URL}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.6 });
   for (const path of ["/privacy", "/terms", "/google-calendar"]) out.push({ url: `${SITE_URL}${path}`, lastModified: now, changeFrequency: "monthly", priority: 0.3 });

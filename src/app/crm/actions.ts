@@ -1123,6 +1123,31 @@ export async function saveAutoResearch(form: FormData) {
   back("/crm/settings", { notice: form.get("autoResearch") === "on" ? "New accounts will be researched automatically" : "Automatic research is off" });
 }
 
+/** The AI models voice agents run on (premium and fast tiers). Re-syncs every agent whose model changed. */
+export async function saveVoiceModels(form: FormData) {
+  await requireAdmin();
+  const { setSetting, getSetting } = await import("@/lib/settings");
+  const { VOICE_MODELS_KEY, validVoiceModel, voiceModels } = await import("@/lib/voice-model-rules");
+  const { safeJson } = await import("@/lib/utils");
+  const before = voiceModels(safeJson(await getSetting(VOICE_MODELS_KEY), {}));
+  const premium = str(form, "premium").trim();
+  const fast = str(form, "fast").trim();
+  if ((premium && !validVoiceModel(premium)) || (fast && !validVoiceModel(fast))) back("/crm/settings", { error: "Use an ElevenLabs model id, e.g. claude-sonnet-5-5 or claude-haiku-5-5" });
+  const next = voiceModels({ premium, fast });
+  await setSetting(VOICE_MODELS_KEY, JSON.stringify(next));
+  const changed = (["premium", "fast"] as const).filter((t) => next[t] !== before[t]);
+  if (changed.length) {
+    const { voiceTierFor } = await import("@/lib/voice-model-rules");
+    const agents = await db.receptionist.findMany({ where: { elevenLabsAgentId: { not: null }, lifecycle: { not: "expired" } }, select: { id: true, voiceModelTier: true, lifecycle: true, agentType: true } });
+    const ids = agents.filter((a) => changed.includes(voiceTierFor(a))).map((a) => a.id);
+    after(async () => {
+      for (const id of ids) await syncReceptionist(id).catch((e) => console.error("voice model sync", id, e));
+    });
+    back("/crm/settings", { notice: `Voice models saved. Re-syncing ${ids.length} agent${ids.length === 1 ? "" : "s"} in the background.` });
+  }
+  back("/crm/settings", { notice: "Voice models saved" });
+}
+
 export async function resetAiRoutes() {
   await requireAdmin();
   const { deleteSetting } = await import("@/lib/settings");
@@ -1414,8 +1439,10 @@ export async function saveCallGuard(receptionistId: string, form: FormData) {
   const { clampGuard } = await import("@/lib/call-guard-rules");
   const n = (k: "maxCallMinutes" | "silenceHangupSeconds" | "callerDailyCalls" | "callerDailyMinutes" | "lineDailyMinutes" | "maxConcurrentCalls") => clampGuard(k, Number(str(form, k)), r[k]);
   const data = { maxCallMinutes: n("maxCallMinutes"), silenceHangupSeconds: n("silenceHangupSeconds"), callerDailyCalls: n("callerDailyCalls"), callerDailyMinutes: n("callerDailyMinutes"), lineDailyMinutes: n("lineDailyMinutes"), maxConcurrentCalls: n("maxConcurrentCalls") };
-  await db.receptionist.update({ where: { id: receptionistId }, data });
-  if ((data.maxCallMinutes !== r.maxCallMinutes || data.silenceHangupSeconds !== r.silenceHangupSeconds) && r.elevenLabsAgentId) {
+  const { parseTierChoice } = await import("@/lib/voice-model-rules");
+  const voiceModelTier = form.has("voiceModelTier") ? parseTierChoice(str(form, "voiceModelTier")) : r.voiceModelTier;
+  await db.receptionist.update({ where: { id: receptionistId }, data: { ...data, voiceModelTier } });
+  if ((data.maxCallMinutes !== r.maxCallMinutes || data.silenceHangupSeconds !== r.silenceHangupSeconds || voiceModelTier !== r.voiceModelTier) && r.elevenLabsAgentId) {
     after(() => syncReceptionist(receptionistId).then(() => undefined).catch((e) => console.error("guard sync", e)));
   }
   back(`/crm/receptionists/${receptionistId}`, { notice: "Call protection saved" });

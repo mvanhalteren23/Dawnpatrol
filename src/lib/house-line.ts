@@ -74,13 +74,15 @@ export async function prospectDemo(from: string): Promise<{ firstName: string; b
  * her opening line (team members are greeted by name and asked what they'd like to do; a prospect
  * with a demo is greeted by name and told their demo is ready), and their demo (if any).
  */
-export async function callerContext(from: string, greeting: string): Promise<CallerContext> {
+export async function callerContext(from: string, greeting: string, knownTeam?: { firstName: string } | null): Promise<CallerContext> {
   const none = { caller_first_name: "", demo_business: "", demo_extension: "", demo_return: "" };
-  const team = await teamMemberByPhone(from).catch(() => null);
+  const team = knownTeam !== undefined ? knownTeam : await teamMemberByPhone(from).catch(() => null);
   if (team) {
     const house = await houseReceptionist();
     return { ...none, caller_type: "team", team_name: team.firstName, opening: `Hi${team.firstName ? ` ${team.firstName}` : ""}, it's ${house?.name ?? "Grace"}. What would you like to do? I can open the demo menu, or a demo by company name.` };
   }
+  // Both lookups start together; the caller type is only used when there's no demo.
+  const typeP = callerType(from).catch(() => "new" as CallerType);
   const demo = await prospectDemo(from).catch(() => null);
   if (demo) {
     const [house, company] = await Promise.all([houseReceptionist(), companyName()]);
@@ -95,7 +97,7 @@ export async function callerContext(from: string, greeting: string): Promise<Cal
       opening: demoProspectOpening({ firstName: demo.firstName, company, receptionist: house?.name ?? "Grace", demoBusiness: demo.business }),
     };
   }
-  return { ...none, caller_type: await callerType(from), team_name: "", opening: greeting };
+  return { ...none, caller_type: await typeP, team_name: "", opening: greeting };
 }
 
 /** Grace back on the line after a demo: its time ran out (book a follow-up), or it didn't connect. */

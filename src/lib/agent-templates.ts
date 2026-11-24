@@ -7,7 +7,7 @@
 
 import { tradeFor } from "./discovery-rules";
 
-export type TemplateKey = "auto_repair" | "contractor" | "retail" | "general" | "followup";
+export type TemplateKey = "auto_repair" | "contractor" | "retail" | "professional" | "general" | "followup";
 
 type KbStarter = { category: string; title: string; content: string; active: boolean };
 
@@ -146,6 +146,38 @@ export const AGENT_TEMPLATES: Record<TemplateKey, AgentTemplate> = {
       fillIn("FAQ", "Stock, special orders and delivery", "How to check stock, special orders, delivery or pickup."),
     ],
   },
+  professional: {
+    key: "professional",
+    label: "Broker / professional practice",
+    settings: {
+      persona: "Calm, discreet and professional, like an experienced office assistant at a brokerage. Plain words, one question at a time. Never sounds salesy.",
+      greeting: (o) => greet(o),
+      escalationRules: "Never quote rates, approvals, eligibility, prices or advice: those always go to the broker or advisor. Never ask for a SIN, account numbers, income documents or passwords over the phone. If a deal is closing soon, a lender, underwriter, realtor or lawyer is calling about a file, the caller is upset, or they ask for a person, offer to transfer or take an urgent message.",
+      bookingTitle: "Discovery call",
+      bookingSlotMinutes: 30,
+      bookingHours: "Mon-Fri 09:00-17:00",
+      bookingMinNoticeHours: 2,
+      bookingDaysAhead: 21,
+      bookingQuestions: "What would you like help with, roughly?\nWould you prefer a phone call, a video call, or meeting in person?",
+      followUpOn: "bookings",
+      followUpChannel: "sms",
+      leadAlertOn: "messages",
+      rescueTextsOn: true,
+      smsAgentOn: true,
+      remindersOn: true,
+      checkinsOn: true,
+      checkinThreshold: 3,
+    },
+    knowledge: [
+      ...PLATFORM_FACTS,
+      { category: "POLICY", title: "Rates, approvals and advice", content: "The receptionist never quotes rates, approvals, eligibility or fees, and never gives financial, legal or tax advice. Those questions are for the broker or advisor, so offer to book a call or take a message.", active: true },
+      { category: "POLICY", title: "Personal and financial information", content: "We never take a SIN, account numbers, income or ID documents, or passwords over the phone or by text. The team collects anything like that directly and securely.", active: true },
+      ...COMMON_FILL_INS.filter((k) => k.category !== "PRICING"),
+      fillIn("SERVICE", "Services offered", "What the practice helps with (purchases, renewals, refinances, policies, returns...), and what it doesn't do."),
+      fillIn("FAQ", "How a first meeting works", "How long the first call or meeting is, what it covers, whether there's any cost, and what to have ready."),
+      fillIn("POLICY", "Partner and urgent calls", "Which lenders, underwriters, realtors or lawyers should be put straight through, and what counts as urgent (a closing date, a subject removal)."),
+    ],
+  },
   general: {
     key: "general",
     label: "Other service business",
@@ -202,7 +234,7 @@ export const TEMPLATE_KEYS = Object.keys(AGENT_TEMPLATES) as TemplateKey[];
 export function templateFor(industry: string | null | undefined, agentType = "inbound"): AgentTemplate {
   if (agentType === "followup") return AGENT_TEMPLATES.followup;
   const trade = tradeFor(industry);
-  return AGENT_TEMPLATES[trade === "mechanics" ? "auto_repair" : trade === "contractors" ? "contractor" : trade === "retail" ? "retail" : "general"];
+  return AGENT_TEMPLATES[trade === "mechanics" ? "auto_repair" : trade === "contractors" ? "contractor" : trade === "retail" ? "retail" : trade === "professionals" ? "professional" : "general"];
 }
 
 /** Settings for a new agent; Canadian businesses get BC statutory holidays switched on. */

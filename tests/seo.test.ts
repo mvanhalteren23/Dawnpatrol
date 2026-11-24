@@ -9,7 +9,8 @@ describe("seo", () => {
     expect(urls).toContain(`${SITE_URL}/contractors/vancouver`);
     expect(urls).toContain(`${SITE_URL}/auto-repair/kelowna`);
     expect(urls).toContain(`${SITE_URL}/guides/${GUIDES[0]!.slug}`);
-    expect(urls).toHaveLength(1 + 3 * (1 + TOWNS.length) + 1 + GUIDES.length + 3);
+    // Four industry pages; town pages for the three trade industries only (not brokers).
+    expect(urls).toHaveLength(1 + 4 + 3 * TOWNS.length + 1 + GUIDES.length + 3);
     expect(urls.every((u) => u.startsWith("https://www.headabovedigital.com"))).toBe(true);
     expect(urls.some((u) => /\/(crm|portal|api|login)/.test(u))).toBe(false);
   });

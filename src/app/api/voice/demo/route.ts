@@ -9,6 +9,8 @@ import { twilioSignatureOk } from "@/lib/twilio-request";
 import { builderAgent, claimBuilderCode, getBuilderSession, isInternalLeg } from "@/lib/live-builder";
 import { isBuilderCode, silentGatherTwiml } from "@/lib/builder-rules";
 import { callerContext, demoReturnContext, houseReceptionist } from "@/lib/house-line";
+import { cachedHouseReceptionist } from "@/lib/answer-path";
+import { ANSWER_BUDGET_MS, GRACE_CONTEXT_BUDGET_MS, plainCallerContext, withBudget } from "@/lib/answer-path-rules";
 import { screenCall } from "@/lib/call-guard";
 import { demoLineLimits } from "@/lib/call-guard-rules";
 import { teamMemberByPhone } from "@/lib/owner-mode";
@@ -24,6 +26,8 @@ import { escapeXml } from "@/lib/twilio";
 //   3. Log the call on the prospect's account (a strong buying signal).
 
 const MAX_ATTEMPTS = 3;
+
+export const preferredRegion = "iad1"; // next to the database (Neon us-east-2) and Twilio's US edge
 
 function xml(body: string) {
   return new Response(body, { headers: { "Content-Type": "text/xml; charset=utf-8" } });
@@ -117,15 +121,21 @@ export async function POST(req: Request) {
   // company receptionist, told only what kind of caller it is; without her, the old directory.
   if (step !== "ext") {
     if (internal) return xml(silentGatherTwiml(action(1)));
-    const grace = await houseReceptionist();
-    if (grace && !(await teamMemberByPhone(from).catch(() => null))) {
+    const grace = await cachedHouseReceptionist();
+    // The team check, the call protections and who's calling run at the same time.
+    const team = grace ? await withBudget(teamMemberByPhone(from), ANSWER_BUDGET_MS, null) : null;
+    const greeting = grace ? grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }) : "";
+    const contextP = grace?.elevenLabsAgentId
+      ? withBudget(callerContext(from, greeting, team), GRACE_CONTEXT_BUDGET_MS, plainCallerContext(greeting))
+      : null;
+    if (grace && !team) {
       const screened = await screenCall({ line: to, from, callSid: params.CallSid ?? "", limits: demoLineLimits(grace), r: grace }).catch(() => null);
       if (screened) return xml(screened);
     }
-    if (grace?.elevenLabsAgentId) {
+    if (grace?.elevenLabsAgentId && contextP) {
       const { agentUnavailable, guardedHandoff } = await import("@/lib/agent-fallback");
       try {
-        const handoff = await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await callerContext(from, grace.greeting || defaultGreeting({ businessName: grace.businessName, name: grace.name }))), call_sid: params.CallSid ?? "" } });
+        const handoff = await registerTwilioCall(grace.elevenLabsAgentId, from, to, { dynamicVariables: { ...(await contextP), call_sid: params.CallSid ?? "" } });
         // If the agent drops the call in its first seconds, the caller is sent to voicemail.
         return xml(guardedHandoff(grace, handoff));
       } catch (err) {
