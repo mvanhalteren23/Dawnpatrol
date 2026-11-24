@@ -47,7 +47,6 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
     r ? db.ownerUpdate.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 5 }) : [],
   ]);
   const me = portalUsers.find((u) => u.id === session.sub);
-  const trusted = r ? await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } }) : [];
   const bookingCal: { mode: "client" | "google" | "crm"; email: string | null; fallbackFrom?: string | null } = r ? await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null })) : { mode: "crm" as const, email: null };
   // Before Google approves, only test clients (CRM → Settings → Client calendars) see the option.
   const calendarLive = adminAccountId ? await calendarConnectLive() : await calendarConnectAllowedFor(session.email);
@@ -121,7 +120,7 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
               ) : null}
             </div>
             <CalendarAndBranding r={r} mode={bookingCal.mode} calendarEmail={bookingCal.email} replyTo={callerReplyTo} appUrl={appUrl()} returnTo={returnTo} canConnect={calendarLive && r.agentType === "inbound" && !r.bookingAddsToCrm} staff={false} live={calendarLive} fallbackFrom={bookingCal.fallbackFrom ?? null} />
-            <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
+            <TrustedNumbers receptionistId={r.id} returnTo={returnTo} />
             <CustomerTextSettings r={r} returnTo={returnTo} bookingLink={link} />
             <LeadAlertForm r={r} returnTo={returnTo} />
             <div id="reports"><ReportSettingsForm r={r} returnTo={returnTo} fallbackEmail={session.email} /></div>

@@ -931,16 +931,22 @@ model KbReviewLink {
   @@index([receptionistId, createdAt])
 }
 
-// Numbers a line never limits (suppliers, staff, regulars): call protection's per-caller limits
-// are skipped for them. Added by the team or the client, from the call log or by hand.
+// Known callers: numbers a line knows (suppliers, staff, regulars, the client's imported customer
+// list), with how to handle each. Call protection's per-caller limits are skipped for all of them
+// except "no_booking". Added by the team or the client: by hand, from the call log, or imported.
 model TrustedNumber {
   id             String       @id @default(cuid())
   receptionistId String
   receptionist   Receptionist @relation(fields: [receptionistId], references: [id], onDelete: Cascade)
   phone          String // E.164
-  label          String       @default("")
+  label          String       @default("") // who it is, e.g. "NAPA Auto Parts" or "Dave (property manager)"
+  firstName      String       @default("") // how the receptionist greets them ("Is this Dave?")
+  notes          String       @default("") // the owner's note for the receptionist (cleaned, short)
+  handling       String       @default("normal") // normal | vip | put_through | supplier | no_booking
+  source         String       @default("manual") // manual | import | call
   createdBy      String?
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   @@unique([receptionistId, phone])
 }

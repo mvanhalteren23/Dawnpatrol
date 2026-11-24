@@ -6,6 +6,7 @@
 // said can reach the prompt as an instruction.
 
 import { looksLikeInstructions } from "./safety-rules";
+import { knownCallerText, messageStatusText, type KnownCaller, type OpenMessage } from "./known-caller-rules";
 
 export type MemoryFacts = {
   firstName: string | null;
@@ -14,6 +15,8 @@ export type MemoryFacts = {
   lastCallAt: Date | null;
   lastOutcome: string | null; // BOOKED | MESSAGE_TAKEN | ANSWERED | …
   lastBookingAt: Date | null; // an earlier appointment, for "have we worked with you before"
+  known?: KnownCaller | null; // on the line's known-callers list (added by hand or imported)
+  openMessage?: OpenMessage; // their last message and whether the team followed it up
 };
 
 /** A first name safe to put in a prompt: letters, apostrophes and hyphens only, short, not an instruction. */
@@ -52,13 +55,17 @@ const OUTCOME: Record<string, string> = { BOOKED: "booked an appointment", MESSA
  * What to tell the agent. Empty when we know nothing (a first-time caller), so the agent treats them as new.
  */
 export function callerContextText(f: MemoryFacts, now = new Date()): string {
-  if (!f.calls && !f.upcoming && !f.lastBookingAt && !f.firstName) return "";
-  const parts = ["Returning caller (matched from their phone number)."];
-  if (f.firstName) parts.push(`First name on file: ${f.firstName}.`);
+  if (!f.calls && !f.upcoming && !f.lastBookingAt && !f.firstName && !f.known) return "";
+  const parts = [f.calls || f.upcoming || f.lastBookingAt ? "Returning caller (matched from their phone number)." : "Known caller (matched from their phone number)."];
+  const firstName = cleanFirstName(f.known?.firstName) ?? f.firstName;
+  if (firstName) parts.push(`First name on file: ${firstName}.`);
+  parts.push(...knownCallerText(f.known ?? null));
   if (f.upcoming) parts.push(`Upcoming appointment: ${cleanTitle(f.upcoming.title)} on ${when(f.upcoming.start, f.upcoming.timezone)}.`);
   else if (f.lastBookingAt) parts.push(`Booked with us before (${daysAgo(f.lastBookingAt, now)}).`);
   if (f.lastCallAt) parts.push(`Last called ${daysAgo(f.lastCallAt, now)}${f.lastOutcome && OUTCOME[f.lastOutcome] ? ` and ${OUTCOME[f.lastOutcome]}` : ""}.`);
   if (f.calls > 1) parts.push(`${f.calls} calls in total.`);
+  const message = messageStatusText(f.openMessage ?? null, now);
+  if (message) parts.push(message);
   return parts.join(" ");
 }
 

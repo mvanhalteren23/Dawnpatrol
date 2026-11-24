@@ -11,6 +11,8 @@ import { str } from "@/lib/utils";
 import { toE164 } from "@/lib/twilio";
 import { clampThreshold } from "@/lib/customer-text-rules";
 import { recordActivity } from "@/lib/outreach";
+import { cleanFirstName } from "@/lib/caller-memory-rules";
+import { cleanNote, parseHandling } from "@/lib/known-caller-rules";
 
 async function guard(receptionistId: string) {
   const session = await getSession();
@@ -119,8 +121,73 @@ export async function addTrustedNumber(receptionistId: string, returnTo: string,
   const phone = dialableNumber(str(form, "phone").trim());
   if (!phone) done(returnTo, "Enter a 10-digit Canadian or US number", "error");
   const { trustNumber } = await import("@/lib/call-guard");
-  await trustNumber(receptionistId, phone!, str(form, "label").trim(), session.email);
-  done(returnTo, `${phone} is trusted: never limited on this line`);
+  const k = knownCallerFields(form);
+  await trustNumber(receptionistId, phone!, str(form, "label").trim(), session.email, k);
+  done(returnTo, `${phone} added to known callers`);
+}
+
+/** Name, note and handling from a known-caller form, cleaned for the receptionist's prompt. */
+function knownCallerFields(form: FormData) {
+  const label = str(form, "label").trim();
+  return {
+    firstName: cleanFirstName(str(form, "firstName").trim() || label.split(/\s+/)[0]) ?? "",
+    notes: cleanNote(str(form, "notes")),
+    handling: parseHandling(str(form, "handling")),
+  };
+}
+
+/** Change a known caller's name, note or how they're handled. */
+export async function updateKnownCaller(receptionistId: string, id: string, returnTo: string, form: FormData) {
+  await guard(receptionistId);
+  const k = knownCallerFields(form);
+  await db.trustedNumber.updateMany({ where: { id, receptionistId }, data: { ...k, label: str(form, "label").trim().slice(0, 80), source: "manual" } });
+  done(returnTo, "Known caller saved");
+}
+
+/**
+ * Import the client's customer list (CSV) so regulars are recognised from day one. New numbers are
+ * added; numbers already on the list keep their tags and notes (only a missing name is filled in).
+ */
+export async function importKnownCallers(receptionistId: string, returnTo: string, form: FormData) {
+  const session = await guard(receptionistId);
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) done(returnTo, "Choose a CSV file to import", "error");
+  if ((file as File).size > 3_000_000) done(returnTo, "That file is too big (3 MB at most). Export just names and phone numbers.", "error");
+  const { parseCallerCsv } = await import("@/lib/known-caller-rules");
+  const { dialableNumber } = await import("@/lib/twilio");
+  const parsed = parseCallerCsv(await (file as File).text(), (raw) => dialableNumber(raw));
+  if ("error" in parsed) done(returnTo, parsed.error, "error");
+  const { rows, skipped, duplicates, truncated } = parsed as Exclude<typeof parsed, { error: string }>;
+  if (!rows.length) done(returnTo, "No Canadian or US phone numbers found in that file", "error");
+  const existing = await db.trustedNumber.findMany({ where: { receptionistId, phone: { in: rows.map((r) => r.phone) } }, select: { id: true, phone: true, firstName: true, label: true } });
+  const have = new Map(existing.map((e) => [e.phone, e]));
+  const fresh = rows.filter((r) => !have.has(r.phone));
+  for (let i = 0; i < fresh.length; i += 500) {
+    await db.trustedNumber.createMany({ data: fresh.slice(i, i + 500).map((r) => ({ receptionistId, phone: r.phone, label: r.label, firstName: r.firstName, notes: r.notes, handling: r.handling, source: "import", createdBy: session.email })), skipDuplicates: true });
+  }
+  let named = 0;
+  for (const r of rows) {
+    const e = have.get(r.phone);
+    if (e && !e.firstName && r.firstName) {
+      await db.trustedNumber.update({ where: { id: e.id }, data: { firstName: r.firstName, label: e.label || r.label } });
+      named++;
+    }
+  }
+  const notes = [
+    `${fresh.length} customer${fresh.length === 1 ? "" : "s"} added`,
+    existing.length ? `${existing.length} already on the list${named ? ` (${named} given a name)` : ""}` : "",
+    skipped ? `${skipped} row${skipped === 1 ? "" : "s"} without a Canadian/US number skipped` : "",
+    duplicates ? `${duplicates} duplicate${duplicates === 1 ? "" : "s"}` : "",
+    truncated ? "only the first 5,000 rows were read" : "",
+  ].filter(Boolean);
+  done(returnTo, `Imported: ${notes.join(", ")}.`);
+}
+
+/** Undo an import: remove every number that came from an imported list (ones added or edited by hand stay). */
+export async function removeImportedCallers(receptionistId: string, returnTo: string) {
+  await guard(receptionistId);
+  const { count } = await db.trustedNumber.deleteMany({ where: { receptionistId, source: "import" } });
+  done(returnTo, `Removed ${count} imported number${count === 1 ? "" : "s"}`);
 }
 
 export async function trustCaller(receptionistId: string, callId: string, returnTo: string) {
@@ -128,14 +195,14 @@ export async function trustCaller(receptionistId: string, callId: string, return
   const call = await db.callLog.findFirst({ where: { id: callId, receptionistId }, select: { callerNumber: true, callerName: true } });
   if (!call?.callerNumber) done(returnTo, "That call has no number to trust", "error");
   const { trustNumber } = await import("@/lib/call-guard");
-  const phone = await trustNumber(receptionistId, call!.callerNumber!, call!.callerName ?? "", session.email);
+  const phone = await trustNumber(receptionistId, call!.callerNumber!, call!.callerName ?? "", session.email, { firstName: cleanFirstName(call!.callerName) ?? "", source: "call" });
   done(returnTo, `${phone} is trusted: never limited on this line`);
 }
 
 export async function removeTrustedNumber(receptionistId: string, id: string, returnTo: string) {
   await guard(receptionistId);
   await db.trustedNumber.deleteMany({ where: { id, receptionistId } });
-  done(returnTo, "Removed from trusted numbers");
+  done(returnTo, "Removed from known callers");
 }
 
 

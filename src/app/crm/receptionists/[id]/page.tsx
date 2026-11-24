@@ -58,7 +58,6 @@ export default async function ReceptionistPage({ params, searchParams }: { param
     db.contact.findFirst({ where: { accountId: r.accountId, email: { not: null } }, orderBy: { isPrimary: "desc" }, select: { email: true } }),
   ]);
   const reviewEmail = reviewContact?.email ?? null;
-  const trusted = await db.trustedNumber.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" } });
   const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
   const callerReplyTo = await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null);
   const clientLine = r.agentType === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
@@ -265,7 +264,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
               {r.guardTrippedAt ? <button formAction={resetCallGuard.bind(null, r.id)} className="btn">Reset: back to normal</button> : null}
             </div>
           </form>
-          <TrustedNumbers receptionistId={r.id} rows={trusted} returnTo={returnTo} />
+          <TrustedNumbers receptionistId={r.id} returnTo={returnTo} />
 
           <TestChat receptionistId={r.id} greeting={followup ? followupOpening(r).replace(/\{\{lead_first_name\}\}/g, "Dana") : r.greeting || `Thanks for calling ${r.businessName}, this is ${r.name}. How can I help you today?`} />
 

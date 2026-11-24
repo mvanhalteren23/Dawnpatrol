@@ -4,6 +4,7 @@ import { ownerCaller } from "@/lib/owner-mode";
 import { screenCall } from "@/lib/call-guard";
 import { receptionistByNumber } from "@/lib/answer-path";
 import { ANSWER_BUDGET_MS, withBudget } from "@/lib/answer-path-rules";
+import { ringsOwnerFirst } from "@/lib/known-caller-rules";
 import { appBase, twilioParams, xml } from "@/lib/twilio-request";
 
 export const preferredRegion = "iad1"; // next to the database (Neon us-east-2) and Twilio's US edge
@@ -23,8 +24,11 @@ export async function POST(req: Request) {
 
   const ownerP = ownerCaller(r, from).catch(() => null);
   const screenP = screenCall({ line: to, from, callSid, limits: r, r }).catch(() => null);
-  // Started now so it's ready if the call goes to the agent; dropped if it's slow.
-  const memoryP = import("@/lib/caller-memory").then((m) => withBudget(m.callerMemory(r, from), ANSWER_BUDGET_MS, "")).catch(() => "");
+  // Known callers (the owner's list): who they are and how to handle them. Started now with the rest;
+  // the caller's history is ready if the call goes to the agent, and dropped if it's slow.
+  const memory = import("@/lib/caller-memory");
+  const knownP = memory.then((m) => withBudget(m.knownCallerFor(r.id, from), ANSWER_BUDGET_MS, null)).catch(() => null);
+  const memoryP = Promise.all([memory, knownP]).then(([m, known]) => withBudget(m.callerMemory(r, from, known), ANSWER_BUDGET_MS, "")).catch(() => "");
 
   // The owner calling their own line goes straight to the agent (owner mode), never to their own cell.
   const owner = await ownerP;
@@ -32,7 +36,10 @@ export async function POST(req: Request) {
   // Call protections: block list, the line's daily cutoff, calls at once, per-caller limits.
   const screened = await screenP;
   if (screened) return xml(screened);
-  if (!shouldRingFirst(r)) return xml(await toAgent(r, from, to, callSid, { owner: null, callerContext: await memoryP }));
+  // "Always put through" and suppliers ring the owner first at any hour (the agent answers if they don't).
+  const known = await knownP;
+  const ring = shouldRingFirst(r) || Boolean(r.ringFirstNumber && known && ringsOwnerFirst(known.handling));
+  if (!ring) return xml(await toAgent(r, from, to, callSid, { owner: null, callerContext: await memoryP }));
   return xml(
     ringFirst({
       cell: r.ringFirstNumber!,

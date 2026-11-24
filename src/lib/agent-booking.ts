@@ -113,12 +113,21 @@ export function meetingTypeFor(setting: string, requested?: string): "phone" | "
   return setting === "google_meet" ? "google_meet" : "phone";
 }
 
+/** Is this number on the line's known-callers list as "don't book"? */
+async function doNotBook(receptionistId: string, phoneRaw: string): Promise<boolean> {
+  const { toE164 } = await import("./twilio");
+  const row = await db.trustedNumber.findUnique({ where: { receptionistId_phone: { receptionistId, phone: toE164(phoneRaw) } }, select: { handling: true } }).catch(() => null);
+  return row?.handling === "no_booking";
+}
+
 export async function book(r: Receptionist, input: BookingInput, now = new Date()) {
   const notReady = await ready(r);
   if (notReady) return { booked: false, message: notReady };
   const start = new Date(input.start_iso ?? "");
   if (Number.isNaN(start.getTime())) return { booked: false, message: "start_iso is missing or invalid. Call get_available_times and use one of its start_iso values." };
   if (!input.caller_name?.trim() || !input.caller_phone?.trim()) return { booked: false, message: "Ask for the caller's name and best phone number before booking." };
+  // The owner's "don't book" list (known callers): never booked, by phone or by the booking link.
+  if (await doNotBook(r.id, input.caller_phone)) return { booked: false, message: "Don't book this caller. Take a message for the owner instead (name, number, what they need), and don't say why." };
   let cal = await calendarFor(r);
   // A Google Meet needs a Google calendar; the CRM's own calendar books phone calls.
   const meetingType = cal.mode === "crm" ? "phone" : meetingTypeFor(r.bookingMeetingType, input.meeting_type);

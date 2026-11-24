@@ -93,19 +93,33 @@ export async function isTrusted(receptionistId: string, from: string): Promise<b
   const phone = toE164(from);
   const since = new Date(Date.now() - TRUST_BOOKERS_DAYS * 86400_000);
   const [listed, booked, bookedCall] = await Promise.all([
-    db.trustedNumber.findUnique({ where: { receptionistId_phone: { receptionistId, phone } } }),
+    db.trustedNumber.findUnique({ where: { receptionistId_phone: { receptionistId, phone } }, select: { handling: true } }),
     db.booking.findFirst({ where: { receptionistId, customerPhone: phone, start: { gte: since } }, select: { id: true } }),
     db.callLog.findFirst({ where: { receptionistId, callerNumber: phone, outcome: "BOOKED", startedAt: { gte: since } }, select: { id: true } }),
   ]);
+  // Known callers are trusted, except ones the owner doesn't want booked (they're limited like anyone).
+  if (listed && listed.handling === "no_booking") return false;
   return Boolean(listed || booked || bookedCall);
 }
 
-export async function trustNumber(receptionistId: string, phone: string, label: string, by: string | null): Promise<string> {
+export async function trustNumber(
+  receptionistId: string,
+  phone: string,
+  label: string,
+  by: string | null,
+  extra: { firstName?: string; notes?: string; handling?: string; source?: string } = {},
+): Promise<string> {
   const e164 = toE164(phone);
+  const fields = {
+    ...(extra.firstName !== undefined ? { firstName: extra.firstName.slice(0, 40) } : {}),
+    ...(extra.notes !== undefined ? { notes: extra.notes } : {}),
+    ...(extra.handling !== undefined ? { handling: extra.handling } : {}),
+  };
   await db.trustedNumber.upsert({
     where: { receptionistId_phone: { receptionistId, phone: e164 } },
-    create: { receptionistId, phone: e164, label: label.slice(0, 80), createdBy: by },
-    update: { label: label.slice(0, 80) || undefined },
+    create: { receptionistId, phone: e164, label: label.slice(0, 80), createdBy: by, source: extra.source ?? "manual", ...fields },
+    // Edited by hand (or from the call log): no longer part of an imported list, so removing that list keeps it.
+    update: { label: label.slice(0, 80) || undefined, source: extra.source ?? "manual", ...fields },
   });
   return e164;
 }
