@@ -490,3 +490,26 @@ describe("known callers", () => {
     expect(ctx).toContain("hasn't marked as followed up");
   });
 });
+
+// --- Reviewing Claude's knowledge drafts on one screen (Nov 24) ---------------------------------
+import { approvedTags, approvedTitle, isDraft, isGuess, sortDrafts } from "@/lib/draft-review-rules";
+
+describe("knowledge draft review", () => {
+  it("finds website drafts and guesses, and clears the markers on approval", () => {
+    expect(isDraft({ tags: "claude-draft", title: "Hours" })).toBe(true);
+    expect(isDraft({ tags: "assumed", title: "Warranty (assumed)" })).toBe(true);
+    expect(isDraft({ tags: "pricing", title: "Prices" })).toBe(false);
+    expect(isGuess({ tags: "claude-draft", title: "Payment (assumed)" })).toBe(true);
+    expect(isGuess({ tags: "claude-draft", title: "Hours" })).toBe(false);
+    expect(approvedTags("claude-draft, assumed, seasonal")).toBe("seasonal");
+    expect(approvedTitle("Warranty (assumed)")).toBe("Warranty");
+  });
+  it("lists guesses last so they get the most attention", () => {
+    const out = sortDrafts([
+      { category: "FAQ", title: "B (assumed)", tags: "assumed" },
+      { category: "SERVICE", title: "A", tags: "claude-draft" },
+      { category: "FAQ", title: "C", tags: "claude-draft" },
+    ]);
+    expect(out.map((o) => o.title)).toEqual(["C", "A", "B (assumed)"]);
+  });
+});

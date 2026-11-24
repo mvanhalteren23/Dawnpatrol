@@ -18,6 +18,9 @@ export default async function Receptionists({ searchParams }: { searchParams: Pr
   const since = new Date(Date.now() - 7 * 86400000);
   const weekly = await db.callLog.groupBy({ by: ["receptionistId"], where: { startedAt: { gte: since } }, _count: true });
   const weeklyBy = Object.fromEntries(weekly.map((w) => [w.receptionistId, w._count]));
+  // Knowledge drafts waiting for review (Claude's website drafts and guesses).
+  const draftRows = await db.knowledgeItem.groupBy({ by: ["receptionistId"], where: { OR: [{ tags: { contains: "claude-draft" } }, { tags: { contains: "assumed" } }] }, _count: true });
+  const draftsBy = Object.fromEntries(draftRows.map((d) => [d.receptionistId, d._count]));
   return (
     <div>
       <PageHeader title="Receptionists & RAG" subtitle="Each client's AI receptionist, its knowledge base and ElevenLabs sync state. Create one from an account page." />
@@ -45,7 +48,7 @@ export default async function Receptionists({ searchParams }: { searchParams: Pr
                 <td><input type="checkbox" name="ids" value={r.id} form="bulk" aria-label={`Select ${r.name} (${r.account.name})`} /></td>
                 <td><Link href={`/crm/receptionists/${r.id}`} className="font-medium">{r.name}</Link><div className="text-xs text-slate-500">{r.agentType === "inbound" ? (r.bookingAddsToCrm ? "company line" : r.lifecycle) : r.agentType}</div></td>
                 <td><Link href={`/crm/accounts/${r.accountId}`}>{r.account.name}</Link></td>
-                <td>{r._count.knowledge}</td>
+                <td>{r._count.knowledge}{draftsBy[r.id] ? <Link href={`/crm/receptionists/${r.id}#kb-drafts`} className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800 hover:no-underline">{draftsBy[r.id]} to review</Link> : null}</td>
                 <td>{weeklyBy[r.id] ?? 0} / {r._count.calls}</td>
                 <td><StatusBadge status={r.syncStatus} /></td>
                 <td className="text-xs">{formatDate(r.lastSyncedAt, true)}</td>

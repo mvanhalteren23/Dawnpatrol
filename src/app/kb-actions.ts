@@ -107,18 +107,45 @@ export async function deleteKbItem(receptionistId: string, itemId: string, retur
   done(returnTo, "Item deleted. You can undo it under History.");
 }
 
-export async function activateAllDrafts(receptionistId: string, returnTo: string) {
+/**
+ * The drafts review panel: approve the ticked drafts (with any edits made on the same screen), or
+ * discard them. Every change is recorded in the history, so it can be undone.
+ */
+export async function reviewDrafts(receptionistId: string, returnTo: string, form: FormData) {
   const session = await manageGuard(receptionistId);
-  const drafts = await db.knowledgeItem.findMany({ where: { receptionistId, tags: { contains: "claude-draft" } } });
+  const { approvedTags, approvedTitle, isDraft } = await import("@/lib/draft-review-rules");
+  const discard = form.get("intent") === "discard";
+  const ids = form.getAll("pick").map(String);
+  if (!ids.length) done(returnTo, "Tick the drafts to approve or discard first", "error");
+  const drafts = (await db.knowledgeItem.findMany({ where: { receptionistId, id: { in: ids } } })).filter(isDraft);
+  let changed = 0;
+  let skipped = 0;
   await db.$transaction(async (tx) => {
     for (const d of drafts) {
-      const next = { ...d, isActive: true, tags: "" };
-      await tx.knowledgeItem.update({ where: { id: d.id }, data: { isActive: true, tags: "" } });
-      await recordKbChange(tx, { receptionistId, itemId: d.id, action: "update", before: d, after: next, by: actor(session) });
+      if (discard) {
+        await tx.knowledgeItem.delete({ where: { id: d.id } });
+        await recordKbChange(tx, { receptionistId, itemId: d.id, action: "delete", before: d, after: null, by: actor(session) });
+        changed++;
+        continue;
+      }
+      const category = (KB_CATEGORIES as readonly string[]).includes(str(form, `category_${d.id}`)) ? str(form, `category_${d.id}`) : d.category;
+      const title = approvedTitle(str(form, `title_${d.id}`).trim() || d.title);
+      const content = (str(form, `content_${d.id}`).trim() || d.content).slice(0, 8000);
+      // Edited text is checked like any other entry: facts, never instructions to the AI.
+      if (looksLikeInstructions(`${title}\n${content}`)) {
+        skipped++;
+        continue;
+      }
+      const data = { category, title, content, tags: approvedTags(d.tags), isActive: true, updatedBy: session.email };
+      await tx.knowledgeItem.update({ where: { id: d.id }, data });
+      await recordKbChange(tx, { receptionistId, itemId: d.id, action: "update", before: d, after: { ...d, ...data }, by: actor(session) });
+      changed++;
     }
   });
-  await markDirty(receptionistId);
-  done(returnTo, "Drafts activated");
+  // Approvals go live straight away (the agent syncs in the background).
+  if (changed) await afterChange(receptionistId, session, discard ? `discarded ${changed} drafts` : `approved ${changed} drafts`, true);
+  const what = discard ? `${changed} draft${changed === 1 ? "" : "s"} discarded` : `${changed} draft${changed === 1 ? "" : "s"} approved: live within a minute`;
+  done(returnTo, skipped ? `${what}. ${skipped} not approved: the edited text read like an instruction to the AI.` : `${what}.`, skipped ? "error" : "notice");
 }
 
 /** Roll back one change (the team or the client, on their own receptionist). */

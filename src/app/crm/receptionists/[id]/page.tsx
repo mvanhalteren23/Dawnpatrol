@@ -1,4 +1,5 @@
 import { appUrl } from "@/lib/app-url";
+import { isDraft } from "@/lib/draft-review-rules";
 import { parseTierChoice, TIER_LABEL, VOICE_TIER_CHOICES, voiceTierFor } from "@/lib/voice-model-rules";
 import { requireStaff } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
@@ -82,6 +83,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
       ])
     : [null, [], []];
 
+  const draftCount = r.knowledge.filter(isDraft).length;
   return (
     <div>
       <AutoRefresh active={kbRun?.status === "RUNNING"} />
@@ -106,6 +108,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
       {r.syncError && r.syncStatus === "FAILED" ? <Notice kind="error">Last sync failed: {r.syncError}</Notice> : null}
       {kbRun?.status === "RUNNING" ? <Notice>Claude is reading {r.account.website ?? r.account.domain} and drafting knowledge…</Notice> : null}
       {kbRun?.status === "FAILED" ? <Notice kind="error">KB draft failed: {kbRun.error}</Notice> : null}
+      {draftCount ? <Notice><b>{draftCount} knowledge draft{draftCount === 1 ? "" : "s"} from Claude</b> waiting for review. <a href="#kb-drafts" className="font-semibold underline">Review them on one screen →</a></Notice> : null}
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-2">
