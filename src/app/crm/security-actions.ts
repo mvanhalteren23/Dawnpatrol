@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { issueSession, requireAdmin, requireStaff } from "@/lib/auth";
 import { open, seal } from "@/lib/secret-box";
-import { hashRecoveryCode, newRecoveryCodes, newTotpSecret, verifyTotp } from "@/lib/totp";
+import { diagnoseTotp, hashRecoveryCode, newRecoveryCodes, newTotpSecret, verifyTotp } from "@/lib/totp";
 import { safeJson, str } from "@/lib/utils";
 
 // Two-step sign-in for the team: set up, confirm, turn off; an admin can reset someone's (lost phone).
@@ -24,8 +24,14 @@ export async function confirmTwoStep(_prev: ConfirmState | undefined, form: Form
   const user = await db.user.findUniqueOrThrow({ where: { id: session.sub } });
   if (user.totpEnabledAt) return { error: "Two-step sign-in is already on." };
   if (!user.totpSecret) return { error: "Start the setup first." };
-  const step = verifyTotp(open(user.totpSecret), str(form, "code"));
-  if (step == null) return { error: "That code didn't match. Make sure your phone's clock is set automatically, and enter the newest code." };
+  const secret = open(user.totpSecret);
+  // A little extra leeway while setting up (2 steps either side: phones whose clock is slightly off).
+  const step = verifyTotp(secret, str(form, "code"), { window: 2 });
+  if (step == null) {
+    const why = diagnoseTotp(secret, str(form, "code"));
+    if (why?.kind === "clock") return { error: `That code is right, but your phone's clock is off by about ${Math.abs(why.minutes)} minute${Math.abs(why.minutes) === 1 ? "" : "s"}. On the phone: Settings → System → Date & time → turn on "Set time automatically", then enter the newest code.` };
+    return { error: "That code didn't match this setup. In Google Authenticator, delete any older \"Head Above Digital\" entry, add this one again (button above, or type the key), and enter its newest 6-digit code. Still stuck? Press \"Start over with a new key\"." };
+  }
   const codes = newRecoveryCodes();
   // Sign out every other session: from now on each sign-in needs the second step.
   const now = new Date();
@@ -33,6 +39,14 @@ export async function confirmTwoStep(_prev: ConfirmState | undefined, form: Form
   await issueSession(user);
   revalidatePath("/crm/settings");
   return { codes };
+}
+
+/** A fresh key (e.g. the old one was added to the wrong app, or setup was started twice). */
+export async function restartTwoStepSetup() {
+  const session = await requireStaff();
+  await db.user.updateMany({ where: { id: session.sub, totpEnabledAt: null }, data: { totpSecret: seal(newTotpSecret()) } });
+  revalidatePath("/crm/settings");
+  redirect("/crm/settings#two-step");
 }
 
 export async function cancelTwoStepSetup() {

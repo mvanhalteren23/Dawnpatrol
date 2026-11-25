@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./db";
 import { MFA_COOKIE, mfaCookieOptions, SESSION_COOKIE, sessionCookieOptions, signMfaPending, signSession, verifyMfaPending, verifySession, type SessionPayload } from "./session";
-import { hashRecoveryCode, verifyTotp } from "./totp";
+import { diagnoseTotp, hashRecoveryCode, verifyTotp } from "./totp";
 import { open } from "./secret-box";
 import { safeJson } from "./utils";
 
@@ -120,7 +120,10 @@ export async function completeMfaLogin(code: string): Promise<{ session: Session
   if (!ok) {
     const failed = user.failedLogins + 1;
     await db.user.update({ where: { id: user.id }, data: failed >= MAX_FAILED_LOGINS ? { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) } : { failedLogins: failed } });
-    return { error: "That code didn't work. Check your authenticator app and try again." };
+    const why = /^\d{6}$/.test(clean.replace(/\s/g, "")) ? diagnoseTotp(open(user.totpSecret), clean, { lastUsedStep: user.totpLastStep }) : null;
+    if (why?.kind === "used") return { error: "That code was just used. Wait a few seconds for the next code in your authenticator app, then enter it." };
+    if (why?.kind === "clock") return { error: `That code is right, but your phone's clock is off by about ${Math.abs(why.minutes)} minute${Math.abs(why.minutes) === 1 ? "" : "s"}. Turn on automatic date & time on your phone, then enter the newest code.` };
+    return { error: "That code didn't work. Check you're using the \"Head Above Digital\" entry in your authenticator app, and enter its newest code." };
   }
   store.delete(MFA_COOKIE);
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null } });

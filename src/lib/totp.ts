@@ -60,14 +60,33 @@ export function currentStep(now = Date.now()): number {
  * Check a code, allowing one step either side for clock drift. Returns the step it matched so the
  * caller can refuse the same code twice; null if it doesn't match (or was already used).
  */
-export function verifyTotp(secret: string, code: string, opts: { now?: number; lastUsedStep?: number | null } = {}): number | null {
+export function verifyTotp(secret: string, code: string, opts: { now?: number; lastUsedStep?: number | null; window?: number } = {}): number | null {
   const clean = code.replace(/\s/g, "");
   if (!/^\d{6}$/.test(clean)) return null;
   const step = currentStep(opts.now);
-  for (const s of [step - 1, step, step + 1]) {
+  const w = Math.max(1, Math.min(4, opts.window ?? 1));
+  for (let s = step - w; s <= step + w; s++) {
     if (opts.lastUsedStep != null && s <= opts.lastUsedStep) continue;
     const expected = Buffer.from(totpAt(secret, s));
     if (timingSafeEqual(expected, Buffer.from(clean))) return s;
+  }
+  return null;
+}
+
+/**
+ * Why a code didn't match, to tell the person what to fix: their phone's clock is off (the code is
+ * right for a time up to ±1 hour away: returns the offset in minutes), or it was already used.
+ */
+export function diagnoseTotp(secret: string, code: string, opts: { now?: number; lastUsedStep?: number | null } = {}): { kind: "clock"; minutes: number } | { kind: "used" } | null {
+  const clean = code.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(clean)) return null;
+  const step = currentStep(opts.now);
+  for (let d = 0; d <= 120; d++) {
+    for (const s of d ? [step - d, step + d] : [step]) {
+      if (totpAt(secret, s) !== clean) continue;
+      if (opts.lastUsedStep != null && s <= opts.lastUsedStep && Math.abs(s - step) <= 2) return { kind: "used" };
+      return { kind: "clock", minutes: Math.round(((s - step) * STEP_SECONDS) / 60) };
+    }
   }
   return null;
 }

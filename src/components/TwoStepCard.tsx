@@ -1,8 +1,8 @@
 "use client";
 import { useActionState } from "react";
-import { cancelTwoStepSetup, confirmTwoStep, disableTwoStep, startTwoStepSetup } from "@/app/crm/security-actions";
+import { cancelTwoStepSetup, confirmTwoStep, disableTwoStep, restartTwoStepSetup, startTwoStepSetup } from "@/app/crm/security-actions";
 
-type Props = { enabledAt: string | null; setup: { qr: string; secret: string } | null; recoveryLeft: number };
+type Props = { enabledAt: string | null; setup: { qr: string; secret: string; url: string; account: string } | null; recoveryLeft: number };
 
 export function TwoStepCard({ enabledAt, setup, recoveryLeft }: Props) {
   const [confirm, confirmAction, confirming] = useActionState(confirmTwoStep, undefined);
@@ -33,16 +33,23 @@ export function TwoStepCard({ enabledAt, setup, recoveryLeft }: Props) {
         </>
       ) : setup ? (
         <>
-          <p className="text-slate-600">1. In Google Authenticator, Microsoft Authenticator or 1Password, add an account and scan this code.</p>
+          <p className="text-slate-600">1. Add <b>Head Above Digital</b> ({setup.account}) to Google Authenticator (or Microsoft Authenticator, 1Password):</p>
+          <ul className="list-disc space-y-1 pl-5 text-slate-600">
+            <li><b>On this phone:</b> <a href={setup.url} className="btn-secondary mt-1 inline-flex hover:no-underline">Add to my authenticator app</a></li>
+            <li><b>On a computer:</b> scan this code with the app on your phone.</li>
+          </ul>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={setup.qr} alt="QR code for your authenticator app" width={180} height={180} className="rounded-lg border border-slate-200" />
-          <p className="text-xs text-slate-500">Can&apos;t scan? Enter this key instead: <code className="break-all font-mono">{setup.secret.match(/.{1,4}/g)?.join(" ")}</code></p>
+          <p className="text-xs text-slate-500">Or in the app choose &ldquo;Enter a setup key&rdquo;: account <b>{setup.account}</b>, key <code className="break-all font-mono">{setup.secret.match(/.{1,4}/g)?.join(" ")}</code>, type &ldquo;Time based&rdquo;.</p>
           <form action={confirmAction} className="flex flex-wrap items-end gap-2">
             <label className="block"><span className="label">2. Enter the 6-digit code it shows</span><input name="code" className="input w-40" inputMode="numeric" autoComplete="one-time-code" required /></label>
             <button className="btn" disabled={confirming}>{confirming ? "Checking…" : "Turn on"}</button>
           </form>
           {confirm?.error ? <p className="text-red-700">{confirm.error}</p> : null}
-          <form action={cancelTwoStepSetup}><button className="text-xs text-slate-500 underline">Cancel setup</button></form>
+          <div className="flex flex-wrap gap-4">
+            <form action={restartTwoStepSetup}><button className="text-xs text-slate-500 underline">Start over with a new key</button></form>
+            <form action={cancelTwoStepSetup}><button className="text-xs text-slate-500 underline">Cancel setup</button></form>
+          </div>
         </>
       ) : (
         <>

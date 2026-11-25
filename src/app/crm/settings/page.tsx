@@ -91,7 +91,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const twoStepCard = (
     <TwoStepCard
       enabledAt={meUser.totpEnabledAt?.toISOString() ?? null}
-      setup={pendingSecret ? { secret: pendingSecret, qr: await QRCode.toDataURL(otpauthUrl(pendingSecret, meUser.email, "Head Above Digital"), { margin: 1, width: 180 }) } : null}
+      setup={pendingSecret ? { secret: pendingSecret, account: meUser.email, url: otpauthUrl(pendingSecret, meUser.email, "Head Above Digital"), qr: await QRCode.toDataURL(otpauthUrl(pendingSecret, meUser.email, "Head Above Digital"), { margin: 1, width: 180 }) } : null}
       recoveryLeft={safeJson<string[]>(meUser.recoveryCodes, []).length}
     />
   );

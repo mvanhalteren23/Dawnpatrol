@@ -46,6 +46,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
     teamMembers(),
   ]);
 
+  const activeFilters = [sp.view, sp.stage, sp.tag, sp.sort, sp.owner].filter(Boolean).length;
   return (
     <div>
       <PageHeader
@@ -59,38 +60,73 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       />
       <Flash params={sp} />
 
-      <form className="mb-4 flex flex-wrap gap-2">
-        <input name="q" defaultValue={sp.q} placeholder="Search name, domain, city, email…" className="input max-w-xs" />
-        <select name="owner" defaultValue={owner} className="input w-auto" aria-label="Owner">
+      <form className="mb-3 space-y-2 md:hidden">
+        <div className="flex gap-2">
+        <input name="q" defaultValue={sp.q} placeholder="Search name, domain, city, email…" className="input flex-1" aria-label="Search" />
+          <button className="btn-secondary shrink-0">Search</button>
+        </div>
+        <details open={activeFilters > 0} className="rounded-xl border border-slate-200 bg-white px-3 py-1">
+          <summary className="cursor-pointer text-sm font-semibold text-dawn-700">Filters &amp; sort{activeFilters ? ` (${activeFilters} on)` : ""}</summary>
+          <div className="grid grid-cols-2 gap-2 py-2">
+        <select name="owner" defaultValue={owner} className="input md:w-auto" aria-label="Owner">
           <option value="">Everyone&apos;s accounts</option>
           <option value="me">My accounts</option>
           <option value="unassigned">Unassigned</option>
           {team.filter((u) => u.id !== session.sub).map((u) => <option key={u.id} value={u.id}>{memberLabel(u)}</option>)}
         </select>
-        <select name="view" defaultValue={sp.view ?? ""} className="input w-auto">
+        <select name="view" defaultValue={sp.view ?? ""} className="input md:w-auto" aria-label="Prospects or clients">
           <option value="">All</option>
           <option value="prospects">Prospects</option>
           <option value="clients">Clients</option>
         </select>
-        <select name="stage" defaultValue={sp.stage ?? ""} className="input w-auto">
+        <select name="stage" defaultValue={sp.stage ?? ""} className="input md:w-auto" aria-label="Stage">
           <option value="">Any stage</option>
           {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
         </select>
-        <input name="tag" defaultValue={sp.tag} placeholder="Tag" className="input w-32" />
-        <select name="sort" defaultValue={sp.sort ?? ""} className="input w-auto">
+        <input name="tag" defaultValue={sp.tag} placeholder="Tag" className="input md:w-32" aria-label="Tag" />
+        <select name="sort" defaultValue={sp.sort ?? ""} className="input md:w-auto" aria-label="Sort">
           <option value="">Recently updated</option>
           <option value="fit">Fit score</option>
           <option value="followup">Follow-up date</option>
           <option value="name">Name</option>
         </select>
-        <button className="btn-secondary">Filter</button>
+        <button className="btn-secondary col-span-2 md:col-span-1">Filter</button>
+            <button className="btn-secondary col-span-2">Apply</button>
+          </div>
+        </details>
+      </form>
+      <form className="mb-4 hidden flex-wrap gap-2 md:flex">
+        <input name="q" defaultValue={sp.q} placeholder="Search name, domain, city, email…" className="input col-span-2 md:max-w-xs" aria-label="Search" />
+        <select name="owner" defaultValue={owner} className="input md:w-auto" aria-label="Owner">
+          <option value="">Everyone&apos;s accounts</option>
+          <option value="me">My accounts</option>
+          <option value="unassigned">Unassigned</option>
+          {team.filter((u) => u.id !== session.sub).map((u) => <option key={u.id} value={u.id}>{memberLabel(u)}</option>)}
+        </select>
+        <select name="view" defaultValue={sp.view ?? ""} className="input md:w-auto" aria-label="Prospects or clients">
+          <option value="">All</option>
+          <option value="prospects">Prospects</option>
+          <option value="clients">Clients</option>
+        </select>
+        <select name="stage" defaultValue={sp.stage ?? ""} className="input md:w-auto" aria-label="Stage">
+          <option value="">Any stage</option>
+          {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
+        </select>
+        <input name="tag" defaultValue={sp.tag} placeholder="Tag" className="input md:w-32" aria-label="Tag" />
+        <select name="sort" defaultValue={sp.sort ?? ""} className="input md:w-auto" aria-label="Sort">
+          <option value="">Recently updated</option>
+          <option value="fit">Fit score</option>
+          <option value="followup">Follow-up date</option>
+          <option value="name">Name</option>
+        </select>
+        <button className="btn-secondary col-span-2 md:col-span-1">Filter</button>
       </form>
 
       {accounts.length === 0 ? <Empty>No accounts match. Upload a CSV or ask Claude to find prospects.</Empty> : (
-        <form action={bulkAccounts}>
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+        <form action={bulkAccounts} className="flex flex-col">
+          <div className="order-2 mt-3 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm md:order-none md:mb-2 md:mt-0 md:flex md:flex-wrap md:items-center md:border-0 md:bg-transparent md:p-0">
             <span className="text-slate-500">With selected:</span>
-            <select name="op" className="input w-auto" defaultValue="research">
+            <select name="op" className="input md:w-auto" defaultValue="research" aria-label="Action">
               <option value="research">Run Claude research</option>
               <option value="drive">Create Drive folders</option>
               {STAGES.map((s) => <option key={s} value={`stage:${s}`}>Move to {STAGE_LABELS[s]}</option>)}
@@ -100,12 +136,40 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
                 <option value="delete">Delete</option>
               </> : null}
             </select>
-            <select name="promptId" className="input w-auto">
-              {prompts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.isDefault ? " (default)" : ""}</option>)}
-            </select>
+            {prompts.length ? (
+              <select name="promptId" className="input md:w-auto" aria-label="Research prompt">
+                {prompts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.isDefault ? " (default)" : ""}</option>)}
+              </select>
+            ) : null}
             <button className="btn-secondary">Apply</button>
           </div>
-          <div className="card overflow-x-auto p-0">
+          <ul className="space-y-2 md:hidden">
+            {accounts.map((a) => {
+              const overdue = a.nextFollowUpAt && a.nextFollowUpAt < new Date();
+              return (
+                <li key={a.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <input type="checkbox" name="ids" value={a.id} disabled={!canTouch(session, a.ownerId)} aria-label={`Select ${a.name}`} className="mt-1" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <Link href={`/crm/accounts/${a.id}`} className="text-base font-semibold leading-snug text-dawn-900">{a.name}</Link>
+                        <StageBadge stage={a.stage} />
+                      </div>
+                      <div className="mt-0.5 text-sm text-slate-600">{[a.industry, [a.city, a.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—"}</div>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                        <span>Owner: <b className={a.ownerId === session.sub ? "text-dawn-700" : ""}>{a.ownerId === session.sub ? "You" : memberLabel(a.owner)}</b></span>
+                        {a.fitScore != null ? <span>Fit: <b>{a.fitScore}</b></span> : null}
+                        <span>Last touch: {formatDate(a.lastContactedAt)}</span>
+                        {a.nextFollowUpAt ? <span className={overdue ? "font-semibold text-red-600" : ""}>Follow up: {formatDate(a.nextFollowUpAt)}{overdue ? " (overdue)" : ""}</span> : null}
+                      </div>
+                      {splitTags(a.tags).length ? <div className="mt-1 text-xs">{splitTags(a.tags).slice(0, 3).map((t) => <Link key={t} href={`/crm/accounts?tag=${encodeURIComponent(t)}`} className="mr-2">#{t}</Link>)}</div> : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="card hidden overflow-x-auto p-0 md:block">
             <table className="table">
               <thead>
                 <tr><th></th><th>Account</th><th>Owner</th><th>Stage</th><th>Fit</th><th>Location</th><th>Tags</th><th>Last touch</th><th>Follow-up</th></tr>

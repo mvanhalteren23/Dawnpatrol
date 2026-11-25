@@ -35,3 +35,21 @@ describe("TOTP", () => {
     expect(hashRecoveryCode(codes[0]!.toUpperCase())).toBe(hashRecoveryCode(codes[0]!));
   });
 });
+
+import { diagnoseTotp, totpAt as codeAt, verifyTotp as check, STEP_SECONDS as STEP } from "@/lib/totp";
+
+describe("two-step: clock drift and reused codes", () => {
+  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  const now = 1_795_600_000_000;
+  const step = Math.floor(now / 1000 / STEP);
+  it("allows a wider window only when asked (setup)", () => {
+    const twoAhead = codeAt(secret, step + 2);
+    expect(check(secret, twoAhead, { now })).toBeNull();
+    expect(check(secret, twoAhead, { now, window: 2 })).toBe(step + 2);
+  });
+  it("tells a slow phone clock from a wrong code, and a reused code", () => {
+    expect(diagnoseTotp(secret, codeAt(secret, step - 10), { now })).toEqual({ kind: "clock", minutes: -5 });
+    expect(diagnoseTotp(secret, codeAt(secret, step), { now, lastUsedStep: step })).toEqual({ kind: "used" });
+    expect(diagnoseTotp(secret, "000000", { now })?.kind ?? null).not.toBe("used");
+  });
+});
