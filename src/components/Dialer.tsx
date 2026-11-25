@@ -36,7 +36,7 @@ const VM_LABELS: Record<VmMode, string> = {
   self: "I'll leave voicemails myself",
   recorded: "Drop my recorded voicemail, then move on",
   ai: "AI assistant leaves a personalised voicemail, then move on",
-  hangup: "Hang up on voicemail and move on",
+  hangup: "Hang up before voicemail and move on",
 };
 
 export type DialNumber = { contactId: string | null; label: string; phone: string }; // label e.g. "Main line" or "Jane Smith (Owner)"
@@ -106,6 +106,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   // Power-dialer options (dialer page only), remembered in this browser.
   const [mode, setMode] = useState<Mode>("oneclick");
   const [vmMode, setVmMode] = useState<VmMode>("self");
+  const lastLeaveMode = useRef<VmMode>("self"); // the voicemail method to go back to when the switch is turned on again
   const [vmId, setVmId] = useState<string>(controls?.defaultVoicemailId ?? "");
   const [delay, setDelay] = useState(MIN_GAP);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -174,9 +175,10 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   useEffect(() => {
     if (!controls) return;
     try {
-      const saved = JSON.parse(localStorage.getItem("dialer.options") ?? "{}") as Partial<typeof opts.current>;
+      const saved = JSON.parse(localStorage.getItem("dialer.options") ?? "{}") as Partial<typeof opts.current> & { leaveMode?: VmMode };
       if (saved.mode) setMode(saved.mode);
       if (saved.vmMode) setVmMode(saved.vmMode);
+      if (saved.leaveMode && saved.leaveMode !== "hangup") lastLeaveMode.current = saved.leaveMode;
       if (saved.vmId && controls.voicemails.some((v) => v.id === saved.vmId)) setVmId(saved.vmId);
       if (saved.delay) setDelay(Math.max(MIN_GAP, saved.delay)); // older settings allowed 3-10s
       if (saved.audio === "phone" && controls.myPhone) setAudio("phone");
@@ -188,7 +190,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   useEffect(() => {
     if (!controls) return;
     try {
-      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay, audio }));
+      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay, audio, leaveMode: lastLeaveMode.current }));
     } catch {
       // ignore
     }
@@ -593,13 +595,36 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
               <option value="browser">Talk through this device (app or browser)</option>
               <option value="phone" disabled={!controls.myPhone}>Call my phone first{controls.myPhone ? ` (${controls.myPhone})` : " (add your mobile in Settings)"}</option>
             </select>
-            <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs" aria-label="Voicemail handling" disabled={busy}>
-              {(Object.keys(VM_LABELS) as VmMode[]).map((v) => (
+            {/* Voicemail on/off: off hangs up before voicemail (shorter ring, those calls aren't billed). */}
+            <label className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm md:w-auto md:py-1 md:text-xs">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={vmMode !== "hangup"}
+                aria-label="Leave voicemails"
+                disabled={busy}
+                onClick={() => {
+                  if (vmMode === "hangup") setVmMode(lastLeaveMode.current);
+                  else {
+                    lastLeaveMode.current = vmMode;
+                    setVmMode("hangup");
+                  }
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${vmMode !== "hangup" ? "bg-dawn-600" : "bg-slate-300"}`}
+              >
+                <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${vmMode !== "hangup" ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+              <span>{vmMode !== "hangup" ? "Leave voicemails" : "Hang up before voicemail"}</span>
+            </label>
+            {vmMode !== "hangup" ? (
+            <select value={vmMode} onChange={(e) => setVmMode(e.target.value as VmMode)} className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs" aria-label="How to leave voicemails" disabled={busy}>
+              {(Object.keys(VM_LABELS) as VmMode[]).filter((v) => v !== "hangup").map((v) => (
                 <option key={v} value={v} disabled={(v === "recorded" && (!controls.voicemails.length || !controls.consent)) || (v === "ai" && (!controls.aiVoice || !controls.consent))}>
                   {VM_LABELS[v]}{v === "recorded" && !controls.voicemails.length ? " (record one first)" : ""}{v === "ai" && !controls.aiVoice ? " (set a voice first)" : ""}{(v === "recorded" || v === "ai") && !controls.consent ? " (see settings)" : ""}
                 </option>
               ))}
             </select>
+            ) : null}
             {vmMode === "recorded" && controls.voicemails.length > 1 ? (
               <select value={vmId} onChange={(e) => setVmId(e.target.value)} className="input w-auto py-1 text-xs" aria-label="Voicemail to drop">
                 {controls.voicemails.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
