@@ -477,7 +477,8 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
     answered.current = false;
     setPhase("connecting");
     const o = opts.current;
-    const useAmd = Boolean(controls) && (o.vmMode !== "self" || o.mode === "auto");
+    // Voicemail detection (about $0.0075 a call) only when it acts on a voicemail: drop a message or hang up.
+    const useAmd = Boolean(controls) && o.vmMode !== "self";
     if (controls && o.vmMode === "ai") void prep(t);
     if (controls && o.audio === "phone") {
       legKey.current = null;

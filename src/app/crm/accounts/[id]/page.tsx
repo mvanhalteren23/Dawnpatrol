@@ -235,7 +235,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
               <Detail label="Stage">{STAGE_LABELS[account.stage as keyof typeof STAGE_LABELS] ?? account.stage}</Detail>
               <Detail label="Fit score">{account.fitScore ?? ""}</Detail>
               <Detail label="Website">{account.website ? <a href={account.website} target="_blank" rel="noreferrer" className="break-all">{account.domain ?? account.website}</a> : ""}</Detail>
-              <Detail label="Phone">{account.phone ? <a href={`tel:${account.phone}`}>{account.phone}</a> : ""}</Detail>
+              <Detail label="Phone">{account.phone ? <a href="#call" title="Call through the CRM dialer (recorded and logged)">{account.phone}</a> : ""}</Detail>
               <Detail label="Industry">{account.industry ?? ""}</Detail>
               <Detail label="Employees">{account.employees ?? ""}</Detail>
               <Detail label="City">{account.city ?? ""}</Detail>
@@ -437,7 +437,9 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
 
         {/* RIGHT: research, outreach, timeline */}
         <div className="space-y-6 lg:col-span-3">
-          {dialer.ready && dialTargets.length ? <Dialer targets={dialTargets} title="Call" builder={builder?.elevenLabsAgentId ? builder.name : null} /> : null}
+          <div id="call" className="scroll-mt-24">
+            {dialer.ready && dialTargets.length ? <Dialer targets={dialTargets} title="Call" builder={builder?.elevenLabsAgentId ? builder.name : null} /> : null}
+          </div>
           <div className="card">
             <h2 className="mb-3">Claude research</h2>
             <form action={runResearch.bind(null, account.id)} className="space-y-2">

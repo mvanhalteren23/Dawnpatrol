@@ -178,7 +178,16 @@ export function dialableNumber(input: string): string | null {
  * callbacks. With `amdCallback`, Twilio runs answering-machine detection on the dialled leg and
  * reports the result (after the greeting's beep) so a voicemail can be dropped.
  */
-export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null; amdCallback?: string | null; legStatusCallback?: string | null; before?: string }): string {
+/**
+ * How long a prospect's phone rings. Twilio only bills the prospect's side once it's answered, and a
+ * voicemail greeting counts as answered: when voicemails are skipped ("hang up on voicemail"), stop
+ * at 20s, before most voicemail picks up (about 4-5 rings), so those calls cost nothing.
+ */
+export function ringSeconds(vm: string | null | undefined): number {
+  return vm === "hangup" ? 20 : 30;
+}
+
+export function dialOut(o: { to: string; callerId: string; action: string; recordingCallback: string | null; amdCallback?: string | null; legStatusCallback?: string | null; before?: string; ring?: number }): string {
   const rec = o.recordingCallback
     ? ` record="record-from-answer-dual" recordingStatusCallback="${escapeXml(o.recordingCallback)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
     : "";
@@ -188,7 +197,7 @@ export function dialOut(o: { to: string; callerId: string; action: string; recor
   // "Call my phone" dialer: the app follows the prospect's leg (ringing, answered, ended) here.
   const leg = o.legStatusCallback ? ` statusCallback="${escapeXml(o.legStatusCallback)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"` : "";
   return twiml(
-    `${o.before ?? ""}<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}${leg}>${escapeXml(o.to)}</Number></Dial>`,
+    `${o.before ?? ""}<Dial callerId="${escapeXml(o.callerId)}" answerOnBridge="true" timeout="${Math.min(60, Math.max(10, o.ring ?? 30))}" timeLimit="3600" action="${escapeXml(o.action)}" method="POST"${rec}><Number${amd}${leg}>${escapeXml(o.to)}</Number></Dial>`,
   );
 }
 

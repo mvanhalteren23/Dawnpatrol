@@ -600,3 +600,17 @@ describe("dialer call brief", () => {
     expect(briefNotes("x".repeat(300), [])[0]!.length).toBe(218);
   });
 });
+
+// --- Dialer cost: ring time and recording (Nov 25) ------------------------------------------------
+import { dialOut, ringSeconds } from "@/lib/twilio";
+
+describe("dialer call cost", () => {
+  it("stops ringing before voicemail only when voicemails are skipped", () => {
+    expect(ringSeconds("hangup")).toBe(20);
+    expect(ringSeconds("self")).toBe(30);
+    expect(ringSeconds(null)).toBe(30);
+    const x = dialOut({ to: "+16045550101", callerId: "+17785550100", action: "https://a/x", recordingCallback: "https://a/rec", ring: 20 });
+    expect(x).toContain('timeout="20"');
+    expect(x).toContain('record="record-from-answer-dual"');
+  });
+});

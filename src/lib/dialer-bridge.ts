@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { dialerCallerId, ensureCallActivity } from "./dialer";
-import { dialableNumber, dialOut, samePhone, say, twilioApi, twiml } from "./twilio";
+import { dialableNumber, dialOut, ringSeconds, samePhone, say, twilioApi, twiml } from "./twilio";
 import { appBase } from "./twilio-request";
 import { OwnershipError, touchAccount } from "./team";
 import { MAX_IDLE_WAITS, WAIT_SECONDS, isFinalLegStatus, legKey, parsePending, type PendingDial } from "./dialer-bridge-rules";
@@ -71,6 +71,7 @@ export async function nextDialTwiml(bridgeId: string): Promise<string | null> {
     action: `${base()}/api/voice/outbound/status?${q}&b=${b.id}`,
     recordingCallback: `${base()}/api/voice/outbound/recording?${q}`,
     amdCallback: p.vm ? `${base()}/api/voice/outbound/amd?${q}&vm=${p.vm}&vmId=${encodeURIComponent(p.vmId)}` : null,
+    ring: ringSeconds(p.vm),
     legStatusCallback: `${base()}/api/voice/bridge/leg?b=${b.id}&k=${p.key}`,
   });
 }

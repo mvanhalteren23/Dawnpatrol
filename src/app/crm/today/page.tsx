@@ -54,7 +54,8 @@ function Row({ item }: { item: Item }) {
       <div className="mt-3 flex flex-wrap gap-2">
         {item.phone ? (
           <>
-            <a href={`tel:${item.phone}`} className="btn min-h-11 flex-1 justify-center py-2 hover:no-underline">Call</a>
+            {/* Through the CRM dialer: from the business number, recorded and logged on the account. */}
+            <Link href={item.href.startsWith("/crm/accounts/") ? `${item.href.split("#")[0].split("?")[0]}#call` : "/crm/dialer"} className="btn min-h-11 flex-1 justify-center py-2 hover:no-underline">Call</Link>
             <a href={`sms:${item.phone}`} className="btn-secondary min-h-11 flex-1 justify-center py-2 hover:no-underline">Text</a>
           </>
         ) : null}

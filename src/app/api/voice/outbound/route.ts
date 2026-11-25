@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { OwnershipError, touchAccount } from "@/lib/team";
 import { dialerCallerId, ensureCallActivity } from "@/lib/dialer";
-import { dialableNumber, dialOut, samePhone, say, twiml } from "@/lib/twilio";
+import { dialableNumber, dialOut, samePhone, say, twiml, ringSeconds } from "@/lib/twilio";
 import { appBase, twilioParams, xml } from "@/lib/twilio-request";
 
 // TwiML App Voice URL for the browser dialer: Twilio posts here when the browser connects,
@@ -44,8 +44,10 @@ export async function POST(req: Request) {
       to,
       callerId,
       action: `${appBase()}/api/voice/outbound/status?${q}`,
-      recordingCallback: params.record === "0" ? null : `${appBase()}/api/voice/outbound/recording?${q}`,
+      // Every dialer call is recorded (there's no switch to turn it off).
+      recordingCallback: `${appBase()}/api/voice/outbound/recording?${q}`,
       amdCallback: vm ? `${appBase()}/api/voice/outbound/amd?${q}&vm=${vm}&vmId=${encodeURIComponent(params.vmId ?? "")}` : null,
+      ring: ringSeconds(vm),
     }),
   );
 }
