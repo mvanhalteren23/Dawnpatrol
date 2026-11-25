@@ -19,6 +19,7 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send", // send tracked emails from the CRM
   "https://www.googleapis.com/auth/calendar.freebusy", // receptionist availability lookups
   "https://www.googleapis.com/auth/calendar.events", // receptionist bookings
+  "https://www.googleapis.com/auth/meetings.space.readonly", // Google Meet transcripts and recordings → meeting notes on accounts (meet-notes.ts)
   "openid",
   "email",
 ];

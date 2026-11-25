@@ -19,6 +19,8 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
   const [session, company] = await Promise.all([requireStaff(), companyName()]);
   // Gmail: sent and received emails land on accounts within minutes while the CRM is in use.
   after(async () => (await import("@/lib/outreach")).syncGmailThrottled());
+  // Google Meet: meeting notes (transcript, summary, next steps) land on the account after a meeting.
+  after(async () => (await import("@/lib/meet-notes")).syncMeetThrottled());
   const isAdmin = session.role === "ADMIN";
   // Reps see review notices for their own accounts and unassigned ones; admins see all.
   const toReview = await db.account.findMany({ where: { needsReview: true, ...(isAdmin ? {} : { OR: [{ ownerId: session.sub }, { ownerId: null }] }) }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 5 });

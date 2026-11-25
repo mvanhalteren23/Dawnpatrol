@@ -13,5 +13,7 @@ export async function GET(req: Request) {
   if (!(await googleConnection()).connected && !(await db.googleAccount.count())) return NextResponse.json({ skipped: "Google not connected" });
   const result = await syncGmail();
   for (const id of result.accountsTouched) await writeOutreachLog(id).catch((e) => console.warn("outreach log", e));
-  return NextResponse.json(result);
+  const { syncMeetTranscripts } = await import("@/lib/meet-notes");
+  const meet = await syncMeetTranscripts().catch((e) => ({ error: (e as Error).message }));
+  return NextResponse.json({ ...result, meet });
 }

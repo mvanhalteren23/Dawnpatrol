@@ -31,6 +31,31 @@ import { changePassword, disconnectGoogle, disconnectMyGoogle, migrateElevenLabs
 
 export const dynamic = "force-dynamic";
 
+/** Google Meet meeting notes: on once Google was connected with Meet access (and Workspace records transcripts). */
+function MeetStatus({ scopes, last }: { scopes: string; last: string | null }) {
+  const on = scopes.includes("meetings.space.readonly");
+  const info = (() => {
+    try {
+      return last ? (JSON.parse(last) as { at: string; meetings: number; recorded: number; needsPermission: string[] }) : null;
+    } catch {
+      return null;
+    }
+  })();
+  if (!on) {
+    return (
+      <div className="mt-1 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+        <b>Meeting notes are off.</b> Click Connect Google again and allow Google Meet access: after each Meet with a client or prospect, the transcript, a summary and next steps are added to their account. Each person also reconnects their own Gmail &amp; Calendar above. Transcripts need Google Workspace Business Standard or higher.
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1 text-xs text-slate-600">
+      Meeting notes: on{info ? ` · last checked ${new Date(info.at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}: ${info.meetings} meeting${info.meetings === 1 ? "" : "s"} with accounts, ${info.recorded} added` : ""}.
+      {info?.needsPermission?.length ? <span className="text-amber-700"> Still need to reconnect for Meet: {info.needsPermission.join(", ")}.</span> : null}
+    </div>
+  );
+}
+
 function Status({ ok, label }: { ok: boolean; label?: string }) {
   return ok ? <Badge className="bg-emerald-100 text-emerald-800">{label ?? "configured"}</Badge> : <Badge className="bg-red-100 text-red-800">not configured</Badge>;
 }
@@ -99,6 +124,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const [blocked, spendAlert, calendarLive] = await Promise.all([db.blockedNumber.findMany({ orderBy: { createdAt: "desc" }, take: 50 }), spendAlertAmount().catch(() => null), calendarConnectLive()]);
   const calendarTesters = await calendarConnectTesters();
   const [previousGoogle, sendAs, migrationRaw] = await Promise.all([getSetting("google.previousEmail"), getSetting("google.sendAs"), getSetting("elevenlabs.migration")]);
+  const [companyScopes, meetLast] = await Promise.all([getSetting("google.scopes"), getSetting("meet.lastSync")]);
   const [sampleRows, sampleRunRaw] = await Promise.all([db.sampleAudio.findMany({ select: { key: true, createdAt: true } }), getSetting("samples.lastRun")]);
   const sampleRun = safeJson<{ at: string; results: { key: string; ok: boolean; note: string }[] } | null>(sampleRunRaw, null);
   const migration = safeJson<import("@/lib/elevenlabs-migrate").MigrationReport | null>(migrationRaw, null);
@@ -173,6 +199,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="text-xs text-slate-500">The company Google account: the Drive folder system for every account, research docs and outreach logs, and Calendar availability + booking (and email confirmations) for client receptionists. Each person connects their own Gmail above.</div>
             {google.connected ? <div className="mt-1 text-xs">Connected as <b>{google.email}</b>{lastSync ? ` · last Gmail sync ${formatDate(lastSync, true)}` : ""}{driveRoot ? <> · <a href={`https://drive.google.com/drive/folders/${driveRoot}`} target="_blank" rel="noreferrer">open Drive root</a></> : null}</div> : null}
             {google.connected && !google.calendar ? <div className="mt-1 text-xs text-amber-700">Connected before Calendar access was added — click Connect Google again to grant it.</div> : null}
+            {google.connected ? <MeetStatus scopes={companyScopes ?? ""} last={meetLast} /> : null}
             {google.connected && isConsumerGoogle(google.email) ? <div className="mt-1 text-xs text-amber-700">This is a personal Gmail account. Disconnect it and connect the business Workspace account{process.env.GOOGLE_WORKSPACE_DOMAIN ? ` (@${process.env.GOOGLE_WORKSPACE_DOMAIN})` : ""}, then rebuild the Drive folders below.</div> : null}
             {google.connected && previousGoogle ? (
               <form action={rebuildDriveFolders} className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">

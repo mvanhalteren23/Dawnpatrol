@@ -614,3 +614,30 @@ describe("dialer call cost", () => {
     expect(x).toContain('record="record-from-answer-dual"');
   });
 });
+
+// --- Google Meet meeting notes (Nov 25) -----------------------------------------------------------
+import { endedMeeting, guestEmails, meetCode, meetingBody, transcriptText } from "@/lib/meet-rules";
+
+describe("Google Meet meeting notes", () => {
+  const now = new Date("2026-11-25T20:00:00Z");
+  const ev = { id: "e1", summary: "Demo review", start: { dateTime: "2026-11-25T18:00:00Z" }, end: { dateTime: "2026-11-25T18:30:00Z" }, conferenceData: { conferenceId: "abc-defg-hij", conferenceSolution: { key: { type: "hangoutsMeet" } } }, attendees: [{ email: "matt@headabovedigital.com", self: true }, { email: "Dave@Elm.ca" }, { email: "room@resource.calendar.google.com", resource: true }] };
+  it("finds ended Meet calls and their guests", () => {
+    expect(meetCode(ev)).toBe("abc-defg-hij");
+    expect(meetCode({ id: "x", conferenceData: { conferenceId: "123", conferenceSolution: { key: { type: "addOn" } } } })).toBeNull();
+    expect(endedMeeting(ev, now)).toBe(true);
+    expect(endedMeeting(ev, new Date("2026-11-25T18:35:00Z"))).toBe(false); // grace period
+    expect(endedMeeting({ ...ev, status: "cancelled" }, now)).toBe(false);
+    expect(guestEmails(ev)).toEqual(["dave@elm.ca"]);
+  });
+  it("writes a speaker-labelled transcript and the account note", () => {
+    const t = transcriptText(
+      [{ participant: "p/1", text: "Hi Dave." }, { participant: "p/1", text: "Thanks for joining." }, { participant: "p/2", text: "Happy to." }, { participant: "p/9", text: " " }],
+      [{ name: "p/1", signedinUser: { displayName: "Matt" } }, { name: "p/2", anonymousUser: { displayName: "Dave" } }],
+    );
+    expect(t).toBe("Matt: Hi Dave. Thanks for joining.\nDave: Happy to.");
+    const body = meetingBody({ summary: "Reviewed the demo.", nextSteps: ["Send pricing"], attendees: ["Matt", "Dave"], minutes: 30, recordingUrl: "https://drive/x", transcript: t });
+    expect(body).toContain("Next steps:\n- Send pricing");
+    expect(body).toContain("Attendees: Matt, Dave · 30 min");
+    expect(body).toContain("Transcript:\nMatt: Hi Dave.");
+  });
+});
