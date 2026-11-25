@@ -397,7 +397,13 @@ export async function saveCallOutcome(form: FormData): Promise<{ ok: boolean; er
     const fresh = await db.activity.findUniqueOrThrow({ where: { id: call.id } });
     await db.activity.update({
       where: { id: call.id },
-      data: { outcome, subject: `Call — ${CALL_OUTCOMES[outcome]}`, body: note ? [note, fresh.body].filter(Boolean).join("\n\n") : fresh.body },
+      data: {
+        outcome,
+        subject: `Call — ${CALL_OUTCOMES[outcome]}`,
+        body: note ? [note, fresh.body].filter(Boolean).join("\n\n") : fresh.body,
+        // The call script used (Coach → Script lab), so the coach can compare scripts.
+        ...(optStr(form, "scriptId") && (await db.callScript.count({ where: { id: str(form, "scriptId") } })) ? { scriptId: str(form, "scriptId") } : {}),
+      },
     });
   }
 

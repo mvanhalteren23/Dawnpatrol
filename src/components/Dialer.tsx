@@ -14,6 +14,7 @@ export type DialerControls = {
   aiVoice: boolean; // an ElevenLabs voice is set for AI voicemails
   consent: boolean; // compliance note acknowledged in voicemail settings
   myPhone?: string | null; // your mobile (masked) for "Call my phone" audio; null = not set
+  scripts?: { id: string; name: string; body: string; status: string }[]; // call scripts (Coach → Script lab)
 };
 
 type Mode = "oneclick" | "auto";
@@ -106,7 +107,9 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   // Power-dialer options (dialer page only), remembered in this browser.
   const [mode, setMode] = useState<Mode>("oneclick");
   const [vmMode, setVmMode] = useState<VmMode>("self");
-  const lastLeaveMode = useRef<VmMode>("self"); // the voicemail method to go back to when the switch is turned on again
+  const lastLeaveMode = useRef<VmMode>("self");
+  const [scriptId, setScriptId] = useState(""); // the call script in use; each call is tagged with it for the coach
+  const [showScript, setShowScript] = useState(true); // the voicemail method to go back to when the switch is turned on again
   const [vmId, setVmId] = useState<string>(controls?.defaultVoicemailId ?? "");
   const [delay, setDelay] = useState(MIN_GAP);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -120,8 +123,8 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   bridgeRef.current = bridge;
   const legKey = useRef<string | null>(null);
   const legPoll = useRef<ReturnType<typeof setInterval> | null>(null);
-  const opts = useRef({ mode, vmMode, vmId, delay, audio });
-  opts.current = { mode, vmMode, vmId, delay, audio };
+  const opts = useRef({ mode, vmMode, vmId, delay, audio, scriptId });
+  opts.current = { mode, vmMode, vmId, delay, audio, scriptId };
   const phoneAudio = Boolean(controls) && audio === "phone";
   /** The id the server logs this call under: the browser call's sid, or the phone leg's key. */
   const currentSid = () => (opts.current.audio === "phone" ? legKey.current : call.current?.parameters.CallSid) ?? "";
@@ -179,6 +182,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       if (saved.mode) setMode(saved.mode);
       if (saved.vmMode) setVmMode(saved.vmMode);
       if (saved.leaveMode && saved.leaveMode !== "hangup") lastLeaveMode.current = saved.leaveMode;
+      if (saved.scriptId && controls.scripts?.some((s) => s.id === saved.scriptId)) setScriptId(saved.scriptId);
       if (saved.vmId && controls.voicemails.some((v) => v.id === saved.vmId)) setVmId(saved.vmId);
       if (saved.delay) setDelay(Math.max(MIN_GAP, saved.delay)); // older settings allowed 3-10s
       if (saved.audio === "phone" && controls.myPhone) setAudio("phone");
@@ -190,11 +194,11 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   useEffect(() => {
     if (!controls) return;
     try {
-      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay, audio, leaveMode: lastLeaveMode.current }));
+      localStorage.setItem("dialer.options", JSON.stringify({ mode, vmMode, vmId, delay, audio, scriptId, leaveMode: lastLeaveMode.current }));
     } catch {
       // ignore
     }
-  }, [controls, mode, vmMode, vmId, delay, audio]);
+  }, [controls, mode, vmMode, vmId, delay, audio, scriptId]);
 
   // Live answering-machine result while a call is up.
   useEffect(() => {
@@ -271,6 +275,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       f.set("accountId", t.accountId);
       f.set("contactId", numberFor(t)?.contactId ?? "");
       f.set("callSid", sid);
+      if (opts.current.scriptId) f.set("scriptId", opts.current.scriptId);
       const res = await saveCallOutcome(f);
       if (res.ok) {
         setDone((s) => new Set(s).add(t.key));
@@ -546,6 +551,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
     form.set("accountId", target.accountId);
     form.set("contactId", current?.contactId ?? "");
     form.set("callSid", callSid);
+    if (opts.current.scriptId) form.set("scriptId", opts.current.scriptId);
     startSaving(async () => {
       const res = await saveCallOutcome(form);
       if (!res.ok) {
@@ -595,6 +601,12 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
               <option value="browser">Talk through this device (app or browser)</option>
               <option value="phone" disabled={!controls.myPhone}>Call my phone first{controls.myPhone ? ` (${controls.myPhone})` : " (add your mobile in Settings)"}</option>
             </select>
+            {controls.scripts?.length ? (
+              <select value={scriptId} onChange={(e) => setScriptId(e.target.value)} className="input w-full py-2 text-sm md:w-auto md:py-1 md:text-xs" aria-label="Call script" disabled={busy}>
+                <option value="">No script</option>
+                {controls.scripts.map((s) => <option key={s.id} value={s.id}>Script: {s.name}{s.status === "testing" ? " (testing)" : ""}</option>)}
+              </select>
+            ) : null}
             {/* Voicemail on/off: off hangs up before voicemail (shorter ring, those calls aren't billed). */}
             <label className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm md:w-auto md:py-1 md:text-xs">
               <button
@@ -695,6 +707,17 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       {busy && target ? (
         <div className="space-y-3">
         {target.brief ? <CallBrief brief={target.brief} status={phase === "live" ? `On the call · ${fmt(seconds)}` : phase === "ringing" ? "Ringing…" : "Connecting…"} number={`${current?.label ?? ""} ${current?.phone ?? ""}`.trim()} accountId={target.accountId} /> : null}
+        {(() => {
+          const s = controls?.scripts?.find((x) => x.id === scriptId);
+          return s ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <button type="button" onClick={() => setShowScript((v) => !v)} className="flex w-full items-center justify-between text-left" aria-expanded={showScript}>
+                <span className="label">Script: {s.name}</span><span className="text-xs text-slate-500">{showScript ? "Hide" : "Show"}</span>
+              </button>
+              {showScript ? <div className="mt-2 whitespace-pre-wrap text-base leading-relaxed text-slate-800">{s.body}</div> : null}
+            </section>
+          ) : null;
+        })()}
         <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-30 rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-lg md:static md:shadow-none">
           {target.brief ? null : (
             <>

@@ -207,12 +207,14 @@ model Activity {
   durationSec   Int?
   recordingSid  String?
   answeredBy    String? // Twilio answering-machine detection: human | machine_end_beep | … (auto-dialer)
+  scriptId      String? // dialer calls: the call script used (CallScript; the sales coach compares scripts)
   occurredAt    DateTime  @default(now())
   createdById   String?
   createdBy     User?     @relation(fields: [createdById], references: [id])
 
   @@index([accountId, occurredAt])
   @@index([type, dueAt])
+  @@index([scriptId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,4 +1081,35 @@ model SmsMedia {
 
   @@index([messageSid])
   @@index([receptionistId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Sales coach (src/lib/coach.ts): scripts tested in the dialer, and the coach's reviews
+// ---------------------------------------------------------------------------
+
+model CallScript {
+  id          String   @id @default(cuid())
+  name        String
+  body        String // what to say: opener, questions, pitch, close (shown on the call screen)
+  status      String   @default("testing") // testing | active | retired
+  notes       String   @default("") // why it was written (e.g. "Coach: lead with the missed-call cost")
+  parentId    String? // the script it's a variation of
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model CoachReview {
+  id          String   @id @default(cuid())
+  kind        String // calls | script | call | objections | openers | practice
+  title       String
+  params      String   @default("{}") // JSON: timeframe, script, call, rep...
+  result      String   @default("{}") // JSON: the coach's output (and the practice conversation)
+  status      String   @default("DONE") // RUNNING | DONE | FAILED
+  error       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([createdAt])
 }

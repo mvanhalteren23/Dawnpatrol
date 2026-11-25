@@ -65,6 +65,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
     aiVoice: Boolean(vmSettings.voiceId),
     consent: vmSettings.consent,
     myPhone: await db.user.findUnique({ where: { id: session.sub }, select: { phone: true } }).then((u) => (u?.phone ? maskPhone(u.phone) : null)),
+    scripts: await db.callScript.findMany({ where: { status: { in: ["testing", "active"] } }, orderBy: [{ status: "asc" }, { updatedAt: "desc" }], select: { id: true, name: true, body: true, status: true } }),
   };
 
   const rows = accounts.map((a) => toDialTarget(a)).filter((t) => t.numbers.length);

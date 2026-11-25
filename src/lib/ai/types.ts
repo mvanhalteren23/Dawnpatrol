@@ -25,6 +25,7 @@ export const TASKS = {
   voicemail: { label: "AI voicemail scripts", web: false, help: "Writes the personalised voicemail the auto-dialer leaves (then voiced by ElevenLabs)." },
   call_audit: { label: "Call audits", web: false, help: "Reads each mystery-shopper call transcript from a call audit, then writes the audit report." },
   call_notes: { label: "Dialer call notes", web: false, help: "Listens to dialer call recordings and writes a summary and next step. Needs Gemini (Claude can't take audio)." },
+  coaching: { label: "Sales coach", web: false, help: "Reviews dialer calls and scripts, suggests new approaches, builds the objection playbook and plays the prospect in practice calls." },
 } as const;
 export type Task = keyof typeof TASKS;
 export const TASK_KEYS = Object.keys(TASKS) as Task[];

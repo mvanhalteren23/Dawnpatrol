@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { coachThisCall } from "../../coach/actions";
 import { KbReviewSendForm } from "@/components/KbReviewSendForm";
 import { reviewPeopleFrom } from "@/lib/kb-review-rules";
 import { MAX_DISCOVERY_QUESTIONS, pickDiscoveryQuestions } from "@/lib/discovery-rules";
@@ -571,10 +572,17 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                     {a.subject ? <div className="font-medium">{a.subject}{a.durationSec ? <span className="ml-1 text-xs font-normal text-slate-500">({Math.floor(a.durationSec / 60)}:{String(a.durationSec % 60).padStart(2, "0")})</span> : null}</div> : null}
                     {a.recordingSid ? <audio controls preload="none" src={`/api/dialer/recording/${a.id}`} className="my-1 h-8 w-full max-w-sm" /> : null}
                     {a.body ? <div className="whitespace-pre-wrap text-xs text-slate-600">{a.body.slice(0, 600)}</div> : null}
-                    {a.type === "CALL" && !isClient && mine && a.body?.includes("Transcript:\n") ? (
-                      <form action={buildDemoFromCallAction.bind(null, a.id)} className="mt-1">
-                        <SubmitButton className="btn-secondary py-0.5 text-xs" pendingText="Building…">Build demo from this call</SubmitButton>
-                      </form>
+                    {a.type === "CALL" && a.body?.includes("Transcript:\n") ? (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {!isClient && mine ? (
+                          <form action={buildDemoFromCallAction.bind(null, a.id)}>
+                            <SubmitButton className="btn-secondary py-0.5 text-xs" pendingText="Building…">Build demo from this call</SubmitButton>
+                          </form>
+                        ) : null}
+                        <form action={coachThisCall.bind(null, a.id)}>
+                          <SubmitButton className="btn-secondary py-0.5 text-xs" pendingText="The coach is listening…">Coach this call</SubmitButton>
+                        </form>
+                      </div>
                     ) : null}
                   </li>
                 ))}
