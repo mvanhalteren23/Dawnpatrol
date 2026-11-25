@@ -24,6 +24,13 @@ export const PRICES: Record<Currency, { monthly: number; blockPrice: number; sym
 /** Everyone sees Canadian dollars first (our market is Canada); US visitors can switch to US$. */
 export const DEFAULT_CURRENCY: Currency = "CAD";
 
+/**
+ * The official "ElevenLabs Grants" logo shown at the bottom of every page with a link to ElevenLabs
+ * (a condition of the grant, for 12 months). Put ElevenLabs' file in public/images and set its path
+ * here, e.g. "/images/elevenlabs-grants.svg"; until then the footer shows a text badge.
+ */
+export const ELEVENLABS_GRANT_LOGO: string | null = null;
+
 /** The one plan: the same on every page. */
 export const PLAN_NAME = "Receptionist Plan";
 

@@ -50,7 +50,7 @@ export function SiteHeader({ account }: { account: { href: string; label: string
   );
 }
 
-export function SiteFooter({ account }: { account: { href: string; label: string } }) {
+export function SiteFooter({ account, grantLogo = null }: { account: { href: string; label: string }; grantLogo?: string | null }) {
   const trade = tradeFor(usePathname() ?? "");
   return (
     <footer className="border-t-2 border-[#1F3B2D] bg-[#173022] py-12 text-[#EFE6D4]">
@@ -66,6 +66,18 @@ export function SiteFooter({ account }: { account: { href: string; label: string
           <Link href="/guides" className="text-[#EFE6D4] hover:text-[#D8B47A] hover:no-underline">Guides</Link>
           <Link href={account.href} className="text-[#EFE6D4] hover:text-[#D8B47A] hover:no-underline">{account.label}</Link>
         </nav>
+      </div>
+      {/* ElevenLabs Grants: their logo and a link to ElevenLabs (a condition of the grant). */}
+      <div className="mx-auto mt-8 flex max-w-7xl items-center gap-3 border-t border-[#EFE6D4]/15 px-4 pt-6 text-xs text-[#EFE6D4]/70 sm:px-6 lg:px-8">
+        <span>Voice AI powered by</span>
+        <a href="https://elevenlabs.io" target="_blank" rel="noopener" className="inline-flex items-center hover:no-underline" aria-label="ElevenLabs Grants: visit ElevenLabs">
+          {grantLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={grantLogo} alt="ElevenLabs Grants" className="h-6 w-auto" />
+          ) : (
+            <span className="rounded-md border border-[#EFE6D4]/40 px-2 py-1 font-semibold tracking-wide text-[#EFE6D4] hover:border-[#D8B47A] hover:text-[#D8B47A]">ElevenLabs Grants</span>
+          )}
+        </a>
       </div>
     </footer>
   );

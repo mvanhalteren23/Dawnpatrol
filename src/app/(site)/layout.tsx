@@ -6,6 +6,7 @@ import { CurrencyProvider } from "@/components/site/Currency";
 import { DEFAULT_CURRENCY } from "@/lib/site-content";
 import { businessJsonLd, jsonLdScript } from "@/lib/seo";
 import { demoBookingPath, liveDemo } from "@/components/site/Sections";
+import { ELEVENLABS_GRANT_LOGO } from "@/lib/site-content";
 
 // The public website (Brand Kit, October 2026). The CRM and client portal keep their own layouts.
 
@@ -26,7 +27,7 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
         <div className="font-barlow flex min-h-screen flex-col bg-[#EFE6D4] text-[#1F3B2D] selection:bg-[#1F3B2D] selection:text-[#EFE6D4]">
           <SiteHeader account={account} />
           <main className="flex-1">{children}</main>
-          <SiteFooter account={account} />
+          <SiteFooter account={account} grantLogo={ELEVENLABS_GRANT_LOGO} />
         </div>
       </DemoProvider>
       </CurrencyProvider>
