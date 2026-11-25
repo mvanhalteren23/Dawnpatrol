@@ -34,3 +34,21 @@ describe("client knowledge review", () => {
     expect(validToken("../../etc/passwd-aaaaaaaaaaaaaaaaaaaa")).toBe(false);
   });
 });
+
+import { neededForReview, reviewPriority } from "@/lib/kb-review-rules";
+
+describe("review order", () => {
+  it("asks for what callers need most first", () => {
+    const items = [
+      item({ id: "warranty", category: "POLICY", title: "Warranty (assumed)", tags: "assumed" }),
+      item({ id: "hours", category: "HOURS", title: "Business hours", content: "TO FILL IN: Opening hours for each day.", isActive: false }),
+      item({ id: "pay", category: "FAQ", title: "Payment methods (assumed)", tags: "assumed" }),
+      item({ id: "area", category: "LOCATION", title: "Address and service area", content: "TO FILL IN: Street address and the areas served.", isActive: false }),
+      item({ id: "services", category: "SERVICE", title: "Services offered", content: "TO FILL IN: The work done.", isActive: false }),
+      item({ id: "live", category: "HOURS", title: "Holiday hours" }),
+    ];
+    expect(neededForReview(items).map((i) => i.id)).toEqual(["hours", "services", "area", "pay", "warranty"]);
+    expect(reviewPriority(item({ category: "OTHER", title: "Do you do emergency calls?" }))).toBe(78);
+    expect(reviewPriority(item({ category: "FAQ", title: "Parking" }))).toBe(90);
+  });
+});
