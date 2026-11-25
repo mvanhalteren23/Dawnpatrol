@@ -32,7 +32,7 @@ export default async function Receptionists({ searchParams }: { searchParams: Pr
           <button name="bulk" value="sync" className="btn-secondary py-1">Sync selected</button>
           <details className="relative">
             <summary className="cursor-pointer text-sm font-semibold text-[#A8401F]">Delete selected…</summary>
-            <div className="absolute z-10 mt-2 w-72 space-y-2 rounded-[10px] border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="absolute right-0 z-10 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-[10px] sm:left-0 sm:right-auto border border-slate-200 bg-white p-3 shadow-sm">
               <p className="text-xs text-slate-600">Deletes the ticked receptionists for good: from ElevenLabs, and their knowledge, call logs, leads and bookings. The company line and any agent with a business line are skipped.</p>
               <input name="confirm" placeholder="Type DELETE to confirm" className="input py-1 text-xs" autoComplete="off" aria-label="Type DELETE to confirm" />
               <button name="bulk" value="delete" className="btn-danger w-full py-1 text-xs">Delete selected permanently</button>

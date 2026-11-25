@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import type { DialTarget } from "@/components/Dialer";
 import { callReasons } from "./call-reasons";
+import { briefNotes, whyReceptionist } from "./call-brief-rules";
 import { STAGE_LABELS, type Stage } from "./constants";
 import { contactName, formatDate, formatMoney, safeJson } from "./utils";
 
@@ -48,6 +49,8 @@ export function toDialTarget(a: DialAccount, now = new Date()): DialTarget & { p
 
   const r = safeJson<{ suggestedOpener?: string; keyFacts?: string[]; painSignals?: string[] }>(a.research[0]?.resultJson, {});
   const facts = [...(r.painSignals ?? []).slice(0, 2), ...(r.keyFacts ?? []).slice(0, 3)].slice(0, 4);
+  const primary = a.contacts.find((c) => c.isPrimary) ?? a.contacts[0] ?? null;
+  const lastTouch = touches[0];
 
   return {
     key: a.id,
@@ -74,5 +77,16 @@ export function toDialTarget(a: DialAccount, now = new Date()): DialTarget & { p
       text: `${TOUCH_LABEL[x.type] ?? x.type}${x.direction ? ` ${x.direction === "INBOUND" ? "in" : "out"}` : ""}: ${x.subject ?? (x.body ?? "").slice(0, 80)}${x.type === "EMAIL" && x.direction === "OUTBOUND" ? ` (${x.openCount} opens${x.repliedAt ? ", replied" : ""})` : ""}`,
     })),
     research: a.research[0] ? { opener: r.suggestedOpener, facts, link: `/crm/research/${a.research[0].id}` } : undefined,
+    brief: {
+      person: primary ? `${contactName(primary)}${primary.title ? `, ${primary.title}` : ""}` : null,
+      company: a.name,
+      about: [a.industry, [a.city, a.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || null,
+      website: a.domain ?? null,
+      why: whyReceptionist({ painSignals: r.painSignals, industry: a.industry, missedPerWeek: a.estMissedCallsPerWeek, avgJobValueCents: a.avgJobValueCents }),
+      notes: briefNotes(a.notes ?? "", a.activities.filter((x) => x.type === "NOTE").slice(0, 3).map((x) => [x.subject, x.body].filter(Boolean).join(": "))),
+      opener: r.suggestedOpener ?? null,
+      facts: (r.keyFacts ?? []).slice(0, 4),
+      last: lastTouch ? `${formatDate(lastTouch.occurredAt)}: ${TOUCH_LABEL[lastTouch.type] ?? lastTouch.type}${lastTouch.direction ? ` ${lastTouch.direction === "INBOUND" ? "from them" : "from us"}` : ""}${lastTouch.subject ? `, ${lastTouch.subject}` : ""}` : null,
+    },
   };
 }

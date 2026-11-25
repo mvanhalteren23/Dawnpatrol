@@ -578,3 +578,25 @@ describe("Gmail to accounts", () => {
     expect(newContactsFrom(people, { domain: "gmail.com", me: "x", existing: new Set() })).toEqual([]);
   });
 });
+
+// --- Dialer call brief (Nov 25) ------------------------------------------------------------------
+import { briefNotes, whyReceptionist } from "@/lib/call-brief-rules";
+
+describe("dialer call brief", () => {
+  it("explains why they'd want a receptionist: research, then the numbers, then the trade", () => {
+    expect(whyReceptionist({ painSignals: ["Voicemail after 5pm"], industry: "Plumbing", missedPerWeek: 10, avgJobValueCents: 45000 })).toEqual([
+      "Voicemail after 5pm",
+      "About 10 missed calls a week (about $5,400/month in lost jobs if 30% would have booked)",
+      "On job sites all day: calls go unanswered while they work",
+    ]);
+    expect(whyReceptionist({ industry: "Mortgage broker" })[0]).toMatch(/client meetings/);
+    expect(whyReceptionist({ industry: "Dog grooming" })).toEqual(["Calls they miss while busy or after hours go to competitors"]);
+  });
+  it("keeps the notes short and skips bookkeeping lines", () => {
+    expect(briefNotes("Source: website\nOwner is Dave, prefers mornings\n\nTags: x", ["Call note: asked about pricing", null, "Owner is Dave, prefers mornings"])).toEqual([
+      "Owner is Dave, prefers mornings",
+      "Call note: asked about pricing",
+    ]);
+    expect(briefNotes("x".repeat(300), [])[0]!.length).toBe(218);
+  });
+});

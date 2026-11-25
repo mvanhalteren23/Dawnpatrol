@@ -2,6 +2,11 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { Call, Device } from "@twilio/voice-sdk";
 import { prepareVoicemail, saveCallOutcome } from "@/app/crm/actions";
+import { CallBrief } from "./CallBrief";
+
+/** Seconds between auto-dialled calls: time to read the next brief and get ready (15s minimum). */
+const MIN_GAP = 15;
+const GAPS = [15, 20, 30, 45, 60];
 
 export type DialerControls = {
   voicemails: { id: string; name: string }[];
@@ -47,6 +52,7 @@ export type DialTarget = {
   touches?: { when: string; text: string }[]; // recent touches, newest first
   touchSummary?: string; // e.g. "4 emails (1 reply) · 2 calls · 1 note"
   research?: { opener?: string; facts: string[]; link?: string };
+  brief?: import("@/lib/call-brief-rules").CallBrief; // what the screen shows while their number is being called
 };
 
 const OUTCOMES = [
@@ -95,12 +101,13 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [outcome, setOutcome] = useState<Outcome | "">("");
+  const [showList, setShowList] = useState(false); // the list is hidden while a call is up
   const [saving, startSaving] = useTransition();
   // Power-dialer options (dialer page only), remembered in this browser.
   const [mode, setMode] = useState<Mode>("oneclick");
   const [vmMode, setVmMode] = useState<VmMode>("self");
   const [vmId, setVmId] = useState<string>(controls?.defaultVoicemailId ?? "");
-  const [delay, setDelay] = useState(5);
+  const [delay, setDelay] = useState(MIN_GAP);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [amd, setAmd] = useState<string | null>(null);
   const [builderNote, setBuilderNote] = useState<string | null>(null);
@@ -171,7 +178,7 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       if (saved.mode) setMode(saved.mode);
       if (saved.vmMode) setVmMode(saved.vmMode);
       if (saved.vmId && controls.voicemails.some((v) => v.id === saved.vmId)) setVmId(saved.vmId);
-      if (saved.delay) setDelay(saved.delay);
+      if (saved.delay) setDelay(Math.max(MIN_GAP, saved.delay)); // older settings allowed 3-10s
       if (saved.audio === "phone" && controls.myPhone) setAudio("phone");
     } catch {
       // storage unavailable: defaults
@@ -598,8 +605,8 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
               </select>
             ) : null}
             {mode === "auto" ? (
-              <label className="flex items-center gap-1 text-xs text-slate-600">next call after
-                <select value={delay} onChange={(e) => setDelay(Number(e.target.value))} className="input w-auto py-1 text-xs">{[3, 5, 10, 15].map((d) => <option key={d} value={d}>{d}s</option>)}</select>
+              <label className="flex items-center gap-1 text-xs text-slate-600">time between calls
+                <select value={delay} onChange={(e) => setDelay(Number(e.target.value))} className="input w-auto py-1 text-xs">{GAPS.map((d) => <option key={d} value={d}>{d}s</option>)}</select>
               </label>
             ) : null}
           </div>
@@ -644,24 +651,33 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
       ) : null}
       {sessionNote ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{sessionNote}</div> : null}
       {countdown != null && targets[active] ? (
+        <div className="space-y-3">
+        {targets[active]!.brief ? <CallBrief brief={targets[active]!.brief!} status={`Up next · calling in ${countdown}s`} number={numberFor(targets[active]!)?.phone} accountId={targets[active]!.accountId} /> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dawn-200 bg-dawn-50 px-3 py-2 text-sm">
           <span>Calling <b>{targets[active]!.accountName}</b> in {countdown}s…</span>
-          <span className="flex gap-2">
+          <span className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setCountdown(0)} className="btn py-1">Call now</button>
             <button type="button" onClick={() => { setCountdown(null); moveOn(active, false); }} className="btn-secondary py-1">Skip</button>
             <button type="button" onClick={() => { setCountdown(null); setMode("oneclick"); }} className="btn-secondary py-1">Pause</button>
             {session ? <button type="button" onClick={stopSession} className="btn-secondary py-1">Stop session</button> : null}
           </span>
         </div>
+        </div>
       ) : null}
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
 
       {busy && target ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="font-medium">{target.accountName}</div>
-          <div className="text-sm text-slate-600">{current?.label} · {current?.phone}</div>
-          {target.reasons?.length ? <div className="mt-1 text-xs text-slate-600">Why: {target.reasons.join(" · ")}</div> : null}
-          {target.research?.opener ? <div className="mt-1 text-xs italic text-slate-600">Opener: {target.research.opener}</div> : null}
+        <div className="space-y-3">
+        {target.brief ? <CallBrief brief={target.brief} status={phase === "live" ? `On the call · ${fmt(seconds)}` : phase === "ringing" ? "Ringing…" : "Connecting…"} number={`${current?.label ?? ""} ${current?.phone ?? ""}`.trim()} accountId={target.accountId} /> : null}
+        <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-30 rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-lg md:static md:shadow-none">
+          {target.brief ? null : (
+            <>
+              <div className="font-medium">{target.accountName}</div>
+              <div className="text-sm text-slate-600">{current?.label} · {current?.phone}</div>
+              {target.reasons?.length ? <div className="mt-1 text-xs text-slate-600">Why: {target.reasons.join(" · ")}</div> : null}
+              {target.research?.opener ? <div className="mt-1 text-xs italic text-slate-600">Opener: {target.research.opener}</div> : null}
+            </>
+          )}
           <p className="mt-1 text-xs text-slate-500">Calls are recorded. Mention it early: &ldquo;Just so you know, this call may be recorded.&rdquo;</p>
           {amd && amd !== "unknown" ? (
             <p className={`mt-1 text-xs font-medium ${amd === "human" ? "text-emerald-700" : "text-amber-700"}`}>
@@ -685,12 +701,13 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
           </div>
           {builderNote ? <p className="mt-1 text-xs text-slate-600">{builderNote}{builderOn ? " Introduce it, then stay on or hang up: it carries on with the prospect." : ""}</p> : null}
           {keypad ? (
-            <div className="mt-2 grid w-48 grid-cols-3 gap-1">
+            <div className="mt-2 grid w-full max-w-xs grid-cols-3 gap-1">
               {"123456789*0#".split("").map((k) => (
-                <button key={k} type="button" onClick={() => call.current?.sendDigits(k)} className="rounded border border-slate-300 bg-white py-1 text-sm">{k}</button>
+                <button key={k} type="button" onClick={() => call.current?.sendDigits(k)} className="rounded border border-slate-300 bg-white py-2 text-base">{k}</button>
               ))}
             </div>
           ) : null}
+        </div>
         </div>
       ) : null}
 
@@ -724,7 +741,10 @@ export function Dialer({ targets, title, emptyText, controls, builder }: { targe
         </form>
       ) : null}
 
-      {targets.length ? (
+      {(busy || countdown != null) && targets.length > 1 ? (
+        <button type="button" onClick={() => setShowList((v) => !v)} className="text-xs underline">{showList ? "Hide the call list" : `Show the call list (${targets.length})`}</button>
+      ) : null}
+      {targets.length && (!(busy || countdown != null) || showList || targets.length === 1) ? (
         <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
           {targets.map((t, i) => {
             const open = expanded === t.key;

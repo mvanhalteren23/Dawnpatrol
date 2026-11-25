@@ -53,3 +53,20 @@
   .reveal { opacity: 1; transform: none; transition: none; }
   .wave-bar, .ring-shake, .pop-in, .slide-in-left { animation: none; }
 }
+
+/* The CRM on phones and in the Android app: long text (web addresses, webhook URLs) wraps instead
+   of pushing the page sideways, grid columns can shrink, cards are a little tighter, and on touch
+   screens every control is at least a fingertip (40px) tall. Desktop with a mouse is unchanged. */
+@media (max-width: 767px) {
+  .app-main { overflow-wrap: anywhere; }
+  .app-main .grid > * { min-width: 0; }
+  .app-main select, .app-main input, .app-main textarea { max-width: 100%; }
+  .app-main .card { padding: 1rem; }
+  .app-main table { font-size: 0.8125rem; }
+}
+@media (pointer: coarse) {
+  .app-main button, .app-main summary, .app-main select, .app-main .btn, .app-main .btn-secondary, .app-main .btn-danger { min-height: 40px; }
+  .app-main button { min-width: 40px; }
+  .app-main input[type="checkbox"], .app-main input[type="radio"] { width: 1.25rem; height: 1.25rem; }
+  .app-main .input { font-size: 16px; } /* no zoom-in when a field is tapped */
+}

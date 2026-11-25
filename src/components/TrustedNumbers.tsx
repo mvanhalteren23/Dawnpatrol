@@ -22,7 +22,7 @@ export async function TrustedNumbers({ receptionistId, returnTo, compact = false
     db.trustedNumber.count({ where: { receptionistId } }),
   ]);
   const handlingSelect = (value: string) => (
-    <select name="handling" defaultValue={parseHandling(value)} className="input w-auto py-1 text-xs" aria-label="How to handle calls from this number">
+    <select name="handling" defaultValue={parseHandling(value)} className="input w-full max-w-full py-1 text-xs sm:w-auto" aria-label="How to handle calls from this number">
       {HANDLINGS.map((h) => <option key={h} value={h}>{HANDLING_LABEL[h]}</option>)}
     </select>
   );

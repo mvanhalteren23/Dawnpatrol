@@ -47,7 +47,7 @@ export async function PortalShell({ accountId, accountName, adminAccountId, emai
           <form action="/api/auth/logout" method="post" className="text-xs text-dawn-100/80">{email} · <button className="underline">Sign out</button></form>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl p-4 md:p-8">{children}</main>
+      <main className="app-main mx-auto max-w-6xl p-4 md:p-8">{children}</main>
       {support ? <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-slate-500 md:px-8">Questions about your receptionist or your bill? Email <a href={`mailto:${support}`}>{support}</a> or use “Request a change” under Your setup.</footer> : null}
     </div>
   );

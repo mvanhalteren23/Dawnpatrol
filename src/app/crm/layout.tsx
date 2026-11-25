@@ -78,7 +78,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
             Protect your clients&apos; call data: <a href="/crm/settings#two-step" className="font-medium text-amber-900 underline">turn on two-step sign-in</a> (2 minutes, with an authenticator app).
           </div>
         ) : null}
-        <main className="mx-auto max-w-7xl p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-8">{children}</main>
+        <main className="app-main mx-auto max-w-7xl p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-8">{children}</main>
       </div>
     </div>
   );
