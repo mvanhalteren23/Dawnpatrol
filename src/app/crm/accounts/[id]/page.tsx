@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { KbReviewSendForm } from "@/components/KbReviewSendForm";
+import { reviewPeopleFrom } from "@/lib/kb-review-rules";
 import { MAX_DISCOVERY_QUESTIONS, pickDiscoveryQuestions } from "@/lib/discovery-rules";
 import { builderAgent } from "@/lib/live-builder";
 import { AGENT_TEMPLATES, TEMPLATE_KEYS, templateFor } from "@/lib/agent-templates";
@@ -23,6 +25,7 @@ import {
   checkoutLink,
   createDriveFolders,
   createReceptionist,
+  sendKbReviewFromAccount,
   deleteAccount,
   deleteContact,
   draftEmail,
@@ -121,6 +124,11 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const outreachPrompts = prompts.filter((p) => p.kind === "OUTREACH");
   const running = account.research.some((r) => r.status === "RUNNING");
   const emailable = account.contacts.filter((c) => c.email);
+  // Knowledge-base review link: the account's answering agents, with how many drafts wait on each.
+  const reviewAgents = account.receptionists.filter((r) => (r.agentType ?? "inbound") === "inbound" && !r.bookingAddsToCrm && r.lifecycle !== "expired");
+  const draftCounts = reviewAgents.length
+    ? Object.fromEntries((await db.knowledgeItem.groupBy({ by: ["receptionistId"], where: { receptionistId: { in: reviewAgents.map((r) => r.id) }, OR: [{ isActive: false }, { tags: { contains: "assumed" } }, { tags: { contains: "claude-draft" } }] }, _count: true })).map((g) => [g.receptionistId, g._count]))
+    : {};
   const sentEmails = account.activities.filter((a) => a.type === "EMAIL" && a.direction === "OUTBOUND");
   const replyRate = sentEmails.length ? Math.round((sentEmails.filter((a) => a.repliedAt).length / sentEmails.length) * 100) : null;
   const isClient = isClientStage(account.stage);
@@ -342,6 +350,19 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                 <div className="text-xs text-slate-500">{r._count.knowledge} KB items · {r._count.calls} calls{r.demoExtension ? ` · demo ext ${r.demoExtension}` : ""}</div>
               </Link>
             ))}
+            {reviewAgents.length ? (
+              <details className="mb-3 rounded-lg border border-violet-200 bg-violet-50/40 p-3 text-sm" open={reviewAgents.some((r) => (draftCounts[r.id] ?? 0) > 0)}>
+                <summary className="cursor-pointer font-medium">Send the knowledge base for review{reviewAgents.some((r) => draftCounts[r.id]) ? <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">{reviewAgents.reduce((n, r) => n + (draftCounts[r.id] ?? 0), 0)} waiting</span> : null}</summary>
+                <p className="mt-1 text-xs text-slate-500">Email or text {account.name} a private link (no login, 30 days) to approve the drafts in one tap, fix anything, fill the gaps and add what customers ask. Every change is in the knowledge history and can be undone.</p>
+                <div className="mt-2">
+                  <KbReviewSendForm
+                    action={sendKbReviewFromAccount.bind(null, account.id)}
+                    people={reviewPeopleFrom(account.contacts)}
+                    agents={reviewAgents.map((r) => ({ id: r.id, label: `${r.name} (${r.lifecycle === "demo" ? "demo" : "live"})`, drafts: draftCounts[r.id] ?? 0 }))}
+                  />
+                </div>
+              </details>
+            ) : null}
             {!isClient ? (
               <div className="mb-3 rounded-lg border border-slate-200 p-3 text-sm">
                 <div className="font-medium">Personalization questions</div>

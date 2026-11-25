@@ -66,6 +66,28 @@ export async function reviewItem(token: string, itemId: string, form: FormData) 
   back(token, { notice: `Saved "${data.title}"` }, item!.id);
 }
 
+/** Keep every website suggestion at once (the ones still waiting), as they are. */
+export async function reviewKeepAll(token: string) {
+  const link = await linkOrFail(token);
+  const r = link.receptionist;
+  const actor = `review link${link.sentTo ? ` (${link.sentTo})` : ""}`;
+  const by = { email: actor, role: "client" };
+  const { reviewKind } = await import("@/lib/kb-review-rules");
+  const items = (await db.knowledgeItem.findMany({ where: { receptionistId: r.id, isActive: false } })).filter((i) => reviewKind(i) === "suggestion");
+  if (!items.length) back(token, { notice: "There were no suggestions left to keep" });
+  if (await tooManyChanges(r.id, actor)) back(token, { error: "That's a lot of changes in an hour. Please take a break and try again shortly." });
+  await db.$transaction(async (tx) => {
+    for (const item of items) {
+      const data = { ...confirmedFields(item, { title: item.title, content: item.content }), updatedBy: actor };
+      await tx.knowledgeItem.update({ where: { id: item.id }, data });
+      await recordKbChange(tx, { receptionistId: r.id, itemId: item.id, action: "update", before: item, after: { ...data, category: item.category }, by });
+    }
+  });
+  await db.kbReviewLink.update({ where: { id: link.id }, data: { changes: { increment: items.length } } });
+  await markDirty(r.id);
+  back(token, { notice: `Kept all ${items.length} suggestion${items.length === 1 ? "" : "s"}. You can still change or remove any of them below.` });
+}
+
 /** Add something the receptionist should know. */
 export async function reviewAdd(token: string, form: FormData) {
   const link = await linkOrFail(token);

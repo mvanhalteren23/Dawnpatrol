@@ -513,3 +513,19 @@ describe("knowledge draft review", () => {
     expect(out.map((o) => o.title)).toEqual(["C", "A", "B (assumed)"]);
   });
 });
+
+// --- Knowledge-base review link by email or text, from the account (Nov 25) ---------------------
+import { reviewPeopleFrom } from "@/lib/kb-review-rules";
+
+describe("review link recipients", () => {
+  it("lists contacts with an email or a mobile, primary first as given", () => {
+    const people = reviewPeopleFrom([
+      { id: "a", firstName: "Dave", lastName: "Smith", email: "dave@x.ca", phone: "604-555-0101" },
+      { id: "b", firstName: null, lastName: null, email: null, phone: null },
+      { id: "c", firstName: "Anna", lastName: null, email: null, phone: "778-555-0102" },
+    ]);
+    expect(people.map((p) => p.id)).toEqual(["a", "c"]);
+    expect(people[0]).toMatchObject({ name: "Dave Smith", firstName: "Dave" });
+    expect(people[1]).toMatchObject({ name: "Anna", email: null, phone: "778-555-0102" });
+  });
+});

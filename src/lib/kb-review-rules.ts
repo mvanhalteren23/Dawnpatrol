@@ -50,3 +50,10 @@ export function linkState(l: { expiresAt: Date; revokedAt: Date | null }, now = 
 export function validToken(token: string): boolean {
   return /^[A-Za-z0-9_-]{24,64}$/.test(token);
 }
+
+/** An account's contacts as review-link recipients (anyone with an email or a mobile). */
+export function reviewPeopleFrom(contacts: { id: string; firstName: string | null; lastName: string | null; email: string | null; phone: string | null }[]) {
+  return contacts
+    .filter((c) => c.email || c.phone)
+    .map((c) => ({ id: c.id, name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Contact", firstName: c.firstName ?? "", email: c.email, phone: c.phone }));
+}

@@ -1525,37 +1525,38 @@ export async function deleteReceptionist(receptionistId: string, form: FormData)
 
 // --- Client knowledge-base review links (src/lib/kb-review.ts) ---------------------------
 
-/** A link the client opens (no login) to review and complete the knowledge base; optionally emailed. */
+/** A link the client opens (no login) to review and complete the knowledge base; optionally emailed and/or texted. */
 export async function createKbReviewLink(receptionistId: string, form: FormData) {
   const session = await requireStaff();
-  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, include: { account: { include: { contacts: { where: { email: { not: null } }, orderBy: { isPrimary: "desc" }, take: 1 } } } } });
+  const r = await db.receptionist.findUniqueOrThrow({ where: { id: receptionistId }, select: { accountId: true } });
   const path = `/crm/receptionists/${receptionistId}`;
   await guard(session, r.accountId, path);
-  const to = str(form, "email").trim().toLowerCase();
-  if (to && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(to)) back(path, { error: "Enter a valid email, or leave it empty to just copy the link" });
-  const { createReviewLink, reviewUrl } = await import("@/lib/kb-review");
-  const link = await createReviewLink(receptionistId, { by: session.email, sentTo: to || null });
-  const url = reviewUrl(link.token);
-  if (to) {
-    const contact = r.account.contacts.find((c) => c.email?.toLowerCase() === to);
-    const first = contact?.firstName?.trim();
-    const company = await companyName();
-    const mine = await googleConnection(session.sub);
-    try {
-      await sendPlainEmail({
-        to,
-        subject: `Quick review: what your AI receptionist knows about ${r.businessName}`,
-        body: `Hi${first ? ` ${first}` : ""},\n\nHere's everything ${r.name}, your AI receptionist, currently knows about ${r.businessName}. Could you take about 10 minutes to fix anything that's wrong, fill in the few gaps, and add anything customers often ask?\n\n${url}\n\nEach change saves as you go, and there's no login. The link is private to you and works for 30 days.\n\nThanks,\n${session.email.split("@")[0]}\n${company}`,
-        ...(mine.connected ? { as: session.sub } : {}),
-      });
-    } catch (err) {
-      unstable_rethrow(err);
-      back(path, { error: `The link was created but the email didn't send (${errMsg(err)}). Copy the link below instead.` });
-    }
-    await recordActivity({ accountId: r.accountId, type: "EMAIL", direction: "OUTBOUND", source: "system", subject: "Knowledge base review link sent", body: `Sent to ${to}: ${url}`, createdById: session.sub });
-    back(path, { notice: `Review link emailed to ${to}` });
-  }
-  back(path, { notice: "Review link created: copy it below" });
+  await sendKbReview(session, receptionistId, form, path);
+}
+
+/** From the account page: pick the receptionist and the person, then email and/or text the review link. */
+export async function sendKbReviewFromAccount(accountId: string, form: FormData) {
+  const session = await requireStaff();
+  const path = `/crm/accounts/${accountId}`;
+  await guard(session, accountId, path);
+  const r = await db.receptionist.findFirst({ where: { id: str(form, "receptionistId"), accountId }, select: { id: true } });
+  if (!r) back(path, { error: "Pick the receptionist whose knowledge base to send" });
+  await sendKbReview(session, r!.id, form, path);
+}
+
+async function sendKbReview(session: SessionPayload, receptionistId: string, form: FormData, path: string): Promise<never> {
+  const email = str(form, "email").trim().toLowerCase();
+  const phone = str(form, "phone").trim();
+  const byEmail = form.get("byEmail") === "on";
+  const byText = form.get("byText") === "on";
+  if (byEmail && !email) back(path, { error: "Add an email address to email the link" });
+  if (byEmail && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(email)) back(path, { error: "Enter a valid email" });
+  if (byText && !phone) back(path, { error: "Add a mobile number to text the link" });
+  const { sendReviewLink } = await import("@/lib/kb-review");
+  const res = await sendReviewLink(receptionistId, { email: byEmail ? email || null : null, phone: byText ? phone : null, firstName: str(form, "firstName") }, { email: session.email, sub: session.sub });
+  const sent = [res.emailed ? `emailed to ${res.emailed}` : "", res.texted ? `texted to ${res.texted}` : ""].filter(Boolean).join(" and ");
+  if (res.problems.length) back(path, { error: `Review link created${sent ? ` and ${sent}` : ""}, but ${res.problems.join("; ")}. Copy the link from the receptionist page instead: ${res.url}` });
+  back(path, { notice: sent ? `Review link ${sent}` : `Review link created: ${res.url}` });
 }
 
 export async function revokeKbReviewLink(receptionistId: string, linkId: string) {

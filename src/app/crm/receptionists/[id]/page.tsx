@@ -1,5 +1,7 @@
 import { appUrl } from "@/lib/app-url";
 import { isDraft } from "@/lib/draft-review-rules";
+import { KbReviewSendForm } from "@/components/KbReviewSendForm";
+import { reviewPeopleFrom } from "@/lib/kb-review-rules";
 import { parseTierChoice, TIER_LABEL, VOICE_TIER_CHOICES, voiceTierFor } from "@/lib/voice-model-rules";
 import { requireStaff } from "@/lib/auth";
 import { canAccessReceptionist } from "@/lib/access";
@@ -56,9 +58,9 @@ export default async function ReceptionistPage({ params, searchParams }: { param
   const app = appUrl();
   const [reviewLinks, reviewContact] = await Promise.all([
     db.kbReviewLink.findMany({ where: { receptionistId: r.id }, orderBy: { createdAt: "desc" }, take: 3 }),
-    db.contact.findFirst({ where: { accountId: r.accountId, email: { not: null } }, orderBy: { isPrimary: "desc" }, select: { email: true } }),
+    db.contact.findMany({ where: { accountId: r.accountId, OR: [{ email: { not: null } }, { phone: { not: null } }] }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], take: 20, select: { id: true, firstName: true, lastName: true, email: true, phone: true } }),
   ]);
-  const reviewEmail = reviewContact?.email ?? null;
+  const reviewPeople = reviewPeopleFrom(reviewContact);
   const bookingCal = await calendarFor(r).catch(() => ({ mode: "crm" as const, email: null }));
   const callerReplyTo = await replyToAddress(r, bookingCal.mode === "client" ? { ...bookingCal, as: null, calendarId: "" } : null).catch(() => null);
   const clientLine = r.agentType === "inbound" && !r.bookingAddsToCrm && r.lifecycle === "production";
@@ -221,10 +223,7 @@ export default async function ReceptionistPage({ params, searchParams }: { param
           <div className="card space-y-3 text-sm">
             <h2>Client review link</h2>
             <p className="text-xs text-slate-500">Send the client a private link (no login) to check and complete {r.name}&apos;s knowledge: fill the &ldquo;TO FILL IN&rdquo; gaps, confirm the &ldquo;(assumed)&rdquo; answers, keep or remove website drafts, edit anything, and add what&apos;s missing. Changes save as they go and appear in History (undo any of them). Lasts 30 days.</p>
-            <form action={createKbReviewLink.bind(null, r.id)} className="flex flex-wrap gap-2">
-              <input name="email" type="email" defaultValue={reviewEmail ?? ""} placeholder="Client's email (or leave empty to copy the link)" className="input min-w-[16rem] flex-1" aria-label="Client's email" />
-              <SubmitButton className="btn whitespace-nowrap" pendingText="…">Create link</SubmitButton>
-            </form>
+            <KbReviewSendForm action={createKbReviewLink.bind(null, r.id)} people={reviewPeople} />
             {reviewLinks.length ? (
               <ul className="space-y-2">
                 {reviewLinks.map((l) => {

@@ -6,7 +6,7 @@ import { openReviewLink } from "@/lib/kb-review";
 import { groupForReview, placeholderHint } from "@/lib/kb-review-rules";
 import { formatDate } from "@/lib/utils";
 import { BrandLogo } from "@/components/site/BrandLogo";
-import { reviewAdd, reviewFinish, reviewItem } from "../actions";
+import { reviewAdd, reviewFinish, reviewItem, reviewKeepAll } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Review your receptionist's knowledge", robots: { index: false, follow: false } };
@@ -55,11 +55,21 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       <p className="mt-1 text-xs text-slate-500">This private link works until {formatDate(link.expiresAt)}. Please don&apos;t share it.</p>
       {sp.notice ? <div className="mt-4 rounded-[10px] border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{sp.notice}</div> : null}
       {sp.error ? <div className="mt-4 rounded-[10px] border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{sp.error}</div> : null}
-      {todo ? <p className="mt-4 rounded-[10px] bg-dawn-100 px-4 py-2 text-sm text-dawn-700"><b>{todo}</b> thing{todo === 1 ? "" : "s"} need{todo === 1 ? "s" : ""} your answer first, then have a look through the rest.</p> : null}
+      {todo ? (
+        <div className="mt-4 space-y-2 rounded-[10px] bg-dawn-100 px-4 py-3 text-sm text-dawn-700">
+          <p><b>{todo}</b> thing{todo === 1 ? "" : "s"} need{todo === 1 ? "s" : ""} your OK:{groups.suggestion.length ? <> <a href="#suggestions" className="underline">{groups.suggestion.length} from your website</a>,</> : null}{groups.check.length ? <> <a href="#guesses" className="underline">{groups.check.length} we guessed</a>,</> : null}{groups.fill.length ? <> <a href="#gaps" className="underline">{groups.fill.length} to fill in</a>,</> : null} then have a look through the rest.</p>
+          {groups.suggestion.length > 1 ? (
+            <form action={reviewKeepAll.bind(null, token)} className="flex flex-wrap items-center gap-3">
+              <span className="flex-1">Quickest start: keep all {groups.suggestion.length} website suggestions now, and change or remove any of them below.</span>
+              <button className="btn">Keep all {groups.suggestion.length}</button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
 
-      <Section title="Please fill in" sub="We couldn't find these. A sentence or two each is plenty." items={groups.fill} token={token} kind="fill" />
-      <Section title="Please check: we guessed these" sub="Typical answers for your kind of business. Correct them, or remove any that don't apply." items={groups.check} token={token} kind="check" />
-      <Section title="Suggestions from your website" sub="Not used yet. Keep the ones that are right (edit them if needed), and remove the rest." items={groups.suggestion} token={token} kind="suggestion" />
+      <Section id="gaps" title="Please fill in" sub="We couldn't find these. A sentence or two each is plenty." items={groups.fill} token={token} kind="fill" />
+      <Section id="guesses" title="Please check: we guessed these" sub="Typical answers for your kind of business. Correct them, or remove any that don't apply." items={groups.check} token={token} kind="check" />
+      <Section id="suggestions" title="Suggestions from your website" sub="Not used yet. Keep the ones that are right (edit them if needed), and remove the rest." items={groups.suggestion} token={token} kind="suggestion" />
       <Section title={`What ${r.name} knows now`} sub="Open any entry to change or remove it." items={groups.live} token={token} kind="live" />
 
       <section id="add" className="card mt-8 space-y-3">
@@ -97,13 +107,19 @@ function Shell({ company, children }: { company: string; children: React.ReactNo
   );
 }
 
-function Section({ title, sub, items, token, kind }: { title: string; sub: string; items: Item[]; token: string; kind: "fill" | "check" | "suggestion" | "live" }) {
+function Section({ id, title, sub, items, token, kind }: { id?: string; title: string; sub: string; items: Item[]; token: string; kind: "fill" | "check" | "suggestion" | "live" }) {
   if (!items.length) return null;
   const open = kind !== "live";
   return (
-    <section className="mt-8">
+    <section id={id} className="mt-8 scroll-mt-4">
       <h2>{title} <span className="text-base font-normal text-slate-500">({items.length})</span></h2>
       <p className="mb-3 text-sm text-slate-600">{sub}</p>
+      {kind === "suggestion" && items.length > 1 ? (
+        <form action={reviewKeepAll.bind(null, token)} className="mb-3 flex flex-wrap items-center gap-3 rounded-[10px] bg-emerald-50 px-4 py-3 text-sm">
+          <span className="flex-1">Look right? Keep them all at once, then change or remove any later.</span>
+          <button className="btn">Keep all {items.length}</button>
+        </form>
+      ) : null}
       <div className="space-y-3">
         {items.map((i) => (
           <details key={i.id} id={i.id} open={open} className={`card p-4 ${kind === "fill" ? "border-dawn-400" : kind === "check" ? "border-amber-300" : ""}`}>
