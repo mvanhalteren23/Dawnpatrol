@@ -1,6 +1,7 @@
 // Pure rules for automatic outreach tracking (unit tested).
 import { FOLLOW_UP_DAYS } from "./constants";
 import { addDays, normalizeDomain } from "./utils";
+import { isSharedMailDomain } from "./campaign-rules";
 
 const TOUCH_TYPES = new Set(["EMAIL", "CALL", "SMS", "LINKEDIN", "MEETING"]);
 
@@ -33,7 +34,8 @@ export function buildMatchIndex(
   const byEmail = new Map<string, { accountId: string; contactId: string }>();
   for (const c of contacts) if (c.email) byEmail.set(c.email.toLowerCase(), { accountId: c.accountId, contactId: c.id });
   const byDomain = new Map<string, string>();
-  for (const a of accounts) if (a.domain) byDomain.set(a.domain, a.id);
+  // Never a shared provider (an account whose "domain" is gmail.com would match everyone's email).
+  for (const a of accounts) if (a.domain && !isSharedMailDomain(a.domain)) byDomain.set(a.domain, a.id);
   return { byEmail, byDomain };
 }
 

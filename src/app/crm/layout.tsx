@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { requireStaff } from "@/lib/auth";
 import { NavLink } from "@/components/ui";
 import { companyName } from "@/lib/brand";
@@ -16,6 +17,8 @@ export const viewport: Viewport = { themeColor: "#1F3B2D", viewportFit: "cover" 
 
 export default async function CrmLayout({ children }: { children: React.ReactNode }) {
   const [session, company] = await Promise.all([requireStaff(), companyName()]);
+  // Gmail: sent and received emails land on accounts within minutes while the CRM is in use.
+  after(async () => (await import("@/lib/outreach")).syncGmailThrottled());
   const isAdmin = session.role === "ADMIN";
   // Reps see review notices for their own accounts and unassigned ones; admins see all.
   const toReview = await db.account.findMany({ where: { needsReview: true, ...(isAdmin ? {} : { OR: [{ ownerId: session.sub }, { ownerId: null }] }) }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 5 });

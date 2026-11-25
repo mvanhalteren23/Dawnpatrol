@@ -6,7 +6,8 @@ import { encodeHeader, safeAddress } from "./outreach-address";
 import { appUrl } from "./app-url";
 import { getSetting, setSetting } from "./settings";
 import { writeAccountDoc } from "./drive";
-import { buildMatchIndex, matchAddresses, nextFollowUp, nextStageAfterActivity } from "./outreach-rules";
+import { buildMatchIndex, matchAddresses, nextFollowUp, nextStageAfterActivity, type MatchIndex } from "./outreach-rules";
+import { BACKFILL_MAX_MESSAGES, backfillQuery, LIVE_SYNC_MINUTES, newContactsFrom, parseAddressList, splitName } from "./email-sync-rules";
 import { instrumentHtml, textToHtml } from "./tracking";
 import { PROSPECT_STAGES, type Stage } from "./constants";
 import { contactName, extractEmailAddresses, formatDate } from "./utils";
@@ -24,6 +25,8 @@ export type NewActivity = {
   occurredAt?: Date;
   dueAt?: Date | null;
   createdById?: string | null;
+  /** Past email pulled in for a new account: recorded and counted, but no follow-up is scheduled from it. */
+  history?: boolean;
 };
 
 /**
@@ -66,7 +69,7 @@ export async function recordActivity(input: NewActivity) {
 
   const isProspect = (PROSPECT_STAGES as string[]).includes(account.stage);
   const newStage = nextStageAfterActivity(account.stage, input.type, direction);
-  const followUp = nextFollowUp(input.type, direction, occurredAt, isProspect);
+  const followUp = input.history ? undefined : nextFollowUp(input.type, direction, occurredAt, isProspect);
   const isTouch = direction !== null;
   const newer = !account.lastContactedAt || occurredAt > account.lastContactedAt;
 
@@ -177,7 +180,6 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
   const startedAt = Math.floor(Date.now() / 1000);
 
   const index = o.index;
-  const myDomain = me.split("@")[1];
 
   const ids: { id: string; threadId: string }[] = [];
   let pageToken: string | undefined;
@@ -197,42 +199,134 @@ async function syncMailbox(o: { index: ReturnType<typeof buildMatchIndex>; as: s
   const touched = new Set<string>();
   for (const { id } of ids.slice(0, max)) {
     if (known.has(`gmail:${id}`)) continue;
-    const msg = await googleFetch<GmailMessage>(`${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject`, {}, o.as);
-    const header = (n: string) => msg.payload?.headers?.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value ?? "";
-    const from = extractEmailAddresses(header("From"));
-    const outbound = from.includes(me);
-    const counterpart = (outbound ? [...extractEmailAddresses(header("To")), ...extractEmailAddresses(header("Cc"))] : from)
-      // Gmail personal accounts share a domain with millions — only skip our own domain for Workspace.
-      .filter((a) => a !== me && (myDomain === "gmail.com" || !a.endsWith(`@${myDomain}`)));
-    const match = matchAddresses(counterpart, index);
-    if (!match) continue;
-    const created = await recordActivity({
-      accountId: match.accountId,
-      contactId: match.contactId,
-      type: "EMAIL",
-      direction: outbound ? "OUTBOUND" : "INBOUND",
-      subject: header("Subject") || "(no subject)",
-      body: msg.snippet ?? null,
-      source: "gmail",
-      externalId: `gmail:${msg.id}`,
-      threadId: msg.threadId,
-      occurredAt: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
-      createdById: outbound ? o.userId : null,
-    });
-    if (created) {
+    const accountId = await recordGmailMessage(id, { index, as: o.as, me, userId: o.userId });
+    if (accountId) {
       recorded++;
-      touched.add(match.accountId);
-      // "Unsubscribe" / "remove me" replies go on the do-not-email list.
-      if (!outbound && msg.snippet) {
-        const { isEmailOptOut } = await import("./campaign-rules");
-        if (isEmailOptOut(msg.snippet)) {
-          const { suppress } = await import("./suppression");
-          for (const addr of from) await suppress(addr, "reply", { note: msg.snippet.slice(0, 200) }).catch((e) => console.warn("suppress", e));
-        }
-      }
+      touched.add(accountId);
     }
   }
   return { scanned: ids.length, recorded, accountsTouched: Array.from(touched), startedAt };
+}
+
+/**
+ * Record one Gmail message on the CRM account it belongs to (by contact email, then company domain),
+ * and add the people in it at that company's domain as contacts. Returns the account, or null when
+ * the message isn't about any account (or was already recorded).
+ */
+async function recordGmailMessage(id: string, o: { index: MatchIndex; as: string | null; me: string; userId: string | null; history?: boolean }): Promise<string | null> {
+  const me = o.me;
+  const myDomain = me.split("@")[1];
+  const msg = await googleFetch<GmailMessage>(`${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject`, {}, o.as);
+  const header = (n: string) => msg.payload?.headers?.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value ?? "";
+  const from = extractEmailAddresses(header("From"));
+  const outbound = from.includes(me);
+  const notUs = (a: string) => a !== me && (myDomain === "gmail.com" || !a.endsWith(`@${myDomain}`));
+  // Gmail personal accounts share a domain with millions — only skip our own domain for Workspace.
+  const people = (outbound ? [...parseAddressList(header("To")), ...parseAddressList(header("Cc"))] : parseAddressList(header("From"))).filter((p) => notUs(p.email));
+  const counterpart = people.map((p) => p.email);
+  let match = matchAddresses(counterpart, o.index);
+  if (!match) return null;
+
+  // New people at this company's own domain become contacts (names from the email headers).
+  const account = await db.account.findUnique({ where: { id: match.accountId }, select: { id: true, domain: true, contacts: { select: { email: true } } } });
+  if (account) {
+    const existing = new Set(account.contacts.map((c) => (c.email ?? "").toLowerCase()).filter(Boolean));
+    for (const p of newContactsFrom(people, { domain: account.domain, me, existing })) {
+      const { firstName, lastName } = splitName(p.name);
+      const created = await db.contact.create({ data: { accountId: account.id, email: p.email, firstName, lastName, isPrimary: existing.size === 0 } }).catch(() => null);
+      if (!created) continue;
+      existing.add(p.email);
+      o.index.byEmail.set(p.email, { accountId: account.id, contactId: created.id });
+      if (!match.contactId) match = { accountId: account.id, contactId: created.id };
+    }
+  }
+
+  const created = await recordActivity({
+    accountId: match.accountId,
+    contactId: match.contactId,
+    type: "EMAIL",
+    direction: outbound ? "OUTBOUND" : "INBOUND",
+    subject: header("Subject") || "(no subject)",
+    body: msg.snippet ?? null,
+    source: "gmail",
+    externalId: `gmail:${msg.id}`,
+    threadId: msg.threadId,
+    occurredAt: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+    createdById: outbound ? o.userId : null,
+    history: o.history,
+  });
+  if (!created) return null;
+  // "Unsubscribe" / "remove me" replies go on the do-not-email list.
+  if (!outbound && !o.history && msg.snippet) {
+    const { isEmailOptOut } = await import("./campaign-rules");
+    if (isEmailOptOut(msg.snippet)) {
+      const { suppress } = await import("./suppression");
+      for (const addr of from) await suppress(addr, "reply", { note: msg.snippet.slice(0, 200) }).catch((e) => console.warn("suppress", e));
+    }
+  }
+  return match.accountId;
+}
+
+/**
+ * A new (or newly matched) account: search every connected mailbox for its past emails (its domain
+ * and contacts' addresses, last BACKFILL_YEARS years), record them on the account and add the people
+ * as contacts. Safe to run again: messages already recorded are skipped.
+ */
+export async function backfillAccountEmail(accountId: string): Promise<{ recorded: number; contactsAdded: number; mailboxes: number; skipped?: string }> {
+  const account = await db.account.findUnique({ where: { id: accountId }, select: { id: true, domain: true, contacts: { select: { email: true } } } });
+  if (!account) return { recorded: 0, contactsAdded: 0, mailboxes: 0, skipped: "account not found" };
+  const q = backfillQuery({ domain: account.domain, emails: account.contacts.map((c) => c.email) });
+  if (!q) return { recorded: 0, contactsAdded: 0, mailboxes: 0, skipped: "no website domain or contact email to search by" };
+  const contactsBefore = account.contacts.length;
+  const [contacts, accounts] = await Promise.all([
+    db.contact.findMany({ where: { email: { not: null } }, select: { id: true, accountId: true, email: true } }),
+    db.account.findMany({ where: { domain: { not: null } }, select: { id: true, domain: true } }),
+  ]);
+  const index = buildMatchIndex(contacts, accounts);
+  const companyEmail = (await connectedEmail())?.toLowerCase() ?? null;
+  const owner = companyEmail ? await db.user.findFirst({ where: { email: { equals: companyEmail, mode: "insensitive" }, role: { in: ["ADMIN", "REP"] } }, select: { id: true } }) : null;
+  const boxes: { as: string | null; me: string; userId: string | null }[] = companyEmail ? [{ as: null, me: companyEmail, userId: owner?.id ?? null }] : [];
+  for (const g of await db.googleAccount.findMany({ where: { user: { disabled: false } }, select: { userId: true, email: true } })) {
+    if (g.email.toLowerCase() !== companyEmail) boxes.push({ as: g.userId, me: g.email.toLowerCase(), userId: g.userId });
+  }
+  let recorded = 0;
+  for (const box of boxes) {
+    try {
+      const ids: string[] = [];
+      let pageToken: string | undefined;
+      do {
+        const page = await googleFetch<GmailList>(`${GMAIL}/messages?q=${encodeURIComponent(q)}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ""}`, {}, box.as);
+        ids.push(...(page.messages ?? []).map((m) => m.id));
+        pageToken = page.nextPageToken;
+      } while (pageToken && ids.length < BACKFILL_MAX_MESSAGES);
+      const known = new Set((await db.activity.findMany({ where: { externalId: { in: ids.map((i) => `gmail:${i}`) } }, select: { externalId: true } })).map((x) => x.externalId));
+      for (const id of ids.slice(0, BACKFILL_MAX_MESSAGES)) {
+        if (known.has(`gmail:${id}`)) continue;
+        if ((await recordGmailMessage(id, { index, as: box.as, me: box.me, userId: box.userId, history: true })) === accountId) recorded++;
+      }
+    } catch (err) {
+      console.warn("email backfill", box.me, (err as Error).message);
+    }
+  }
+  const contactsAdded = (await db.contact.count({ where: { accountId } })) - contactsBefore;
+  await setSetting(`gmail.backfill.${accountId}`, new Date().toISOString());
+  return { recorded, contactsAdded, mailboxes: boxes.length };
+}
+
+/** Run the past-email search for a new account after the response (best effort; never blocks or fails the caller). */
+export function queueEmailBackfill(accountId: string): void {
+  const run = () => backfillAccountEmail(accountId).then(() => undefined).catch((e) => console.warn("email backfill failed", accountId, e));
+  import("next/server")
+    .then(({ after }) => after(run))
+    .catch(() => void run());
+}
+
+/** Live sync while the CRM is in use: at most every LIVE_SYNC_MINUTES (the daily cron is the safety net). */
+export async function syncGmailThrottled(): Promise<void> {
+  const last = Date.parse((await getSetting("gmail.lastLiveSyncAt").catch(() => null)) ?? "") || 0;
+  if (Date.now() - last < LIVE_SYNC_MINUTES * 60_000) return;
+  await setSetting("gmail.lastLiveSyncAt", new Date().toISOString());
+  await syncGmail({ maxMessages: 200 }).catch((e) => console.warn("live Gmail sync", (e as Error).message));
 }
 
 /** Plain-text email from the connected Gmail account (no tracking, no activity). */

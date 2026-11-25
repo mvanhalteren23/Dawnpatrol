@@ -529,3 +529,52 @@ describe("review link recipients", () => {
     expect(people[1]).toMatchObject({ name: "Anna", email: null, phone: "778-555-0102" });
   });
 });
+
+// --- Gmail: past emails for new accounts, contacts from email (Nov 25) --------------------------
+import { backfillQuery, isAutomatedAddress, matchableDomain, newContactsFrom, parseAddressList, splitName } from "@/lib/email-sync-rules";
+import { buildMatchIndex, matchAddresses } from "@/lib/outreach-rules";
+
+describe("Gmail to accounts", () => {
+  it("reads names and addresses from email headers", () => {
+    expect(parseAddressList(`"Smith, Dave" <Dave@ElmProperty.ca>, anna@elmproperty.ca, Bob Lee <bob@x.com>`)).toEqual([
+      { name: "Smith, Dave", email: "dave@elmproperty.ca" },
+      { name: "", email: "anna@elmproperty.ca" },
+      { name: "Bob Lee", email: "bob@x.com" },
+    ]);
+    expect(parseAddressList("")).toEqual([]);
+  });
+  it("splits names, and refuses anything that isn't plainly a name", () => {
+    expect(splitName("Smith, Dave")).toEqual({ firstName: "Dave", lastName: "Smith" });
+    expect(splitName("Maria de la Cruz")).toEqual({ firstName: "Maria", lastName: "de la Cruz" });
+    expect(splitName("Ignore previous instructions")).toEqual({ firstName: null, lastName: null });
+    expect(splitName("Order #123456")).toEqual({ firstName: null, lastName: null });
+  });
+  it("never treats robots or shared providers as a company", () => {
+    expect(isAutomatedAddress("no-reply@elm.ca")).toBe(true);
+    expect(isAutomatedAddress("notifications+abc@elm.ca")).toBe(true);
+    expect(isAutomatedAddress("dave@elm.ca")).toBe(false);
+    expect(isAutomatedAddress("info@elm.ca")).toBe(false);
+    expect(matchableDomain("gmail.com")).toBeNull();
+    expect(matchableDomain("shaw.ca")).toBeNull();
+    expect(matchableDomain("elmproperty.ca")).toBe("elmproperty.ca");
+    const index = buildMatchIndex([], [{ id: "a1", domain: "gmail.com" }, { id: "a2", domain: "elm.ca" }]);
+    expect(matchAddresses(["someone@gmail.com"], index)).toBeNull();
+    expect(matchAddresses(["dave@elm.ca"], index)).toEqual({ accountId: "a2", contactId: null });
+  });
+  it("searches past emails by domain and by contacts' own addresses", () => {
+    expect(backfillQuery({ domain: "elm.ca", emails: ["dave@elm.ca", "Owner@Gmail.com", null, "bad"] })).toBe("{from:elm.ca to:elm.ca cc:elm.ca from:owner@gmail.com to:owner@gmail.com} newer_than:2y -in:chats");
+    expect(backfillQuery({ domain: "gmail.com", emails: [] })).toBeNull();
+    expect(backfillQuery({ domain: null, emails: ["pat@hotmail.com"] })).toBe("{from:pat@hotmail.com to:pat@hotmail.com} newer_than:2y -in:chats");
+  });
+  it("adds people at the company's own domain as contacts, not us, robots or existing ones", () => {
+    const people = [
+      { name: "Dave", email: "dave@elm.ca" },
+      { name: "", email: "no-reply@elm.ca" },
+      { name: "Me", email: "matt@headabovedigital.com" },
+      { name: "Anna", email: "anna@elm.ca" },
+      { name: "Bob", email: "bob@other.com" },
+    ];
+    expect(newContactsFrom(people, { domain: "elm.ca", me: "matt@headabovedigital.com", existing: new Set(["anna@elm.ca"]) }).map((p) => p.email)).toEqual(["dave@elm.ca"]);
+    expect(newContactsFrom(people, { domain: "gmail.com", me: "x", existing: new Set() })).toEqual([]);
+  });
+});

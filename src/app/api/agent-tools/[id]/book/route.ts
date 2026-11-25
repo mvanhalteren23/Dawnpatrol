@@ -17,12 +17,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     // The demo builder books the follow-up into the rep's calendar and logs it on the prospect.
     const builder = r.agentType === "builder" ? await builderBookingReceptionist(r, body.session_code) : null;
-    const { researchRunId, ...result } = await book(builder?.r ?? r, body);
+    const { researchRunId, leadAccountId, ...result } = (await book(builder?.r ?? r, body)) as Awaited<ReturnType<typeof book>> & { researchRunId?: string | null; leadAccountId?: string | null };
     if (builder?.session && result.booked) {
       const s = builder.session;
       after(() => recordActivity({ accountId: s.accountId, type: "MEETING", direction: "OUTBOUND", source: "dialer", subject: `${r.bookingTitle}: ${result.label}`, body: `Booked by ${r.name} (demo builder) with ${s.repName}.`, createdById: s.repId }).then(() => undefined).catch((e) => console.error("builder booking activity", e)));
     }
     if (researchRunId) after(() => executeAccountResearch(researchRunId));
+    // A new account from a booking: pull in any past emails with them.
+    if (leadAccountId) after(async () => (await import("@/lib/outreach")).backfillAccountEmail(leadAccountId).then(() => undefined).catch((e) => console.warn("email backfill", e)));
     return NextResponse.json(result);
   } catch (err) {
     console.error("booking failed", err);

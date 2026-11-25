@@ -61,11 +61,13 @@ export async function researchNewAccounts(accountIds: string[]): Promise<number>
     const runId = await queueProfileResearch(id);
     if (runId) runIds.push(runId);
   }
-  if (runIds.length) {
-    after(async () => {
-      for (let i = 0; i < runIds.length; i += 3) await Promise.all(runIds.slice(i, i + 3).map((r) => executeAccountResearch(r)));
-    });
-  }
+  const ids = accountIds.slice(0, AUTO_RESEARCH_BATCH_LIMIT);
+  after(async () => {
+    for (let i = 0; i < runIds.length; i += 3) await Promise.all(runIds.slice(i, i + 3).map((r) => executeAccountResearch(r)));
+    // Then their past emails (research may have found the website, so the domain search finds more).
+    const { backfillAccountEmail } = await import("./outreach");
+    for (const id of ids) await backfillAccountEmail(id).catch((e) => console.warn("email backfill", id, e));
+  });
   return runIds.length;
 }
 

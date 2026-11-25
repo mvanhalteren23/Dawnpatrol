@@ -10,7 +10,7 @@ import { canTouch, findDuplicateAccount, OwnershipError, touchAccount } from "@/
 import { STAGES, isClientStage, type Stage } from "@/lib/constants";
 import { googleConnection } from "@/lib/google";
 import { addDays, joinTags, normalizeDomain, optInt, optStr, parseMoneyToCents, safeJson, str, websiteUrl } from "@/lib/utils";
-import { changeStage, recordActivity, sendPlainEmail, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
+import { changeStage, queueEmailBackfill, recordActivity, sendPlainEmail, sendTrackedEmail, syncGmail, writeOutreachLog } from "@/lib/outreach";
 import { ensureAccountFolders } from "@/lib/drive";
 import { importCsvText, importRows } from "@/lib/importer";
 import {
@@ -127,6 +127,23 @@ export async function createAccount(form: FormData) {
   back(`/crm/accounts/${account.id}`);
 }
 
+/** "Search Gmail": pull this account's past emails (last 2 years) from every connected mailbox now. */
+export async function searchAccountEmail(accountId: string) {
+  const session = await requireStaff();
+  await guard(session, accountId);
+  const { backfillAccountEmail } = await import("@/lib/outreach");
+  let res: Awaited<ReturnType<typeof backfillAccountEmail>>;
+  try {
+    res = await backfillAccountEmail(accountId);
+  } catch (err) {
+    unstable_rethrow(err);
+    back(`/crm/accounts/${accountId}`, { error: `Gmail search failed: ${errMsg(err)}` });
+  }
+  if (res!.skipped) back(`/crm/accounts/${accountId}`, { error: `Nothing to search by: ${res!.skipped}. Add their website or a contact's email first.` });
+  if (!res!.mailboxes) back(`/crm/accounts/${accountId}`, { error: "No Gmail is connected. Connect Google in Settings first." });
+  back(`/crm/accounts/${accountId}`, { notice: `Searched ${res!.mailboxes} mailbox${res!.mailboxes === 1 ? "" : "es"}: ${res!.recorded} email${res!.recorded === 1 ? "" : "s"} added${res!.contactsAdded ? `, ${res!.contactsAdded} new contact${res!.contactsAdded === 1 ? "" : "s"}` : ""}.` });
+}
+
 export async function updateAccount(accountId: string, form: FormData) {
   const session = await requireStaff();
   await guard(session, accountId);
@@ -135,6 +152,7 @@ export async function updateAccount(accountId: string, form: FormData) {
   const avg = parseMoneyToCents(optStr(form, "avgJobValue"));
   const dup = await findDuplicateAccount({ domain, phone: optStr(form, "phone"), name: str(form, "name"), city: optStr(form, "city") }, accountId);
   if (dup) back(`/crm/accounts/${accountId}`, { error: `Not saved: ${dup.name} already has that ${dup.reason.replace("same ", "")} (owned by ${dup.owner}).`, edit: "1" });
+  const before = await db.account.findUnique({ where: { id: accountId }, select: { domain: true } });
   try {
     await db.account.update({
       where: { id: accountId },
@@ -162,6 +180,8 @@ export async function updateAccount(accountId: string, form: FormData) {
   }
   const stage = str(form, "stage");
   if ((STAGES as readonly string[]).includes(stage)) await changeStage(accountId, stage as Stage, session.sub);
+  // A new website domain: look for past emails with that company.
+  if (domain && domain !== before?.domain) queueEmailBackfill(accountId);
   back(`/crm/accounts/${accountId}`, { notice: "Saved" });
 }
 
@@ -281,6 +301,8 @@ export async function addContact(accountId: string, form: FormData) {
       isPrimary: count === 0,
     },
   });
+  // A new contact email (e.g. a gmail.com address): look for past emails with them.
+  if (optStr(form, "email")) queueEmailBackfill(accountId);
   back(`/crm/accounts/${accountId}`);
 }
 

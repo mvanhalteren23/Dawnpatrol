@@ -255,6 +255,7 @@ export async function book(r: Receptionist, input: BookingInput, now = new Date(
     booked: true,
     confirmation: channel ? (sent ? `sent by ${channel === "sms" ? "text" : "email"}` : "failed") : "none",
     researchRunId: lead?.researchRunId ?? null,
+    leadAccountId: lead?.created ? lead.accountId : null, // a new account: its past emails are pulled in (not sent to the agent)
     start_iso: start.toISOString(),
     label,
     meet_link: event.meetLink,

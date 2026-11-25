@@ -26,6 +26,7 @@ import {
   createDriveFolders,
   createReceptionist,
   sendKbReviewFromAccount,
+  searchAccountEmail,
   deleteAccount,
   deleteContact,
   draftEmail,
@@ -549,6 +550,9 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
                   <Link key={f.key} href={`/crm/accounts/${account.id}${f.key ? `?tl=${f.key}` : ""}`} className={`rounded-full px-2 py-0.5 hover:no-underline ${filter.key === f.key ? "bg-dawn-600 text-white" : "bg-slate-100 text-slate-600"}`}>{f.label}</Link>
                 ))}
               </div>
+              <form action={searchAccountEmail.bind(null, account.id)}>
+                <SubmitButton className="btn-secondary py-1 text-xs" pendingText="Searching Gmail…">Search Gmail</SubmitButton>
+              </form>
             </div>
             {timeline.length ? (
               <ol className="space-y-3">

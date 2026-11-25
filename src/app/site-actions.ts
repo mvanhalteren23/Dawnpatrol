@@ -132,6 +132,7 @@ export async function requestPersonalDemo(_prev: PersonalDemoState | undefined, 
     : await db.account.create({
         data: { name: business, domain, website, phone, city: city || null, industry: tradeLabel, source: "inbound", tags: `website,hear-it,${trade}`, needsReview: true, reviewReason },
       });
+  if (!dup) (await import("@/lib/outreach")).queueEmailBackfill(account.id);
   const [firstName, ...rest] = name.split(/\s+/);
   const contact =
     (await db.contact.findFirst({ where: { accountId: account.id, phone } })) ??
