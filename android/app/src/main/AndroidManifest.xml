@@ -7,6 +7,7 @@
 
     <application
         android:name=".CrmApplication"
+        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -57,6 +58,20 @@
         </activity>
 
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
+
+        <!-- Required: on every launch the helper library switches this "site settings" screen on or
+             off (Settings → Apps → Head Above → Manage space). Without it the app crashes at start. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:enabled="true"
+            android:excludeFromRecents="true"
+            android:exported="false">
+            <meta-data android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL" android:value="@string/launchUrl" />
+            <intent-filter>
+                <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!-- Notifications from the site are shown by the app (with its icon), not by Chrome. -->
         <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity" />
