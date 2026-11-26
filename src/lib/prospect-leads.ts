@@ -1,11 +1,16 @@
 import "server-only";
+import { after } from "next/server";
 import { db } from "./db";
 import { importRows } from "./importer";
-import { researchNewAccounts } from "./jobs";
+import { applyResearchSummary, archiveRunToDrive, researchNewAccounts } from "./jobs";
+import { recordActivity } from "./outreach";
+import { SKILL_MODEL } from "./prospect-pack";
+import { verifySummary } from "./research-guard";
 import { DuplicateIndex } from "./team-rules";
 import { joinTags, normalizeDomain, safeJson, splitTags } from "./utils";
 import {
   mergeLead,
+  profileProspect,
   promotionNotes,
   promotionTags,
   sameBusiness,
@@ -34,6 +39,7 @@ export function leadFromRow(row: LeadRow): CleanLead {
     googleRating: row.googleRating,
     reviewCount: row.reviewCount,
     score: row.score,
+    profile: row.profile ? safeJson<Record<string, unknown> | null>(row.profile, null) : null,
   };
 }
 
@@ -53,10 +59,12 @@ function rowData(l: CleanLead) {
     googleRating: l.googleRating,
     reviewCount: l.reviewCount,
     score: l.score,
+    profile: l.profile ? JSON.stringify(l.profile) : null,
   };
 }
 
-export type IntakeSummary = { created: number; updated: number; alreadyInCrm: number; errors: { index: number; message: string }[] };
+export type IntakeLeadResult = { name: string; status: "created" | "updated"; inCrm: boolean; needsProfile: boolean };
+export type IntakeSummary = { created: number; updated: number; alreadyInCrm: number; needsProfile: number; leads: IntakeLeadResult[]; errors: { index: number; message: string }[] };
 
 /**
  * Save researched leads. A business already in the inbox is merged (new channels and evidence
@@ -64,7 +72,7 @@ export type IntakeSummary = { created: number; updated: number; alreadyInCrm: nu
  * saved, linked to that account, so the inbox shows it as "already in CRM".
  */
 export async function ingestLeads(intake: IntakeResult, opts: { source: string; createdById: string | null }): Promise<IntakeSummary> {
-  const summary: IntakeSummary = { created: 0, updated: 0, alreadyInCrm: 0, errors: intake.errors };
+  const summary: IntakeSummary = { created: 0, updated: 0, alreadyInCrm: 0, needsProfile: 0, leads: [], errors: intake.errors };
   if (!intake.leads.length) return summary;
   const accounts = new DuplicateIndex(await db.account.findMany({ select: { id: true, domain: true, phone: true, name: true, city: true } }));
   // Match keys for every lead already in the inbox (small rows; phones are stored as typed, so
@@ -75,6 +83,13 @@ export async function ingestLeads(intake: IntakeResult, opts: { source: string; 
     if (account) summary.alreadyInCrm++;
     const hit = existing.find((r) => sameBusiness(r, lead));
     const prev = hit ? await db.prospectLead.findUnique({ where: { id: hit.id } }) : null;
+    // Tell the skill which leads still need a company profile, so it researches only those:
+    // none sent or stored yet, and not an account that already has a researched profile.
+    const accountId = prev?.accountId ?? account?.id ?? null;
+    const accountProfiled = accountId ? (await db.researchRun.count({ where: { accountId, kind: "RESEARCH", status: "DONE" } })) > 0 : false;
+    const needsProfile = !lead.profile && !prev?.profile && !accountProfiled;
+    if (needsProfile) summary.needsProfile++;
+    summary.leads.push({ name: lead.name, status: prev ? "updated" : "created", inCrm: Boolean(account), needsProfile });
     if (prev) {
       const merged = mergeLead(leadFromRow(prev), lead);
       await db.prospectLead.update({
@@ -100,7 +115,32 @@ export async function ingestLeads(intake: IntakeResult, opts: { source: string; 
   return summary;
 }
 
-export type PromoteResult = { created: number; linked: number; skipped: number };
+export type PromoteResult = { created: number; linked: number; skipped: number; profiled: number };
+
+/**
+ * Save the skill's company profile as the account's Company profile, the same way the prospecting
+ * skill's packs are saved: a research record, facts the write-up doesn't back up dropped, empty
+ * fields filled, decision makers added as contacts. Unconfirmed matches fill nothing and flag the
+ * account for review. Returns the research run id, or null when there was nothing usable.
+ */
+async function applyLeadProfile(accountId: string, row: LeadRow): Promise<string | null> {
+  const lead = leadFromRow(row);
+  if (!lead.profile) return null;
+  const search = [row.searchIndustry, row.searchRegion].filter(Boolean).join(", ") || null;
+  const p = profileProspect(lead.profile, lead, search ? `paying for leads — ${search}` : null);
+  if (typeof p === "string" || !p.summary || !p.report) return null;
+  const output = `Researched in Claude (your own plan) with the paid-lead prospects skill${search ? ` — search: ${search}` : ""}.\n\n${p.report}`;
+  const run = await db.researchRun.create({
+    data: { kind: "RESEARCH", accountId, input: `Paid-lead prospects skill: company profile (facts only)${search ? ` — ${search}` : ""}`, output, resultJson: JSON.stringify(p.summary), status: "DONE", model: SKILL_MODEL, tokensIn: 0, tokensOut: 0, finishedAt: new Date() },
+  });
+  if (p.summary.match === "not_confirmed") {
+    await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: "The paid-lead skill couldn't confirm it found the right business, so no researched details were filled in. Check the website or phone number." } });
+  } else {
+    await applyResearchSummary(accountId, verifySummary(p.summary, output), false);
+  }
+  await recordActivity({ accountId, type: "RESEARCH", source: "system", subject: "Claude research: Company profile (paid-lead skill)", body: p.summary.keyFacts.join("\n") || null });
+  return run.id;
+}
 
 /**
  * Promote leads to the CRM. "prospects": an Account at stage Prospect (it appears in the
@@ -111,8 +151,10 @@ export type PromoteResult = { created: number; linked: number; skipped: number }
 export async function promoteLeads(ids: string[], mode: "prospects" | "dialer", session: { sub: string; role: string }, canUpdate: (ownerId: string | null) => boolean): Promise<PromoteResult> {
   const leads = await db.prospectLead.findMany({ where: { id: { in: ids }, status: { not: "DISMISSED" } } });
   const toDialer = mode === "dialer";
-  const result: PromoteResult = { created: 0, linked: 0, skipped: 0 };
+  const result: PromoteResult = { created: 0, linked: 0, skipped: 0, profiled: 0 };
   const newAccountIds: string[] = [];
+  const profiledIds: string[] = [];
+  const profileRunIds: string[] = [];
   for (const row of leads) {
     const lead = leadFromRow(row);
     const tags = promotionTags(lead.channels, toDialer);
@@ -159,9 +201,32 @@ export async function promoteLeads(ids: string[], mode: "prospects" | "dialer", 
         ...(toDialer && (!account.nextFollowUpAt || account.nextFollowUpAt > new Date()) ? { nextFollowUpAt: new Date() } : {}),
       },
     });
+    // The skill's company profile: on new accounts, and on matched accounts with no profile yet.
+    const hasProfile = !newAccountIds.includes(accountId) && (await db.researchRun.count({ where: { accountId, kind: "RESEARCH", status: "DONE" } })) > 0;
+    if (row.profile && !hasProfile) {
+      try {
+        const runId = await applyLeadProfile(accountId, row);
+        if (runId) {
+          profileRunIds.push(runId);
+          profiledIds.push(accountId);
+          result.profiled++;
+        }
+      } catch (e) {
+        console.warn("lead profile", row.id, e);
+      }
+    }
     await db.prospectLead.update({ where: { id: row.id }, data: { accountId, status: toDialer ? "DIALER" : "PROSPECT" } });
   }
-  // New accounts get the same fact-only profile research as other Claude-added accounts.
-  if (newAccountIds.length) await researchNewAccounts(newAccountIds);
+  // New accounts without a skill profile get the in-app fact-only profile research instead.
+  const needResearch = newAccountIds.filter((id) => !profiledIds.includes(id));
+  if (needResearch.length) await researchNewAccounts(needResearch);
+  const profiledNew = profiledIds.filter((id) => newAccountIds.includes(id));
+  if (profileRunIds.length || profiledNew.length) {
+    after(async () => {
+      for (const id of profileRunIds) await archiveRunToDrive(id).catch((e) => console.warn("Drive archive skipped:", (e as Error).message));
+      const { backfillAccountEmail } = await import("./outreach");
+      for (const id of profiledNew) await backfillAccountEmail(id).catch((e) => console.warn("email backfill", id, e));
+    });
+  }
   return result;
 }

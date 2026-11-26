@@ -7,6 +7,8 @@ import { parseIntake } from "@/lib/prospect-leads-rules";
 // Researched leads intake. The prospecting skill posts here from the CRM tab in Chrome (your
 // signed-in session), or a script posts with `Authorization: Bearer $LEADS_API_TOKEN`.
 // Body: { search: { industry, region }, leads: [{ name, website, phone, city, region, channels, evidence, signals, googleRating, reviewCount, notes }] }
+// Each lead may carry a fact-only `profile` (prospect-pack prospect shape). The response lists
+// every lead with `needsProfile`, so the skill researches only those that still need one.
 export async function POST(req: Request) {
   const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
   const viaToken = verifySharedSecret(bearer, process.env.LEADS_API_TOKEN);

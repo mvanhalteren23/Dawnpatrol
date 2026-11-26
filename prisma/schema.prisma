@@ -1192,6 +1192,7 @@ model ProspectLead {
   channels       String    @default("{}") // JSON: { lsa, googleVerified, googleSearchAds, homestarsVerified, homestarsFeatured, metaAds, yelpAds, callTracking }
   evidence       String    @default("[]") // JSON: [{ channel, url, note }]
   signals        String    @default("[]") // JSON string[]: buying signals ("reviews mention no callback")
+  profile        String? // JSON: fact-only company profile from the skill (prospect-pack prospect shape); applied on promotion
   notes          String    @default("")
   googleRating   Float?
   reviewCount    Int?

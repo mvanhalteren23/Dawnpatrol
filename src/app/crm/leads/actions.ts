@@ -27,6 +27,7 @@ async function promote(form: FormData, mode: "prospects" | "dialer") {
   const r = await promoteLeads(ids, mode, session, (ownerId) => canTouch(session, ownerId));
   const where = mode === "dialer" ? "the dialer's Call list" : "prospects";
   const parts = [`${r.created} added to ${where}`];
+  if (r.profiled) parts.push(`${r.profiled} got the company profile the skill researched`);
   if (r.linked) parts.push(`${r.linked} matched existing accounts and were updated`);
   if (r.skipped) parts.push(`${r.skipped} skipped (owned by another rep or no match)`);
   back({ notice: parts.join(", ") + "." }, keep);
