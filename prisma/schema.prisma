@@ -43,18 +43,21 @@ model User {
   // Phone notifications: which kinds to send and quiet hours (JSON, see push-rules.ts).
   pushPrefs          String    @default("")
 
-  google        GoogleAccount?
-  ownedAccounts Account[]      @relation("AccountOwner")
-  activities    Activity[]
-  prompts       SavedPrompt[]
-  imports       ImportJob[]
+  google            GoogleAccount?
+  ownedAccounts     Account[]          @relation("AccountOwner")
+  activities        Activity[]
+  prompts           SavedPrompt[]
+  imports           ImportJob[]
   pushSubscriptions PushSubscription[]
-  passkeys      Passkey[]
+  passkeys          Passkey[]
+  apiTokens         ApiToken[]
 
   @@index([phone])
 }
 
-/** A browser or phone (the Android app) that receives push notifications for a CRM user. */
+/**
+ * A browser or phone (the Android app) that receives push notifications for a CRM user.
+ */
 model PushSubscription {
   id            String    @id @default(cuid())
   userId        String
@@ -69,7 +72,28 @@ model PushSubscription {
   @@index([userId])
 }
 
-/** A passkey (fingerprint / face / screen lock) for signing in without a password. */
+/**
+ * A passkey (fingerprint / face / screen lock) for signing in without a password.
+ */
+/**
+ * A personal key for tools outside the app (the Claude prospecting skill). Only a SHA-256 hash is
+ * stored; the key is shown once when it's made. It acts as its owner, for the scopes listed.
+ */
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String // first characters, to tell keys apart in Settings
+  hash       String    @unique
+  scopes     String    @default("prospects")
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
 model Passkey {
   id           String    @id @default(cuid())
   userId       String
@@ -90,20 +114,20 @@ model Passkey {
  * prospect is dialled from it (caller ID = the business number) and it waits between calls.
  */
 model DialerBridge {
-  id         String   @id @default(cuid())
-  userId     String
-  phone      String // the rep's mobile (E.164) that was called
-  repCallSid String?  @unique
+  id          String   @id @default(cuid())
+  userId      String
+  phone       String // the rep's mobile (E.164) that was called
+  repCallSid  String?  @unique
   // CALLING (ringing the rep) | READY (rep on the line, waiting) | DIALING (a prospect call is up) | ENDED
-  state      String   @default("CALLING")
-  pending    String   @default("") // JSON: the next prospect to dial
-  legKey     String? // the current prospect call's key (activity externalId "dialer:<legKey>")
-  legSid     String? // Twilio sid of the prospect's leg
-  legStatus  String? // queued | ringing | in-progress | completed | busy | no-answer | failed | canceled
-  dials      Int      @default(0)
-  endedReason String  @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  state       String   @default("CALLING")
+  pending     String   @default("") // JSON: the next prospect to dial
+  legKey      String? // the current prospect call's key (activity externalId "dialer:<legKey>")
+  legSid      String? // Twilio sid of the prospect's leg
+  legStatus   String? // queued | ringing | in-progress | completed | busy | no-answer | failed | canceled
+  dials       Int      @default(0)
+  endedReason String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId, state])
 }
@@ -148,16 +172,16 @@ model Account {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  contacts      Contact[]
-  activities    Activity[]
-  research      ResearchRun[]
-  subscription  Subscription?
-  invoices      Invoice[]
-  receptionists Receptionist[]
-  driveFolders  DriveFolder[]
-  emailDrafts   EmailDraft[]
-  users         User[]
-  callAudits    CallAudit[]
+  contacts           Contact[]
+  activities         Activity[]
+  research           ResearchRun[]
+  subscription       Subscription?
+  invoices           Invoice[]
+  receptionists      Receptionist[]
+  driveFolders       DriveFolder[]
+  emailDrafts        EmailDraft[]
+  users              User[]
+  callAudits         CallAudit[]
   campaignRecipients CampaignRecipient[]
 
   @@index([stage])
@@ -275,18 +299,18 @@ model ImportJob {
 // ---------------------------------------------------------------------------
 
 model Plan {
-  id              String   @id @default(cuid())
-  name            String   @unique
-  priceCents      Int
-  setupFeeCents   Int      @default(0)
-  includedMinutes Int      @default(0)
-  minimumMonths   Int      @default(0) // minimum contract term
-  features        String   @default("") // newline separated
-  stripePriceId   String? // CAD price
+  id               String   @id @default(cuid())
+  name             String   @unique
+  priceCents       Int
+  setupFeeCents    Int      @default(0)
+  includedMinutes  Int      @default(0)
+  minimumMonths    Int      @default(0) // minimum contract term
+  features         String   @default("") // newline separated
+  stripePriceId    String? // CAD price
   stripePriceIdUsd String? // USD price, for US clients
-  kind            String   @default("plan") // plan | addon (added to a plan at checkout, e.g. the Follow-Up Agent)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  kind             String   @default("plan") // plan | addon (added to a plan at checkout, e.g. the Follow-Up Agent)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
 
   subscriptions Subscription[]
 }
@@ -328,60 +352,60 @@ model Invoice {
 // ---------------------------------------------------------------------------
 
 model Receptionist {
-  id                    String         @id @default(cuid())
+  id                    String          @id @default(cuid())
   accountId             String
-  account               Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name                  String         @default("Receptionist")
+  account               Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                  String          @default("Receptionist")
   businessName          String
-  greeting              String         @default("")
-  persona               String         @default("Warm, concise, professional.")
+  greeting              String          @default("")
+  persona               String          @default("Warm, concise, professional.")
   voiceId               String?
-  language              String         @default("en")
-  timezone              String         @default("America/New_York")
-  businessHours         String         @default("")
+  language              String          @default("en")
+  timezone              String          @default("America/New_York")
+  businessHours         String          @default("")
   escalationPhone       String?
-  escalationRules       String         @default("")
+  escalationRules       String          @default("")
   bookingUrl            String?
-  extraInstructions     String         @default("")
+  extraInstructions     String          @default("")
   // ElevenLabs
-  elevenLabsAgentId     String?        @unique // how a post-call webhook finds its receptionist
-  elevenLabsKbDocs      String         @default("[]") // JSON [{category, docId}]
-  ragToken              String         @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
+  elevenLabsAgentId     String?         @unique // how a post-call webhook finds its receptionist
+  elevenLabsKbDocs      String          @default("[]") // JSON [{category, docId}]
+  ragToken              String          @unique // bearer secret for the ElevenLabs server-tool RAG endpoint
   // Demo line: callers to the shared demo number enter this extension to reach this agent.
-  demoExtension         String?        @unique
+  demoExtension         String?         @unique
   // "production" = a client's (or our own) live agent; "demo" = a prospect's demo, deleted from
   // ElevenLabs after 30 idle days ("expired": settings and knowledge kept, so it can be revived).
-  lifecycle             String         @default("production")
+  lifecycle             String          @default("production")
   expiredAt             DateTime?
   promotedFromId        String? // the demo this production agent was promoted from
   // "inbound" = answers calls (receptionist); "followup" = calls website leads back within minutes.
-  agentType             String         @default("inbound")
-  voiceModelTier        String         @default("auto") // auto | premium | fast: the AI model tier calls run on (voice-model-rules.ts)
-  followupGoal          String         @default("") // e.g. "Book a site visit for a quote"
-  followupQuestions     String         @default("") // one per line
-  followupGuardrails    String         @default("") // the business's rules, one per line
-  followupCallHours     String         @default("Mon-Fri 09:00-20:00\nSat-Sun 10:00-18:00")
-  followupDelaySeconds  Int            @default(60) // wait before calling (0–240)
-  followupMaxAttempts   Int            @default(2)
-  followupTextIfMissed  Boolean        @default(true)
-  leadFormKey           String?        @unique // public key in the website form's address
+  agentType             String          @default("inbound")
+  voiceModelTier        String          @default("auto") // auto | premium | fast: the AI model tier calls run on (voice-model-rules.ts)
+  followupGoal          String          @default("") // e.g. "Book a site visit for a quote"
+  followupQuestions     String          @default("") // one per line
+  followupGuardrails    String          @default("") // the business's rules, one per line
+  followupCallHours     String          @default("Mon-Fri 09:00-20:00\nSat-Sun 10:00-18:00")
+  followupDelaySeconds  Int             @default(60) // wait before calling (0–240)
+  followupMaxAttempts   Int             @default(2)
+  followupTextIfMissed  Boolean         @default(true)
+  leadFormKey           String?         @unique // public key in the website form's address
   leads                 Lead[]
   // Text the owner about new leads: "" (off) | messages (calls needing a call back) | leads (also
   // bookings and transfers), to these comma-separated numbers (blank = the ring-first cell).
-  leadAlertOn           String         @default("")
-  leadAlertTo           String         @default("")
+  leadAlertOn           String          @default("")
+  leadAlertTo           String          @default("")
   optOuts               SmsOptOut[]
   // Call reports for the client (totals only): "" (off) | weekly | monthly | both; sent to these
   // comma-separated emails (blank = the account's portal logins).
-  reportFrequency       String         @default("")
-  reportEmails          String         @default("")
+  reportFrequency       String          @default("")
+  reportEmails          String          @default("")
   // Keeping the client's existing number: "" | forward_no_answer | forward_all | port.
   existingNumber        String?
   existingCarrier       String?
-  keepNumberMethod      String         @default("")
-  portStatus            String         @default("") // "" | gathering | submitted | scheduled | done
+  keepNumberMethod      String          @default("")
+  portStatus            String          @default("") // "" | gathering | submitted | scheduled | done
   portDate              DateTime?
-  portNotes             String         @default("")
+  portNotes             String          @default("")
   reports               ClientReport[]
   // Whose Google Calendar/Gmail this receptionist books into and confirms from: a rep's own
   // connection (their demo receptionists), or null = the company Google connection.
@@ -389,40 +413,40 @@ model Receptionist {
   createdById           String?
   // Calendar booking (Google Calendar of the connected Google account; a client can share
   // their calendar with that account and put its address in bookingCalendarId).
-  bookingEnabled        Boolean        @default(false)
-  bookingCalendarId     String         @default("primary")
-  bookingTitle          String         @default("Discovery call")
-  bookingSlotMinutes    Int            @default(30)
-  bookingHours          String         @default("Mon-Fri 09:00-17:00") // one line per rule, e.g. "Mon-Fri 09:00-12:00, 13:00-17:00"
-  bookingMinNoticeHours Int            @default(2)
-  bookingDaysAhead      Int            @default(14)
-  bookingBufferMinutes  Int            @default(0)
-  bookingMeetingType    String         @default("phone") // phone | google_meet | caller_choice
-  bookingQuestions      String         @default("") // asked before booking, one per line; answers go on the event
-  bookingHolidays       String         @default("") // "" | "CA-BC": no bookings on these statutory holidays
-  bookingClosedDates    String         @default("") // extra closed days, YYYY-MM-DD, one per line
+  bookingEnabled        Boolean         @default(false)
+  bookingCalendarId     String          @default("primary")
+  bookingTitle          String          @default("Discovery call")
+  bookingSlotMinutes    Int             @default(30)
+  bookingHours          String          @default("Mon-Fri 09:00-17:00") // one line per rule, e.g. "Mon-Fri 09:00-12:00, 13:00-17:00"
+  bookingMinNoticeHours Int             @default(2)
+  bookingDaysAhead      Int             @default(14)
+  bookingBufferMinutes  Int             @default(0)
+  bookingMeetingType    String          @default("phone") // phone | google_meet | caller_choice
+  bookingQuestions      String          @default("") // asked before booking, one per line; answers go on the event
+  bookingHolidays       String          @default("") // "" | "CA-BC": no bookings on these statutory holidays
+  bookingClosedDates    String          @default("") // extra closed days, YYYY-MM-DD, one per line
   // Summary sent to the caller after a call and/or a booking, by text or email.
-  followUpOn            String         @default("") // "" (off) | bookings | calls | both
-  followUpChannel       String         @default("caller_choice") // caller_choice | sms | email
+  followUpOn            String          @default("") // "" (off) | bookings | calls | both
+  followUpChannel       String          @default("caller_choice") // caller_choice | sms | email
   // Business line: a Twilio number that rings the owner's cell first, then hands unanswered
   // calls to the agent (src/app/api/voice/business). Texts to it are forwarded to the cell.
-  businessNumber        String?        @unique // E.164
+  businessNumber        String?         @unique // E.164
   businessNumberSid     String?
   ringFirstNumber       String? // owner's cell, E.164
-  ringSeconds           Int            @default(20)
-  ringMode              String         @default("hours") // always | hours (only during bookable hours) | never (straight to the agent)
+  ringSeconds           Int             @default(20)
+  ringMode              String          @default("hours") // always | hours (only during bookable hours) | never (straight to the agent)
   // Customer texts and owner check-ins (src/lib/customer-texts.ts, src/lib/owner-checkin.ts).
-  bookingKey            String?        @unique // public booking link: /book/<key>
-  rescueTextsOn         Boolean        @default(true) // text a booking link after a call that didn't book
-  smsAgentOn            Boolean        @default(true) // answer customers' texts to the business line
-  recognizeCallers      Boolean        @default(true) // greet returning callers by first name / mention their appointment (from their number and our records)
-  photoTextsOn          Boolean        @default(true) // accept photos customers text to the line and send them to the owner
-  remindersOn           Boolean        @default(true) // day-before reminder, reply C/R; no-show rebook text
-  reviewRequestsOn      Boolean        @default(false) // after the appointment, text the Google review link
-  reviewLink            String         @default("")
-  reviewDelayHours      Int            @default(3)
-  checkinsOn            Boolean        @default(true) // call the owner about questions callers asked
-  checkinThreshold      Int            @default(3) // open questions before a check-in call (3-5)
+  bookingKey            String?         @unique // public booking link: /book/<key>
+  rescueTextsOn         Boolean         @default(true) // text a booking link after a call that didn't book
+  smsAgentOn            Boolean         @default(true) // answer customers' texts to the business line
+  recognizeCallers      Boolean         @default(true) // greet returning callers by first name / mention their appointment (from their number and our records)
+  photoTextsOn          Boolean         @default(true) // accept photos customers text to the line and send them to the owner
+  remindersOn           Boolean         @default(true) // day-before reminder, reply C/R; no-show rebook text
+  reviewRequestsOn      Boolean         @default(false) // after the appointment, text the Google review link
+  reviewLink            String          @default("")
+  reviewDelayHours      Int             @default(3)
+  checkinsOn            Boolean         @default(true) // call the owner about questions callers asked
+  checkinThreshold      Int             @default(3) // open questions before a check-in call (3-5)
   checkinPhone          String? // owner's number for check-ins (blank = ring-first cell, then transfer number)
   ownerUpdates          OwnerUpdate[]
   reviewLinks           KbReviewLink[]
@@ -434,25 +458,25 @@ model Receptionist {
   // sign-off and reply-to address. Logo and colour are pulled from their website when blank.
   brandLogoUrl          String?
   brandColor            String?
-  emailSignOff          String         @default("")
+  emailSignOff          String          @default("")
   emailReplyTo          String?
-  calendarFeedToken     String?        @unique // private link: the owner's phone calendar subscribes to bookings
+  calendarFeedToken     String?         @unique // private link: the owner's phone calendar subscribes to bookings
   // Call protections (src/lib/call-guard.ts): limits per line, editable in the CRM.
-  maxCallMinutes        Int            @default(10) // ElevenLabs ends the call at this length
-  silenceHangupSeconds  Int            @default(30) // ends the call after this long with nobody speaking
-  callerDailyCalls      Int            @default(5) // per caller, rolling 24 hours
-  callerDailyMinutes    Int            @default(20)
-  lineDailyMinutes      Int            @default(150) // over this (or 3x the usual day) the line switches to voicemail
-  maxConcurrentCalls    Int            @default(3)
+  maxCallMinutes        Int             @default(10) // ElevenLabs ends the call at this length
+  silenceHangupSeconds  Int             @default(30) // ends the call after this long with nobody speaking
+  callerDailyCalls      Int             @default(5) // per caller, rolling 24 hours
+  callerDailyMinutes    Int             @default(20)
+  lineDailyMinutes      Int             @default(150) // over this (or 3x the usual day) the line switches to voicemail
+  maxConcurrentCalls    Int             @default(3)
   guardTrippedAt        DateTime? // set when the daily cutoff trips; calls go to a 2-minute voicemail until reset
-  guardReason           String         @default("")
-  bookingAddsToCrm      Boolean        @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
-  elevenLabsToolIds     String         @default("{}") // JSON {name: toolId} for the booking webhook tools
-  syncStatus            String         @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
+  guardReason           String          @default("")
+  bookingAddsToCrm      Boolean         @default(false) // create/update a CRM lead for each booking (the agency's own receptionist)
+  elevenLabsToolIds     String          @default("{}") // JSON {name: toolId} for the booking webhook tools
+  syncStatus            String          @default("NEVER") // NEVER | SYNCED | DIRTY | FAILED
   syncError             String?
   lastSyncedAt          DateTime?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   knowledge KnowledgeItem[]
   kbHistory KnowledgeRevision[]
@@ -516,7 +540,9 @@ model Booking {
   @@index([status, start])
 }
 
-/** Texts with customers on the business line (both ways), for the text agent's context. */
+/**
+ * Texts with customers on the business line (both ways), for the text agent's context.
+ */
 model SmsMessage {
   id             String       @id @default(cuid())
   receptionistId String
@@ -532,7 +558,9 @@ model SmsMessage {
   @@index([phone, createdAt])
 }
 
-/** Something callers asked that the agent couldn't answer, or an upcoming holiday to confirm. */
+/**
+ * Something callers asked that the agent couldn't answer, or an upcoming holiday to confirm.
+ */
 model OpenQuestion {
   id             String       @id @default(cuid())
   receptionistId String
@@ -553,7 +581,9 @@ model OpenQuestion {
   @@index([receptionistId, status])
 }
 
-/** A call to the owner to answer open questions (at most one a week per receptionist). */
+/**
+ * A call to the owner to answer open questions (at most one a week per receptionist).
+ */
 model OwnerCheckin {
   id             String       @id @default(cuid())
   receptionistId String
@@ -1001,18 +1031,20 @@ model EmailSuppression {
   createdAt   DateTime @default(now())
 }
 
-/** An extra Gmail / Workspace mailbox used only to send campaigns (e.g. on a separate cold-email domain). */
+/**
+ * An extra Gmail / Workspace mailbox used only to send campaigns (e.g. on a separate cold-email domain).
+ */
 model OutreachInbox {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  displayName  String    @default("")
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String   @default("")
   refreshToken String // encrypted (AES-256-GCM)
-  scopes       String    @default("")
-  paused       Boolean   @default(false)
+  scopes       String   @default("")
+  paused       Boolean  @default(false)
   lastError    String?
   replyCursor  Int? // unix seconds of the last reply check
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Campaign {
@@ -1066,7 +1098,9 @@ model CampaignRecipient {
   @@index([threadId])
 }
 
-/** Photos customers text to a client's line (MMS). Kept 60 days, then deleted. Viewed through signed links. */
+/**
+ * Photos customers text to a client's line (MMS). Kept 60 days, then deleted. Viewed through signed links.
+ */
 model SmsMedia {
   id             String       @id @default(cuid())
   receptionistId String

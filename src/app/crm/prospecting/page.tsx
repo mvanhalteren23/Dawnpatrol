@@ -15,7 +15,10 @@ export default async function ProspectingPage() {
   ]);
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Find prospects with Claude" subtitle="Claude searches the web for businesses that match your saved prompt, scores their fit, and you choose which to add." actions={<Link href="/crm/prompts" className="btn-secondary">Manage prompts</Link>} />
+      <PageHeader title="Find prospects with Claude" subtitle="Claude searches the web for businesses that match your saved prompt, scores their fit, and you choose which to add." actions={<div className="flex flex-wrap gap-2"><Link href="/crm/prospecting/import" className="btn-secondary">Import from Claude</Link><Link href="/crm/prompts" className="btn-secondary">Manage prompts</Link></div>} />
+      <div className="card mb-4 border-dawn-200 bg-dawn-50/40 text-sm">
+        <b>No API fees:</b> prospect in your own Claude app with the Head Above prospecting skill (for example &ldquo;find 15 new auto repair shops in North Vancouver&rdquo;). It researches each business and adds them here. <Link href="/crm/settings#claude-skill">Get the skill</Link> · <Link href="/crm/prospecting/import">Import a file from it</Link>
+      </div>
       {!aiConfigured() ? <Notice kind="error">Set ANTHROPIC_API_KEY to enable prospecting.</Notice> : null}
       <form action={runProspecting} className="card space-y-4">
         <Field label="Saved prompt">
@@ -31,12 +34,12 @@ export default async function ProspectingPage() {
 
       <div className="card mt-6">
         <h2 className="mb-3">Previous searches</h2>
-        <table className="table"><thead><tr><th>Search</th><th>When</th><th>Status</th><th>Found</th></tr></thead>
+        <div className="-mx-4 overflow-x-auto px-4"><table className="table"><thead><tr><th>Search</th><th>When</th><th>Status</th><th>Found</th></tr></thead>
           <tbody>{runs.map((r) => {
             const n = safeJson<{ prospects?: unknown[] }>(r.resultJson, {}).prospects?.length;
-            return <tr key={r.id}><td><Link href={`/crm/prospecting/${r.id}`}>{r.prompt?.name ?? "Custom"}</Link><div className="max-w-md truncate text-xs text-slate-500">{r.input.split("\n")[0]}</div></td><td className="text-xs">{formatDate(r.createdAt, true)}</td><td><StatusBadge status={r.status} /></td><td>{n ?? "—"}</td></tr>;
+            return <tr key={r.id}><td><Link href={`/crm/prospecting/${r.id}`}>{r.prompt?.name ?? (r.input.startsWith("Prospecting skill:") ? "Claude skill" : "Custom")}</Link><div className="max-w-md truncate text-xs text-slate-500">{r.input.split("\n")[0]}</div></td><td className="text-xs">{formatDate(r.createdAt, true)}</td><td><StatusBadge status={r.status} /></td><td>{n ?? "—"}</td></tr>;
           })}</tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   );

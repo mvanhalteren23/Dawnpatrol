@@ -12,6 +12,8 @@ const securityHeaders = [
 
 const nextConfig = {
   serverExternalPackages: ["@prisma/client", "sharp"],
+  // The Claude prospecting skill is downloaded from Settings, built from these files.
+  outputFileTracingIncludes: { "/api/prospects/skill": ["./claude-skill/head-above-prospecting/**/*"] },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

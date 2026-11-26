@@ -16,6 +16,7 @@ import QRCode from "qrcode";
 import { open } from "@/lib/secret-box";
 import { otpauthUrl } from "@/lib/totp";
 import { TwoStepCard } from "@/components/TwoStepCard";
+import { SkillKeysCard } from "@/components/SkillKeysCard";
 import { PhoneAppCard } from "@/components/PhoneAppCard";
 import { DEFAULT_CLIENT_GOAL } from "@/lib/constants";
 import { formatDate, safeJson } from "@/lib/utils";
@@ -95,6 +96,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       recoveryLeft={safeJson<string[]>(meUser.recoveryCodes, []).length}
     />
   );
+  const skillKeys = await db.apiToken.findMany({ where: { userId: session.sub, revokedAt: null }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, prefix: true, createdAt: true, lastUsedAt: true } });
+  const skillCard = <SkillKeysCard keys={skillKeys.map((k) => ({ ...k, createdAt: k.createdAt.toISOString(), lastUsedAt: k.lastUsedAt?.toISOString() ?? null }))} />;
   const passwordCard = (
         <div className="card">
           <h2 className="mb-3">Your password</h2>
@@ -116,6 +119,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <PhoneAppCard userId={session.sub} />
         {passwordCard}
         {twoStepCard}
+        {skillCard}
       </div>
     );
   }
@@ -179,6 +183,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       {passwordCard}
       {twoStepCard}
+      {skillCard}
 
       <div className="card">
         <h2 className="mb-3">Growth goal</h2>
