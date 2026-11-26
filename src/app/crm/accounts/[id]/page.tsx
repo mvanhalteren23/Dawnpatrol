@@ -483,10 +483,12 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
               <div className="flex gap-2">
                 <select name="promptId" className="input">
                   {researchPrompts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.isDefault ? " (default)" : ""}</option>)}
+                  <option value="__update">Update information (check what&apos;s changed)</option>
                   <option value="">Custom prompt ↓</option>
                 </select>
                 <SubmitButton className="btn whitespace-nowrap" pendingText="Starting…">Run research</SubmitButton>
               </div>
+              <p className="text-xs text-slate-500">The company profile only looks up what isn&apos;t known yet. <b>Update information</b> re-checks what&apos;s on file (phone, website, address, hours, people…) and updates anything that changed; the activity feed lists what changed.</p>
               <details><summary className="cursor-pointer text-xs text-slate-500">Custom prompt (uses {"{{company}}"}, {"{{website}}"}, {"{{location}}"}…)</summary>
                 <textarea name="customPrompt" rows={4} className="input mt-2" placeholder="Leave empty to use the selected saved prompt" />
               </details>

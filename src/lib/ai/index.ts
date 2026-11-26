@@ -65,8 +65,8 @@ export const ResearchSummarySchema = z.object({
 });
 export type ResearchSummary = z.infer<typeof ResearchSummarySchema>;
 
-export async function researchAccount(renderedPrompt: string): Promise<AiResult & { summary: ResearchSummary | null }> {
-  const report = await webResearch("research", renderedPrompt, { maxSearches: 5, maxFetches: 3 });
+export async function researchAccount(renderedPrompt: string, budget: { maxSearches: number; maxFetches: number } = { maxSearches: 5, maxFetches: 3 }): Promise<AiResult & { summary: ResearchSummary | null }> {
+  const report = await webResearch("research", renderedPrompt, budget);
   try {
     const ex = await structured("extraction", ResearchSummarySchema, "Extract the structured fields from this research report. Fill a field only when the report states it; use null otherwise. Copy websites, phone numbers, emails and names exactly as written in the report, and never construct or guess them. Only include decision makers named in the report. Set estMissedCallsPerWeek and avgJobValueUsd only if the report gives specific evidence for them, otherwise null. Set match to not_confirmed if the report says it couldn't confirm the business. kbQuestions are the one field you write yourself: questions for the owner about what the report leaves open.", report.text);
     return { ...combine(report, ex), summary: ex.data };

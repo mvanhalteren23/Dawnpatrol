@@ -254,12 +254,17 @@ export async function bulkAccounts(form: FormData) {
     const promptId = str(form, "promptId") || (await db.savedPrompt.findFirst({ where: { kind: "RESEARCH", isDefault: true } }))?.id;
     if (!promptId) back("/crm/accounts", { error: "Create a research prompt first" });
     const runIds: string[] = [];
-    for (const id of ids.slice(0, 25)) runIds.push(await startAccountResearch(id, promptId));
+    let upToDate = 0;
+    for (const id of ids.slice(0, 25)) {
+      const runId = await startAccountResearch(id, promptId);
+      if (runId) runIds.push(runId);
+      else upToDate++;
+    }
     after(async () => {
       // Sequential to stay friendly with rate limits.
       for (const runId of runIds) await executeAccountResearch(runId);
     });
-    back("/crm/accounts", { notice: `Research queued for ${runIds.length} accounts` });
+    back("/crm/accounts", { notice: `Research queued for ${runIds.length} accounts${upToDate ? ` (${upToDate} already had a complete company profile)` : ""}` });
   } else if (op === "drive") {
     after(async () => {
       for (const id of ids) await ensureAccountFolders(id).catch((e) => console.warn(errMsg(e)));
@@ -649,14 +654,20 @@ export async function createDriveFolders(accountId: string) {
 
 // --- Claude research & prospecting ------------------------------------------------
 
+/** The research menu's "Update information" choice (re-check known facts for changes). */
+const UPDATE_INFO = "__update";
+
 export async function runResearch(accountId: string, form: FormData) {
   await guard(await requireStaff(), accountId);
-  let runId: string;
+  const promptId = optStr(form, "promptId");
+  const update = promptId === UPDATE_INFO;
+  let runId: string | null;
   try {
-    runId = await startAccountResearch(accountId, optStr(form, "promptId"), optStr(form, "customPrompt") ?? undefined);
+    runId = await startAccountResearch(accountId, update ? null : promptId, update ? undefined : optStr(form, "customPrompt") ?? undefined, update ? { mode: "update" } : {});
   } catch (err) {
     back(`/crm/accounts/${accountId}`, { error: errMsg(err) });
   }
+  if (!runId) back(`/crm/accounts/${accountId}`, { notice: "The company profile is already complete, so nothing new was researched. Choose \"Update information\" to check whether anything has changed." });
   after(() => executeAccountResearch(runId));
   back(`/crm/research/${runId}`);
 }
@@ -756,7 +767,10 @@ export async function addProspects(runId: string, form: FormData) {
     const accounts = await db.account.findMany({ where: { domain: { in: picked.map((p) => normalizeDomain(p.website)).filter((d): d is string => Boolean(d)) } } });
     if (promptId) {
       const ids: string[] = [];
-      for (const a of accounts) ids.push(await startAccountResearch(a.id, promptId));
+      for (const a of accounts) {
+        const id = await startAccountResearch(a.id, promptId);
+        if (id) ids.push(id);
+      }
       after(async () => {
         for (const id of ids) await executeAccountResearch(id);
       });

@@ -12,7 +12,8 @@ import { getSetting } from "./settings";
 import { aiConfigured } from "./ai";
 import { companyName } from "./brand";
 import { recordActivity } from "./outreach";
-import { normalizeDomain, websiteUrl } from "./utils";
+import { normalizeDomain, safeJson, websiteUrl } from "./utils";
+import { carryForward, changedFields, gapsBudget, gapsPrompt, knownProfile, missingItems, updatePrompt, type KnownInput } from "./research-gaps";
 
 // Long-running Claude work runs after the response is sent (next/server `after`), writing
 // progress to ResearchRun. Pages poll with <AutoRefresh>.
@@ -22,13 +23,46 @@ async function fail(runId: string, err: unknown) {
   await db.researchRun.update({ where: { id: runId }, data: { status: "FAILED", error: (err as Error).message?.slice(0, 2000) ?? String(err), finishedAt: new Date() } });
 }
 
-export async function startAccountResearch(accountId: string, promptId: string | null, customPrompt?: string): Promise<string> {
+export type ResearchMode = "full" | "gaps" | "update";
+
+/** What's already known about the account: its fields, contacts and earlier research (newest first). */
+export async function knownInputFor(accountId: string, excludeRunId?: string): Promise<KnownInput> {
+  const a = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { contacts: true } });
+  const runs = await db.researchRun.findMany({ where: { accountId, kind: "RESEARCH", status: "DONE", ...(excludeRunId ? { id: { not: excludeRunId } } : {}) }, orderBy: { createdAt: "desc" }, take: 4, select: { output: true, resultJson: true } });
+  return {
+    account: { name: a.name, website: a.website, phone: a.phone, city: a.city, state: a.state, industry: a.industry, employees: a.employees, notes: a.notes },
+    contacts: a.contacts,
+    reports: runs.map((r) => r.output.slice(0, 6000)),
+    summaries: runs.map((r) => safeJson<{ keyFacts?: string[]; decisionMakers?: { name: string; title: string | null }[] }>(r.resultJson, {})),
+  };
+}
+
+/**
+ * Start a research run; returns its id, or null when there's nothing to research.
+ * The company profile prompt only looks for what isn't known yet ("gaps"); `mode: "update"`
+ * re-checks what's known for changes.
+ */
+export async function startAccountResearch(accountId: string, promptId: string | null, customPrompt?: string, opts: { mode?: "update" } = {}): Promise<string | null> {
   const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { contacts: true } });
+  if (opts.mode === "update") {
+    const known = knownProfile(await knownInputFor(accountId));
+    const input = updatePrompt(account.name, known, new Date().toISOString().slice(0, 10));
+    const run = await db.researchRun.create({ data: { kind: "RESEARCH", accountId, mode: "update", input } });
+    return run.id;
+  }
   const prompt = promptId ? await db.savedPrompt.findUnique({ where: { id: promptId } }) : null;
   const template = customPrompt || prompt?.template;
   if (!template) throw new Error("Choose a saved prompt or write one");
-  const input = renderPrompt(template, { ...accountVariables(account), my_company: await companyName() });
-  const run = await db.researchRun.create({ data: { kind: "RESEARCH", accountId, promptId: prompt?.id ?? null, input } });
+  let input = renderPrompt(template, { ...accountVariables(account), my_company: await companyName() });
+  let mode: ResearchMode = "full";
+  // The company profile adds to what's known rather than researching it all again.
+  if (prompt?.name === COMPANY_PROFILE_PROMPT_NAME || customPrompt === COMPANY_PROFILE_PROMPT) {
+    const gaps = gapsPrompt(input, knownProfile(await knownInputFor(accountId)));
+    if (!gaps) return null;
+    input = gaps.prompt;
+    mode = "gaps";
+  }
+  const run = await db.researchRun.create({ data: { kind: "RESEARCH", accountId, promptId: prompt?.id ?? null, input, mode } });
   return run.id;
 }
 
@@ -71,32 +105,49 @@ export async function researchNewAccounts(accountIds: string[]): Promise<number>
   return runIds.length;
 }
 
+const UPDATE_FIELDS: Record<string, string> = { website: "Website", phone: "Phone", city: "City", state: "Province/state", industry: "Industry", employees: "Team size" };
+
 export async function executeAccountResearch(runId: string) {
   const run = await db.researchRun.findUniqueOrThrow({ where: { id: runId }, include: { account: true, prompt: true } });
+  const mode = (run.mode === "gaps" || run.mode === "update" ? run.mode : "full") as ResearchMode;
   try {
-    const result = await researchAccount(run.input);
+    const budget = mode === "gaps" && run.accountId ? gapsBudget(missingItems(knownProfile(await knownInputFor(run.accountId, runId))).length) : undefined;
+    const result = await researchAccount(run.input, budget);
+    // The call brief reads the newest research: carry earlier facts, signals and opener forward.
+    const prior = mode !== "full" && run.accountId
+      ? safeJson<Partial<ResearchSummary> | null>((await db.researchRun.findFirst({ where: { accountId: run.accountId, kind: "RESEARCH", status: "DONE", resultJson: { not: null }, id: { not: runId } }, orderBy: { createdAt: "desc" }, select: { resultJson: true } }))?.resultJson, null)
+      : null;
+    const summary = result.summary && mode !== "full" ? carryForward(result.summary, prior as Partial<ResearchSummary> | null, mode) : result.summary;
     await db.researchRun.update({
       where: { id: runId },
       data: {
         status: "DONE",
         output: result.text,
-        resultJson: result.summary ? JSON.stringify(result.summary) : null,
+        resultJson: summary ? JSON.stringify(summary) : null,
         model: result.model,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
         finishedAt: new Date(),
       },
     });
-    if (run.accountId && result.summary) {
-      if (result.summary.match === "not_confirmed") {
+    let changes: string[] = [];
+    if (run.accountId && summary) {
+      if (summary.match === "not_confirmed") {
         // Don't fill anything in from a profile of what may be a different business.
         await db.account.update({ where: { id: run.accountId }, data: { needsReview: true, reviewReason: "Research couldn't confirm it found the right business, so no details were filled in. Add the website or phone number and re-run research." } });
+      } else if (mode === "update") {
+        const before = await db.account.findUniqueOrThrow({ where: { id: run.accountId } });
+        await applyResearchSummary(run.accountId, verifySummary(summary, result.text), true, { keepQuestions: true });
+        const after = await db.account.findUniqueOrThrow({ where: { id: run.accountId } });
+        changes = changedFields(before, after, UPDATE_FIELDS);
       } else {
-        await applyResearchSummary(run.accountId, verifySummary(result.summary, result.text), false);
+        await applyResearchSummary(run.accountId, verifySummary(summary, result.text), false);
       }
     }
     if (run.accountId) {
-      await recordActivity({ accountId: run.accountId, type: "RESEARCH", source: "system", subject: `Claude research: ${run.prompt?.name ?? "custom prompt"}`, body: result.summary?.keyFacts.join("\n") ?? null });
+      const subject = mode === "update" ? `Claude research: information updated (${changes.length ? `${changes.length} change${changes.length === 1 ? "" : "s"}` : "no field changes"})` : `Claude research: ${run.prompt?.name ?? "custom prompt"}${mode === "gaps" ? " (missing details only)" : ""}`;
+      const body = mode === "update" ? [changes.length ? `Changed:\n${changes.join("\n")}` : "The account's fields are still current.", ...(summary?.keyFacts.slice(0, 4) ?? [])].join("\n") : summary?.keyFacts.join("\n") ?? null;
+      await recordActivity({ accountId: run.accountId, type: "RESEARCH", source: "system", subject, body });
       await archiveRunToDrive(runId).catch((e) => console.warn("Drive archive skipped:", (e as Error).message));
     }
   } catch (err) {
@@ -105,7 +156,7 @@ export async function executeAccountResearch(runId: string) {
 }
 
 /** Fill empty account fields from research; `overwrite` replaces existing values too. Adds new decision makers as contacts. */
-export async function applyResearchSummary(accountId: string, s: ResearchSummary, overwrite: boolean) {
+export async function applyResearchSummary(accountId: string, s: ResearchSummary, overwrite: boolean, opts: { keepQuestions?: boolean } = {}) {
   const a = await db.account.findUniqueOrThrow({ where: { id: accountId }, include: { contacts: true } });
   const pick = <T,>(current: T | null, next: T | null) => (overwrite ? next ?? current : current ?? next);
   // Only take the website's domain if no other account already has it (domain is unique).
@@ -124,7 +175,7 @@ export async function applyResearchSummary(accountId: string, s: ResearchSummary
       estMissedCallsPerWeek: pick(a.estMissedCallsPerWeek, s.estMissedCallsPerWeek),
       avgJobValueCents: pick(a.avgJobValueCents, s.avgJobValueUsd != null ? Math.round(s.avgJobValueUsd * 100) : null),
       // Like the other fields: questions edited by hand stay unless research is applied with overwrite.
-      ...((overwrite || !a.discoveryQuestions) && cleanQuestions(s.kbQuestions).length ? { discoveryQuestions: JSON.stringify(cleanQuestions(s.kbQuestions)) } : {}),
+      ...(((overwrite && !opts.keepQuestions) || !a.discoveryQuestions) && cleanQuestions(s.kbQuestions).length ? { discoveryQuestions: JSON.stringify(cleanQuestions(s.kbQuestions)) } : {}),
     },
   });
   const known = new Set(a.contacts.map((c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim().toLowerCase()));

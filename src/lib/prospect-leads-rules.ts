@@ -280,3 +280,47 @@ export function promotionNotes(lead: Pick<CleanLead, "channels" | "evidence" | "
   if (lead.notes) lines.push(lead.notes);
   return lines.join("\n");
 }
+
+/** What the lead research itself found, in the shape the call brief and research panel read. */
+export type LeadFacts = { keyFacts: string[]; painSignals: string[]; opener: string; report: string };
+
+/**
+ * The lead's own findings (paid channels with proof, Google rating, buying signals) as research:
+ * key facts, missed-call signals and an opener for the call brief, plus a short write-up with the
+ * proof links. Saved on the account when the lead is promoted, so nothing the lead found is lost.
+ */
+export function leadFacts(lead: Pick<CleanLead, "channels" | "evidence" | "signals" | "googleRating" | "reviewCount" | "notes">, search: { industry: string; region: string }): LeadFacts {
+  const paid = CHANNEL_KEYS.filter((k) => lead.channels[k] && k !== "googleVerified" && k !== "callTracking").map((k) => PAID_CHANNELS[k].label);
+  const keyFacts: string[] = [];
+  if (paid.length) keyFacts.push(`Pays for leads: ${paid.join(", ")}`);
+  if (lead.channels.googleVerified) keyFacts.push("Google Verified (Local Services)");
+  if (lead.channels.callTracking) keyFacts.push("Uses a call-tracking number");
+  if (lead.googleRating !== null) keyFacts.push(`Google: ${lead.googleRating}★${lead.reviewCount !== null ? ` from ${lead.reviewCount} reviews` : ""}`);
+  const painSignals = [
+    ...(paid.length ? [`Pays per lead on ${paid[0]}${paid.length > 1 ? ` and ${paid.length - 1} more` : ""}, so every missed call wastes money already spent`] : []),
+    ...lead.signals,
+  ];
+  const opener = paid.length
+    ? `I saw you're on ${paid[0]}. When one of those paid calls comes in while you're on a job, who picks it up?`
+    : lead.signals.length
+      ? `I was reading your reviews and noticed ${lead.signals[0].replace(/\.$/, "").toLowerCase()}. Can I ask how you handle calls when you're busy?`
+      : "";
+  const lines = [`Match: confirmed (researched lead${search.industry || search.region ? `, ${[search.industry, search.region].filter(Boolean).join(", ")}` : ""})`];
+  if (paid.length) lines.push(`- Pays for leads: ${paid.join(", ")}`);
+  for (const e of lead.evidence.slice(0, 8)) lines.push(`- ${e.channel}: ${[e.note, e.url ? `([source](${e.url}))` : ""].filter(Boolean).join(" ")}`);
+  if (lead.googleRating !== null) lines.push(`- Google: ${lead.googleRating}★${lead.reviewCount !== null ? ` from ${lead.reviewCount} reviews` : ""}`);
+  for (const s of lead.signals) lines.push(`- Signal: ${s}`);
+  if (lead.notes) lines.push(`- Notes: ${lead.notes}`);
+  return { keyFacts, painSignals, opener, report: lines.join("\n") };
+}
+
+/** Lead facts first, then what was already known (deduplicated), for the newest research summary. */
+export function withLeadFacts<T extends { keyFacts: string[]; painSignals: string[]; suggestedOpener: string }>(summary: T, facts: LeadFacts): T {
+  const uniq = (xs: string[], cap: number) => [...new Map(xs.filter((x) => x.trim()).map((x) => [x.trim().toLowerCase(), x.trim()])).values()].slice(0, cap);
+  return {
+    ...summary,
+    keyFacts: uniq([...facts.keyFacts, ...summary.keyFacts], 8),
+    painSignals: uniq([...facts.painSignals, ...summary.painSignals], 6),
+    suggestedOpener: summary.suggestedOpener || facts.opener,
+  };
+}

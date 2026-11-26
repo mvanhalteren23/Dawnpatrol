@@ -291,6 +291,8 @@ model ResearchRun {
   promptId     String?
   prompt       SavedPrompt? @relation(fields: [promptId], references: [id], onDelete: SetNull)
   input        String
+  // full | gaps (company profile: only what isn't known yet) | update (check known facts for changes)
+  mode         String       @default("full")
   output       String       @default("") // markdown
   resultJson   String? // structured extraction (JSON text)
   status       String       @default("RUNNING") // RUNNING | DONE | FAILED

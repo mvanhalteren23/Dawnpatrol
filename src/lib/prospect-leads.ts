@@ -7,8 +7,11 @@ import { recordActivity } from "./outreach";
 import { SKILL_MODEL } from "./prospect-pack";
 import { verifySummary } from "./research-guard";
 import { DuplicateIndex } from "./team-rules";
-import { joinTags, normalizeDomain, safeJson, splitTags } from "./utils";
+import { joinTags, normalizeDomain, safeJson, splitTags, websiteUrl } from "./utils";
+import type { ResearchSummary } from "./ai";
 import {
+  leadFacts,
+  withLeadFacts,
   mergeLead,
   profileProspect,
   promotionNotes,
@@ -129,10 +132,14 @@ async function applyLeadProfile(accountId: string, row: LeadRow): Promise<string
   const search = [row.searchIndustry, row.searchRegion].filter(Boolean).join(", ") || null;
   const p = profileProspect(lead.profile, lead, search ? `paying for leads — ${search}` : null);
   if (typeof p === "string" || !p.summary || !p.report) return null;
-  const output = `Researched in Claude (your own plan) with the paid-lead prospects skill${search ? ` — search: ${search}` : ""}.\n\n${p.report}`;
+  // The lead's own findings (paid channels with proof, rating, buying signals) join the profile.
+  const facts = leadFacts(lead, { industry: row.searchIndustry, region: row.searchRegion });
+  const summary = withLeadFacts(p.summary, facts);
+  const output = `Researched in Claude (your own plan) with the paid-lead prospects skill${search ? ` — search: ${search}` : ""}.\n\n${p.report}\n\n## Paying for leads\n${facts.report}`;
   const run = await db.researchRun.create({
-    data: { kind: "RESEARCH", accountId, input: `Paid-lead prospects skill: company profile (facts only)${search ? ` — ${search}` : ""}`, output, resultJson: JSON.stringify(p.summary), status: "DONE", model: SKILL_MODEL, tokensIn: 0, tokensOut: 0, finishedAt: new Date() },
+    data: { kind: "RESEARCH", accountId, input: `Paid-lead prospects skill: company profile (facts only)${search ? ` — ${search}` : ""}`, output, resultJson: JSON.stringify(summary), status: "DONE", model: SKILL_MODEL, tokensIn: 0, tokensOut: 0, finishedAt: new Date() },
   });
+  p.summary = summary;
   if (p.summary.match === "not_confirmed") {
     await db.account.update({ where: { id: accountId }, data: { needsReview: true, reviewReason: "The paid-lead skill couldn't confirm it found the right business, so no researched details were filled in. Check the website or phone number." } });
   } else {
@@ -140,6 +147,47 @@ async function applyLeadProfile(accountId: string, row: LeadRow): Promise<string
   }
   await recordActivity({ accountId, type: "RESEARCH", source: "system", subject: "Claude research: Company profile (paid-lead skill)", body: p.summary.keyFacts.join("\n") || null });
   return run.id;
+}
+
+export const LEAD_RESEARCH_MODEL = "Researched lead (no API)";
+
+/**
+ * A lead promoted without a company profile: its own findings (paid channels with proof, rating,
+ * buying signals, opener) saved as research, combined with anything researched before, so the call
+ * brief and research panel show them. The in-app company profile that follows only looks up what's
+ * still missing. Skipped if this account already has the lead's research.
+ */
+async function recordLeadResearch(accountId: string, row: LeadRow): Promise<void> {
+  const already = await db.researchRun.count({ where: { accountId, kind: "RESEARCH", input: { startsWith: "Researched lead" } } });
+  if (already) return;
+  const lead = leadFromRow(row);
+  const search = { industry: row.searchIndustry, region: row.searchRegion };
+  const facts = leadFacts(lead, search);
+  if (!facts.keyFacts.length && !facts.painSignals.length) return;
+  const priorRun = await db.researchRun.findFirst({ where: { accountId, kind: "RESEARCH", status: "DONE", resultJson: { not: null } }, orderBy: { createdAt: "desc" }, select: { resultJson: true } });
+  const prior = safeJson<ResearchSummary | null>(priorRun?.resultJson, null);
+  const base: ResearchSummary = prior ?? {
+    match: "confirmed",
+    fitScore: row.score,
+    estMissedCallsPerWeek: null,
+    avgJobValueUsd: null,
+    industry: lead.industry ?? (row.searchIndustry || null),
+    website: lead.website,
+    city: lead.city,
+    state: lead.region,
+    phone: lead.phone,
+    employees: null,
+    keyFacts: [],
+    painSignals: [],
+    decisionMakers: [],
+    suggestedOpener: "",
+    kbQuestions: [],
+  };
+  const summary = withLeadFacts({ ...base, suggestedOpener: facts.opener || base.suggestedOpener }, facts);
+  const label = [search.industry, search.region].filter(Boolean).join(", ");
+  await db.researchRun.create({
+    data: { kind: "RESEARCH", accountId, input: `Researched lead${label ? `: ${label}` : ""}`, output: facts.report, resultJson: JSON.stringify(summary), status: "DONE", model: LEAD_RESEARCH_MODEL, tokensIn: 0, tokensOut: 0, finishedAt: new Date() },
+  });
 }
 
 /**
@@ -183,7 +231,7 @@ export async function promoteLeads(ids: string[], mode: "prospects" | "dialer", 
       result.skipped++;
       continue;
     }
-    const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { id: true, ownerId: true, tags: true, notes: true, fitScore: true, nextFollowUpAt: true } });
+    const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { id: true, ownerId: true, tags: true, notes: true, fitScore: true, nextFollowUpAt: true, domain: true, website: true, phone: true, industry: true, city: true, state: true } });
     if (!newAccountIds.includes(accountId)) {
       if (!canUpdate(account.ownerId)) {
         result.skipped++;
@@ -198,6 +246,12 @@ export async function promoteLeads(ids: string[], mode: "prospects" | "dialer", 
         tags: joinTags([...splitTags(account.tags), ...tags]),
         notes: account.notes.includes("Researched lead") ? account.notes : `${account.notes}\n${notes}`.trim(),
         fitScore: account.fitScore ?? row.score,
+        // Fill in what the account doesn't have yet from the lead (never overwrite).
+        phone: account.phone ?? lead.phone,
+        industry: account.industry ?? (lead.industry ?? (row.searchIndustry || null)),
+        city: account.city ?? lead.city,
+        state: account.state ?? lead.region,
+        ...(!account.website && !account.domain && lead.website && !(lead.domain && (await db.account.findFirst({ where: { domain: lead.domain, id: { not: accountId } }, select: { id: true } }))) ? { website: websiteUrl(lead.website), domain: lead.domain } : {}),
         ...(toDialer && (!account.nextFollowUpAt || account.nextFollowUpAt > new Date()) ? { nextFollowUpAt: new Date() } : {}),
       },
     });
@@ -215,6 +269,8 @@ export async function promoteLeads(ids: string[], mode: "prospects" | "dialer", 
         console.warn("lead profile", row.id, e);
       }
     }
+    // No usable profile: still save what the lead research found (paid channels, proof, signals).
+    if (!profiledIds.includes(accountId)) await recordLeadResearch(accountId, row).catch((e) => console.warn("lead research", row.id, e));
     await db.prospectLead.update({ where: { id: row.id }, data: { accountId, status: toDialer ? "DIALER" : "PROSPECT" } });
   }
   // New accounts without a skill profile get the in-app fact-only profile research instead.
