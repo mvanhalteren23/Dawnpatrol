@@ -90,7 +90,7 @@ export default async function ResearchedLeadsPage({ searchParams }: { searchPara
             <SubmitButton pendingText="Adding…">Add to prospects</SubmitButton>
             <SubmitButton formAction={addLeadsToDialer} className="btn-secondary" pendingText="Adding…">Add to call list</SubmitButton>
             <SubmitButton formAction={dismissLeads} className="btn-secondary" pendingText="Dismissing…">Dismiss</SubmitButton>
-            <span className="text-xs text-slate-500">Both add options create the account at stage Prospect. &quot;Call list&quot; also tags it and makes it due today, so it tops the dialer&apos;s Call list.</span>
+            <span className="text-xs text-slate-500">Both add options create the account at stage Prospect, with the skill&apos;s company profile when it sent one (otherwise the app researches it). &quot;Call list&quot; also tags it and makes it due today, so it tops the dialer&apos;s Call list.</span>
           </div>
           <div className="card overflow-x-auto p-0">
             <table className="table">
@@ -100,6 +100,7 @@ export default async function ResearchedLeadsPage({ searchParams }: { searchPara
                   const ch = safeJson<Channels>(l.channels, {});
                   const evidence = safeJson<Evidence[]>(l.evidence, []);
                   const signals = safeJson<string[]>(l.signals, []);
+                  const profile = l.profile ? safeJson<{ research?: { match?: string; report?: string; keyFacts?: string[] } } | null>(l.profile, null) : null;
                   const acct = l.accountId ? accounts.get(l.accountId) : undefined;
                   const actionable = l.status !== "DISMISSED";
                   return (
@@ -132,6 +133,14 @@ export default async function ResearchedLeadsPage({ searchParams }: { searchPara
                                 <li key={i}><span className="font-medium">{e.channel}:</span> {e.note} {e.url ? <a href={e.url} target="_blank" rel="noreferrer">link</a> : null}</li>
                               ))}
                             </ul>
+                          </details>
+                        ) : null}
+                        {profile?.research?.report ? (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-slate-500">
+                              Company profile (facts only){profile.research.match === "not_confirmed" ? " · match not confirmed" : ""}
+                            </summary>
+                            <div className="mt-1 whitespace-pre-wrap">{profile.research.report.slice(0, 3000)}</div>
                           </details>
                         ) : null}
                         {l.notes ? <div className="mt-1 text-slate-500">{l.notes}</div> : null}

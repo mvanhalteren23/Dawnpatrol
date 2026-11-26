@@ -2,6 +2,7 @@
 // likely a business is to buy, and decide what promoting a lead writes to the account.
 import { normalizeDomain, websiteUrl } from "./utils";
 import { accountKeyName, phoneKey } from "./team-rules";
+import { parsePack, type PackProspect } from "./prospect-pack-rules";
 
 /** Paid lead sources the skill checks. Each one means the business already pays for calls. */
 export const PAID_CHANNELS = {
@@ -50,6 +51,14 @@ export type CleanLead = {
   googleRating: number | null;
   reviewCount: number | null;
   score: number;
+  /**
+   * The fact-only company profile the skill researched, in the prospect-pack prospect shape
+   * (address, hours, employees, contacts, research { match, report, keyFacts, … }). Applied as the
+   * account's Company profile when the lead is promoted. Null when none was sent or it was unusable.
+   */
+  profile: Record<string, unknown> | null;
+  /** Why a profile that was sent couldn't be used (reported back to the skill, not stored). */
+  profileProblem?: string;
 };
 
 export type IntakeResult = { leads: CleanLead[]; search: { industry: string; region: string }; errors: { index: number; message: string }[] };
@@ -106,6 +115,39 @@ export function paidChannelCount(channels: Channels): number {
 }
 
 /** Validate one lead from the skill (or a paste). Returns a message when it can't be used. */
+/**
+ * The lead's company profile, checked with the same parser (and AI-instruction screen) as the
+ * prospecting skill's packs. Lead fields fill in what the profile leaves out. Returns the parsed
+ * prospect (summary and report set) or a reason it can't be used.
+ */
+export function profileProspect(
+  profile: Record<string, unknown>,
+  lead: Pick<CleanLead, "name" | "website" | "phone" | "industry" | "city" | "region" | "googleRating" | "reviewCount" | "score">,
+  criteria: string | null = null,
+): PackProspect | string {
+  const merged = {
+    ...profile,
+    name: lead.name,
+    website: profile.website ?? lead.website,
+    phone: profile.phone ?? lead.phone,
+    industry: profile.industry ?? lead.industry,
+    city: profile.city ?? lead.city,
+    state: profile.state ?? lead.region,
+    googleRating: profile.googleRating ?? lead.googleRating,
+    reviewCount: profile.reviewCount ?? lead.reviewCount,
+    // The lead's paid-channel score is the account's fit score; research mustn't reset it.
+    fitScore: lead.score,
+  };
+  const pack = parsePack({ criteria, prospects: [merged] });
+  const p = pack.prospects[0];
+  if (!p) return pack.problems[0] ?? "the profile couldn't be read";
+  if (!p.report || !p.summary) return pack.problems.find((x) => x.startsWith(lead.name)) ?? "the profile has no research write-up";
+  return p;
+}
+
+/** Keep only the profile fields the pack format knows, so stored JSON stays small and predictable. */
+const PROFILE_KEYS = ["website", "phone", "industry", "address", "city", "state", "employees", "hours", "googleRating", "reviewCount", "sourceUrl", "contacts", "research"] as const;
+
 export function cleanLead(raw: unknown): CleanLead | string {
   if (!raw || typeof raw !== "object") return "not an object";
   const r = raw as Record<string, unknown>;
@@ -128,7 +170,7 @@ export function cleanLead(raw: unknown): CleanLead | string {
   const reviewCount = num(r.reviewCount);
   const rating = num(r.googleRating);
   const cleanReviews = reviewCount !== null && reviewCount >= 0 ? Math.round(reviewCount) : null;
-  return {
+  const lead: CleanLead = {
     name,
     domain: normalizeDomain(website),
     website,
@@ -143,7 +185,16 @@ export function cleanLead(raw: unknown): CleanLead | string {
     googleRating: rating !== null && rating >= 0 && rating <= 5 ? rating : null,
     reviewCount: cleanReviews,
     score: scoreLead(channels, signals, cleanReviews),
+    profile: null,
   };
+  if (r.profile && typeof r.profile === "object" && !Array.isArray(r.profile)) {
+    const src = r.profile as Record<string, unknown>;
+    const profile = Object.fromEntries(PROFILE_KEYS.filter((k) => src[k] !== undefined).map((k) => [k, src[k]]));
+    const checked = profileProspect(profile, lead);
+    if (typeof checked === "string") lead.profileProblem = checked;
+    else lead.profile = profile;
+  }
+  return lead;
 }
 
 /**
@@ -161,6 +212,7 @@ export function parseIntake(body: unknown): IntakeResult | string {
   obj.leads.forEach((raw, index) => {
     const lead = cleanLead(raw);
     if (typeof lead === "string") return void errors.push({ index, message: lead });
+    if (lead.profileProblem) errors.push({ index, message: `${lead.name}: saved without its company profile (${lead.profileProblem})` });
     const twin = leads.find((l) => sameBusiness(l, lead));
     if (twin) Object.assign(twin, mergeLead(twin, lead));
     else leads.push(lead);
@@ -204,6 +256,8 @@ export function mergeLead(prev: Mergeable, next: Mergeable): CleanLead {
     googleRating: next.googleRating ?? prev.googleRating,
     reviewCount,
     score: scoreLead(channels, signals, reviewCount),
+    // A newer profile replaces an older one; otherwise keep what we had.
+    profile: next.profile ?? prev.profile,
   };
 }
 
