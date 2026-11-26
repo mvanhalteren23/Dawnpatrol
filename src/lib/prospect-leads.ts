@@ -63,7 +63,8 @@ function rowData(l: CleanLead) {
   };
 }
 
-export type IntakeSummary = { created: number; updated: number; alreadyInCrm: number; errors: { index: number; message: string }[] };
+export type IntakeLeadResult = { name: string; status: "created" | "updated"; inCrm: boolean; needsProfile: boolean };
+export type IntakeSummary = { created: number; updated: number; alreadyInCrm: number; needsProfile: number; leads: IntakeLeadResult[]; errors: { index: number; message: string }[] };
 
 /**
  * Save researched leads. A business already in the inbox is merged (new channels and evidence
@@ -71,7 +72,7 @@ export type IntakeSummary = { created: number; updated: number; alreadyInCrm: nu
  * saved, linked to that account, so the inbox shows it as "already in CRM".
  */
 export async function ingestLeads(intake: IntakeResult, opts: { source: string; createdById: string | null }): Promise<IntakeSummary> {
-  const summary: IntakeSummary = { created: 0, updated: 0, alreadyInCrm: 0, errors: intake.errors };
+  const summary: IntakeSummary = { created: 0, updated: 0, alreadyInCrm: 0, needsProfile: 0, leads: [], errors: intake.errors };
   if (!intake.leads.length) return summary;
   const accounts = new DuplicateIndex(await db.account.findMany({ select: { id: true, domain: true, phone: true, name: true, city: true } }));
   // Match keys for every lead already in the inbox (small rows; phones are stored as typed, so
@@ -82,6 +83,13 @@ export async function ingestLeads(intake: IntakeResult, opts: { source: string; 
     if (account) summary.alreadyInCrm++;
     const hit = existing.find((r) => sameBusiness(r, lead));
     const prev = hit ? await db.prospectLead.findUnique({ where: { id: hit.id } }) : null;
+    // Tell the skill which leads still need a company profile, so it researches only those:
+    // none sent or stored yet, and not an account that already has a researched profile.
+    const accountId = prev?.accountId ?? account?.id ?? null;
+    const accountProfiled = accountId ? (await db.researchRun.count({ where: { accountId, kind: "RESEARCH", status: "DONE" } })) > 0 : false;
+    const needsProfile = !lead.profile && !prev?.profile && !accountProfiled;
+    if (needsProfile) summary.needsProfile++;
+    summary.leads.push({ name: lead.name, status: prev ? "updated" : "created", inCrm: Boolean(account), needsProfile });
     if (prev) {
       const merged = mergeLead(leadFromRow(prev), lead);
       await db.prospectLead.update({
