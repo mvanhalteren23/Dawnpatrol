@@ -42,7 +42,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                 <PlanForm plan={p} />
               </details>
             ))}
-            {!plans.length ? <Empty>Create your first plan (e.g. Starter $297, Growth $497, Pro $997).</Empty> : null}
+            {!plans.length ? <Empty>Create your first plan (e.g. Voice Agent $139/mo).</Empty> : null}
           </div>
           <h3 className="mb-2 mt-5 text-sm font-semibold">New plan</h3>
           <PlanForm />

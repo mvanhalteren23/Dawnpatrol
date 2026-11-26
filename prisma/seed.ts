@@ -49,8 +49,8 @@ async function main() {
     create: { name: "Follow-Up Agent", kind: "addon", priceCents: 5900, setupFeeCents: 0, includedMinutes: 0, minimumMonths: 0, features: "Calls every website lead back within minutes\nAsks your questions and books the next step\nTries again, then texts" },
     update: { kind: "addon" },
   });
-  // Earlier plans stop being offered; any client already on one keeps it.
-  await db.plan.updateMany({ where: { name: { in: ["Starter", "Growth", "Pro"] }, subscriptions: { none: {} } }, data: { isActive: false } });
+  // The old Starter / Growth / Pro plans are retired: removed unless a client is still on one.
+  await db.plan.deleteMany({ where: { name: { in: ["Starter", "Growth", "Pro"] }, subscriptions: { none: {} } } });
 
   if (process.env.SEED_DEMO === "1") await demo(admin.id);
 }
@@ -70,8 +70,8 @@ async function demo(ownerId: string) {
     create: { name: "Mountain Flow Plumbing", domain: "mountainflow.example", website: "https://mountainflow.example", industry: "Plumbing", city: "Lakewood", state: "CO", stage: "ACTIVE", fitScore: 90, convertedAt: new Date(), ownerId },
     update: {},
   });
-  const growth = await db.plan.findUnique({ where: { name: "Growth" } });
-  await db.subscription.upsert({ where: { accountId: client.id }, create: { accountId: client.id, planId: growth?.id, status: "ACTIVE", mrrCents: 49700, billingMethod: "manual", startedAt: new Date() }, update: {} });
+  const plan = await db.plan.findUnique({ where: { name: "Voice Agent" } });
+  await db.subscription.upsert({ where: { accountId: client.id }, create: { accountId: client.id, planId: plan?.id, status: "ACTIVE", mrrCents: plan?.priceCents ?? 13900, billingMethod: "manual", startedAt: new Date() }, update: {} });
   let r = await db.receptionist.findFirst({ where: { accountId: client.id } });
   if (!r) {
     r = await db.receptionist.create({
