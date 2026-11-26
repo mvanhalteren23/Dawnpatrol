@@ -1170,3 +1170,43 @@ model CoachReview {
 
   @@index([createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Researched leads: businesses found paying for leads (Google Local Services Ads, Google
+// search ads, HomeStars, Meta, Yelp…). Filled by the prospecting research skill through
+// POST /api/prospect-leads, reviewed on /crm/leads, then promoted to an Account (prospects)
+// or to the dialer's call list.
+// ---------------------------------------------------------------------------
+
+model ProspectLead {
+  id             String    @id @default(cuid())
+  name           String
+  domain         String? // normalised, for de-duplication
+  website        String?
+  phone          String?
+  industry       String?
+  city           String?
+  region         String? // province/state
+  searchIndustry String    @default("") // the industry searched when found
+  searchRegion   String    @default("") // the region searched when found
+  channels       String    @default("{}") // JSON: { lsa, googleVerified, googleSearchAds, homestarsVerified, homestarsFeatured, metaAds, yelpAds, callTracking }
+  evidence       String    @default("[]") // JSON: [{ channel, url, note }]
+  signals        String    @default("[]") // JSON string[]: buying signals ("reviews mention no callback")
+  notes          String    @default("")
+  googleRating   Float?
+  reviewCount    Int?
+  score          Int       @default(0) // 0-100, from paid channels + buying signals
+  // NEW | PROSPECT (added as account) | DIALER (added to call list) | DISMISSED
+  status         String    @default("NEW")
+  accountId      String? // the Account it became, or the existing Account it matched
+  source         String    @default("skill") // skill | paste | api
+  seenCount      Int       @default(1) // times found across searches
+  lastSeenAt     DateTime  @default(now())
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, score])
+  @@index([domain])
+  @@index([phone])
+}

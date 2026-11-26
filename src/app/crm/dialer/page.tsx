@@ -15,6 +15,7 @@ import { audioUrl, DEFAULT_VM_PROMPT, voicemailSettings } from "@/lib/voicemail"
 import { deleteVoicemail, saveVoicemailSettings, setDefaultVoicemail, uploadVoicemail } from "../actions";
 import { dialAccountInclude, toDialTarget } from "@/lib/dial-targets";
 import { builderAgent } from "@/lib/live-builder";
+import { CALL_LIST_TAG } from "@/lib/prospect-leads-rules";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // pre-writing + voicing AI voicemails
@@ -30,7 +31,7 @@ const SORTS: Record<string, { label: string; orderBy: Prisma.AccountOrderByWithR
 };
 
 
-export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; q?: string; vm?: string; owner?: string; notice?: string; error?: string }> }) {
+export default async function DialerPage({ searchParams }: { searchParams: Promise<{ sort?: string; stage?: string; due?: string; list?: string; q?: string; vm?: string; owner?: string; notice?: string; error?: string }> }) {
   const sp = await searchParams;
   const session = await requireStaff();
   const isAdmin = session.role === "ADMIN";
@@ -45,6 +46,8 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
     stage: { in: stages },
     AND: [ownerWhere, { OR: [{ phone: { not: null } }, { contacts: { some: { phone: { not: null } } } }] }],
     ...(sp.due === "1" ? { nextFollowUpAt: { lte: new Date() } } : {}),
+    // Call list: accounts sent here from Researched leads (tagged call-list).
+    ...(sp.list === "1" ? { tags: { contains: CALL_LIST_TAG } } : {}),
     ...(sp.q ? { name: { contains: sp.q, mode: "insensitive" as const } } : {}),
   };
   const startOfDay = new Date();
@@ -100,6 +103,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
         ) : null}
         <label className="space-y-1"><span className="label">Search</span><input name="q" defaultValue={sp.q ?? ""} placeholder="Business name" className="input" /></label>
         <label className="flex items-center gap-1 pb-2"><input type="checkbox" name="due" value="1" defaultChecked={sp.due === "1"} /> Follow-up due only</label>
+        <label className="flex items-center gap-1 pb-2"><input type="checkbox" name="list" value="1" defaultChecked={sp.list === "1"} /> Call list only</label>
         <button className="btn-secondary">Apply</button>
       </form>
       <Flash params={sp} />
