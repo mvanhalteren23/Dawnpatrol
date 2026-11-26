@@ -1,4 +1,9 @@
 import Link from "next/link";
+import { OfferForm } from "@/components/OfferForm";
+import { removeOffer } from "../../offer-actions";
+import { repDiscountCap } from "@/lib/offers";
+import { currencyForAccount, planPriceCents } from "@/lib/billing-rules";
+import { describeOffer, offerActive, type Offer } from "@/lib/offer-rules";
 import { coachThisCall } from "../../coach/actions";
 import { KbReviewSendForm } from "@/components/KbReviewSendForm";
 import { reviewPeopleFrom } from "@/lib/kb-review-rules";
@@ -70,6 +75,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const { id } = await params;
   const sp = await searchParams;
   const session = await requireStaff();
+  const repCap = await repDiscountCap();
   const account = await db.account.findUnique({
     where: { id },
     include: {
@@ -77,6 +83,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       activities: { orderBy: { occurredAt: "desc" }, take: 100, include: { contact: true } },
       research: { where: { kind: { in: ["RESEARCH", "KB_DRAFT", "DEMO_RESEARCH"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { prompt: true } },
       subscription: { include: { plan: true } },
+      offer: true,
       invoices: { orderBy: { createdAt: "desc" }, take: 12 },
       receptionists: { include: { _count: { select: { knowledge: true, calls: true } } } },
       callAudits: { orderBy: { createdAt: "desc" }, take: 5, select: { id: true, status: true, startsAt: true } },
@@ -303,7 +310,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             </form>
           </div>
 
-          <div className="card">
+          <div id="billing" className="card">
             <h2 className="mb-3">Billing</h2>
             {account.subscription ? (
               <div className="mb-3 text-sm">
@@ -318,6 +325,35 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
             ) : null}
             {plans.length ? (
               <>
+                {(() => {
+                  const currency = currencyForAccount(account.state);
+                  const mainPlans = plans.filter((p) => p.kind !== "addon").map((p) => ({ id: p.id, name: p.name, monthlyCents: planPriceCents(p, currency) ?? p.priceCents }));
+                  const o = account.offer;
+                  const live = o && offerActive(o);
+                  const basePlan = mainPlans.find((p) => p.id === account.subscription?.planId) ?? mainPlans[0];
+                  return (
+                    <div className={`mb-3 rounded-lg border p-3 text-sm ${live ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200"}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold">Special offer</span>
+                        {o ? <span className="text-xs text-slate-500">{o.usedAt ? `Used ${formatDate(o.usedAt)}` : live ? `Good until ${formatDate(o.expiresAt)}` : `Expired ${formatDate(o.expiresAt)}`}</span> : null}
+                      </div>
+                      {o ? (
+                        <div className="mt-1">
+                          <p className={live ? "text-emerald-900" : "text-slate-500 line-through"}>{describeOffer(o as unknown as Offer, basePlan?.monthlyCents ?? 0)}</p>
+                          {o.note ? <p className="text-xs text-slate-500">{o.note}</p> : null}
+                          {live ? <p className="mt-1 text-xs text-slate-600">The next Stripe checkout link includes it. They must sign up by {formatDate(o.expiresAt)}.</p> : null}
+                          {canTouch(session, account.ownerId) ? <form action={removeOffer.bind(null, account.id)} className="mt-1"><button className="text-xs text-red-700 underline">Remove offer</button></form> : null}
+                        </div>
+                      ) : <p className="mt-1 text-xs text-slate-500">No offer: checkout links use the normal price.</p>}
+                      {canTouch(session, account.ownerId) && mainPlans.length ? (
+                        <details className="mt-2" open={!o}>
+                          <summary className="cursor-pointer text-xs font-medium text-dawn-700">{o ? "Replace with a new offer" : "Give a special offer"}</summary>
+                          <div className="mt-2"><OfferForm accountId={account.id} plans={mainPlans} currency={currency} isAdmin={session.role === "ADMIN"} repCap={repCap} /></div>
+                        </details>
+                      ) : null}
+                    </div>
+                  );
+                })()}
                 <form action={checkoutLink.bind(null, account.id)} className="mb-3 space-y-2">
                   <div className="flex gap-2">
                     <select name="planId" className="input">{plans.filter((p) => p.kind !== "addon").map((p) => <option key={p.id} value={p.id}>{p.name} — {formatMoney(p.priceCents)}/mo</option>)}</select>

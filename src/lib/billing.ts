@@ -5,6 +5,7 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { changeStage, recordActivity } from "./outreach";
 import { getSetting, setSetting } from "./settings";
+import { couponFor, offerActive, trialEnd, type Offer } from "./offer-rules";
 import { annualCents, blockPriceCents, cancelLocked, cancelLockedUntil, currencyForAccount, overageBlocks, planIntervalPriceKey, planPriceCents, salesTaxFor, usageWindowAt, usageWindows, type BillingInterval, type SalesTax } from "./billing-rules";
 
 let stripeClient: Stripe | null = null;
@@ -135,13 +136,31 @@ export async function createCheckout(accountId: string, planId: string, returnPa
   for (const a of addOns) addOnPrices.push(await ensurePrice(a, currency, interval));
   const customer = await ensureCustomer(accountId);
   await db.subscription.update({ where: { accountId }, data: { planId } });
+  // The account's special offer, if it has one that's still good: a one-use coupon and/or free months.
+  const offerRow = await db.accountOffer.findUnique({ where: { accountId } });
+  const offer = offerRow && offerActive(offerRow) ? (offerRow as unknown as Offer) : null;
+  if (offer && offer.currency !== currency) throw new Error(`This account's offer is in ${offer.currency} but it pays in ${currency} (its province/state changed). Set the offer again.`);
+  const monthlyCents = planPriceCents(plan, currency) ?? plan.priceCents;
+  const spec = offer ? couponFor(offer, monthlyCents, interval, annualCents(monthlyCents)) : null;
+  const coupon = spec
+    ? await stripe().coupons.create({ ...spec, name: `Special offer: ${plan.name}`.slice(0, 40), max_redemptions: 1, redeem_by: Math.floor(offer!.expiresAt.getTime() / 1000), metadata: { accountId, offerId: offerRow!.id } })
+    : null;
+  const trial = offer ? trialEnd(offer) : null;
   const app = appUrl();
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     customer,
     line_items: [{ price: priceId, quantity: 1 }, ...addOnPrices.map((price) => ({ price, quantity: 1 }))],
     client_reference_id: accountId,
-    subscription_data: { metadata: { accountId, planId, interval, termsVersion: TERMS_VERSION }, ...(taxRate ? { default_tax_rates: [taxRate] } : {}) },
+    ...(coupon ? { discounts: [{ coupon: coupon.id }] } : {}),
+    ...(offerRow && offer ? { metadata: { offerId: offerRow.id } } : {}),
+    // Stripe ends the checkout page's session after 24h, or at the offer's deadline if that's sooner.
+    ...(offer ? { expires_at: Math.floor(Math.min(offer.expiresAt.getTime(), Date.now() + 23.5 * 3600_000) / 1000) } : {}),
+    subscription_data: {
+      metadata: { accountId, planId, interval, termsVersion: TERMS_VERSION, ...(offerRow && offer ? { offerId: offerRow.id } : {}) },
+      ...(taxRate ? { default_tax_rates: [taxRate] } : {}),
+      ...(trial ? { trial_end: Math.floor(trial.getTime() / 1000) } : {}),
+    },
     success_url: `${app}${returnPath}?billing=success`,
     cancel_url: `${app}${returnPath}?billing=cancelled`,
     // Signing up = ticking "I agree to the Terms of Service" on the checkout page.
@@ -451,6 +470,10 @@ export async function handleStripeEvent(event: Stripe.Event) {
       if (s.subscription) {
         const subId = typeof s.subscription === "string" ? s.subscription : s.subscription.id;
         await syncSubscription(await stripe().subscriptions.retrieve(subId));
+      }
+      // A special offer is used once they sign up with it.
+      if (s.client_reference_id && s.subscription && s.metadata?.offerId) {
+        await db.accountOffer.updateMany({ where: { id: s.metadata.offerId, accountId: s.client_reference_id, usedAt: null }, data: { usedAt: new Date() } }).catch((e) => console.warn("offer used", e));
       }
       if (s.client_reference_id && s.consent?.terms_of_service === "accepted") {
         await recordActivity({ accountId: s.client_reference_id, type: "BILLING", source: "system", subject: "Terms of Service accepted", body: `Accepted the Terms of Service (version ${TERMS_VERSION}, ${SITE_TERMS_URL}) and Privacy Policy at checkout${s.customer_details?.email ? ` by ${s.customer_details.email}` : ""}, ${new Date().toISOString().slice(0, 10)}.` }).catch((e) => console.warn("terms acceptance note", e));

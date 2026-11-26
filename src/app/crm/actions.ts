@@ -1090,7 +1090,9 @@ export async function checkoutLink(accountId: string, form: FormData) {
   } catch (err) {
     back(`/crm/accounts/${accountId}`, { error: errMsg(err) });
   }
-  await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Stripe checkout link created (${str(form, "interval") === "year" ? "yearly, 20% off" : "monthly"})`, body: url });
+  const offer = await db.accountOffer.findUnique({ where: { accountId } });
+  const withOffer = offer && !offer.usedAt && offer.expiresAt > new Date() ? `, with the special offer (good until ${offer.expiresAt.toISOString().slice(0, 10)})` : "";
+  await recordActivity({ accountId, type: "BILLING", source: "system", subject: `Stripe checkout link created (${str(form, "interval") === "year" ? "yearly, 20% off" : "monthly"}${withOffer})`, body: url });
   back(`/crm/accounts/${accountId}`, { notice: "Checkout link created — copy it from the activity feed", checkout: url });
 }
 

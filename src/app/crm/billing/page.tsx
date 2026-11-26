@@ -7,6 +7,10 @@ import { formatDate, formatMoney } from "@/lib/utils";
 import { Field, Notice, PageHeader, Stat, StatusBadge, Empty } from "@/components/ui";
 import { Flash } from "@/components/Flash";
 import { savePlan } from "../actions";
+import { saveRepCap } from "../offer-actions";
+import { repDiscountCap } from "@/lib/offers";
+import { describeOffer, offerActive, REP_MAX_TRIAL_MONTHS, type Offer } from "@/lib/offer-rules";
+import { currencyForAccount, planPriceCents } from "@/lib/billing-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +22,11 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     db.invoice.findMany({ where: { status: { in: ["OPEN", "UNCOLLECTIBLE"] } }, include: { account: true }, orderBy: { dueDate: "asc" } }),
     db.invoice.aggregate({ where: { status: "PAID", paidAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) } }, _sum: { amountCents: true } }),
   ]);
+  const [repCap, offers] = await Promise.all([
+    repDiscountCap(),
+    db.accountOffer.findMany({ where: { usedAt: null, expiresAt: { gt: new Date() } }, include: { account: { select: { id: true, name: true, state: true } } }, orderBy: { expiresAt: "asc" } }),
+  ]);
+  const basePlan = plans.find((p) => p.kind !== "addon" && p.isActive);
   const paying = payingSubscriptions(subs);
   const mrr = computeMrr(subs);
   return (
@@ -57,6 +66,24 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               ))}</tbody>
             </table>
           ) : <Empty>No subscriptions yet.</Empty>}
+        </div>
+
+        <div className="card lg:col-span-2">
+          <h2 className="mb-1">Special offers</h2>
+          <p className="mb-3 text-sm text-slate-600">Set an offer from an account&apos;s page (Billing → Special offer); it&apos;s applied on that account&apos;s next Stripe checkout link until its deadline.</p>
+          {offers.length ? (
+            <ul className="mb-4 divide-y divide-slate-100 text-sm">
+              {offers.filter((o) => offerActive(o)).map((o) => {
+                const monthly = basePlan ? planPriceCents(basePlan, currencyForAccount(o.account.state)) ?? basePlan.priceCents : 0;
+                return <li key={o.id} className="flex flex-wrap justify-between gap-2 py-2"><span><Link href={`/crm/accounts/${o.account.id}#billing`}>{o.account.name}</Link>: {describeOffer(o as unknown as Offer, monthly)}</span><span className="text-xs text-slate-500">until {formatDate(o.expiresAt)}</span></li>;
+              })}
+            </ul>
+          ) : <p className="mb-4 text-sm text-slate-500">No open offers.</p>}
+          <form action={saveRepCap} className="flex flex-wrap items-end gap-2 text-sm">
+            <label className="block"><span className="label">Most a sales rep can give on their own</span><span className="flex items-center gap-1"><input name="cap" type="number" min={0} max={99} defaultValue={repCap} className="input w-24" />% off</span></label>
+            <button className="btn-secondary">Save</button>
+            <span className="text-xs text-slate-500">…and up to {REP_MAX_TRIAL_MONTHS} free month. Admins can give any offer.</span>
+          </form>
         </div>
 
         <div className="card lg:col-span-2">
