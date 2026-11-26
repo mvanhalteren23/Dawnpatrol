@@ -36,6 +36,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
     ["/crm/dialer", "Dialer", "Dialer"],
     ["/crm/coach", "Sales coach", "Coach"],
     ["/crm/prospecting", "Prospecting (Claude)", "Prospect"],
+    ["/crm/leads", "Researched leads", "Leads"],
     ["/crm/audits", "Call audits", "Audits"],
     ["/crm/prompts", "Saved prompts", "Prompts"],
     ...(isAdmin
