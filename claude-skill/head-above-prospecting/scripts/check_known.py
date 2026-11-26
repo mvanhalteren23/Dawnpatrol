@@ -1,5 +1,8 @@
-"""Which candidates are already in the CRM? Usage: python3 scripts/check_known.py candidates.json
-candidates.json is a list of {"name", "website", "phone", "city"}. Prints one line per candidate."""
+"""Which candidates are already in the CRM? Prints only the NEW ones, plus a count of known ones.
+Usage: python3 scripts/check_known.py <<'JSON'
+       [{"name": "...", "website": "...", "phone": "...", "city": "..."}, ...]
+       JSON
+(or pass a file path instead of stdin)."""
 import json
 import os
 import sys
@@ -7,22 +10,22 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crm import post  # noqa: E402
 
-def main(path):
-    with open(path, encoding="utf-8") as f:
-        items = json.load(f)
+
+def main(argv):
+    raw = open(argv[1], encoding="utf-8").read() if len(argv) > 1 else sys.stdin.read()
+    items = json.loads(raw)
     status, body = post("/api/prospects/check", {"businesses": items})
     if status != 200:
         print(f"CHECK FAILED ({status}): {body.get('error', 'unknown error')}. Carry on; the import skips duplicates.")
         return 1
-    known = 0
-    for r in body.get("results", []):
-        if r.get("known"):
-            known += 1
-            print(f"IN CRM: {r.get('name')} (as {r.get('accountName')})")
-        else:
+    res = body.get("results", [])
+    known = [r for r in res if r.get("known")]
+    for r in res:
+        if not r.get("known"):
             print(f"NEW: {r.get('name')}")
-    print(f"{known} already in the CRM.")
+    print(f"{len(known)} already in the CRM (skip them)" + (": " + ", ".join(r.get("name") or "" for r in known[:20]) if known else "") + ".")
     return 0
 
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]) if len(sys.argv) > 1 else print(__doc__) or 2)
+    sys.exit(main(sys.argv))

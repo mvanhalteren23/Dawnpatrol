@@ -1,6 +1,8 @@
 # Prospect pack format (`headabove.prospects.v1`)
 
-One JSON object. Use `null` for anything unknown; never invent a value to fill a field.
+One JSON object; `scripts/add_prospect.py` builds it one prospect at a time, so you only ever
+write a single prospect (the object inside `prospects`). Use `null` for anything unknown; never
+invent a value to fill a field. Keep text short: it all counts against the user's Claude usage.
 
 ```json
 {
@@ -62,9 +64,9 @@ One JSON object. Use `null` for anything unknown; never invent a value to fill a
 | `sourceUrl` | The main listing you found them on. |
 | `contacts` | Decision makers named on a source. Each email or phone must be published exactly as given. Up to 5. |
 | `research.match` | `"confirmed"`, or `"not_confirmed"` if you couldn't be sure it's the right business (the CRM then fills in nothing from the research and flags it for review). |
-| `research.report` | Markdown write-up. **Every phone number, website, email and person's name you put in the fields above must appear in this text**, because the CRM drops any detail the write-up doesn't contain. Put a source link next to each fact. |
-| `research.keyFacts` | 3-6 short facts. |
-| `research.painSignals` | Evidence that calls or leads are missed. |
+| `research.report` | Short Markdown bullets (about 150 words). **Every phone number, website, email and person's name you put in the fields above must appear in this text**, because the CRM drops any detail the write-up doesn't contain. Put a source link next to each fact. |
+| `research.keyFacts` | Up to 4 short facts. |
+| `research.painSignals` | Up to 3: evidence that calls or leads are missed. |
 | `research.estMissedCallsPerWeek`, `research.avgJobValue` | Numbers (job value in dollars), only with specific evidence; otherwise null. |
 | `research.suggestedOpener` | One sentence. |
 | `research.discoveryQuestions` | Up to 5 questions for the owner. |

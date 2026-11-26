@@ -12,7 +12,7 @@ import type { SessionPayload } from "./session";
 
 export const SKILL_MODEL = "Claude (your plan, via the skill)";
 
-export type PackResult = { name: string; status: "added" | "exists" | "error"; accountId: string | null; researched: boolean; message?: string };
+export type PackResult = { name: string; status: "added" | "exists" | "error"; accountId: string | null; researched: boolean; message?: string; matched?: string };
 export type SkillRunJson = { count: number; prospects: Prospect[]; skill: { results: PackResult[]; problems: string[] } };
 
 /**
@@ -41,7 +41,7 @@ export async function importPack(pack: ParsedPack, session: SessionPayload, extr
       continue;
     }
     if (!created.has(hit.id)) {
-      results.push({ name: p.name, status: "exists", accountId: hit.id, researched: false });
+      results.push({ name: p.name, status: "exists", accountId: hit.id, researched: false, matched: hit.name });
       continue;
     }
     let researched = false;

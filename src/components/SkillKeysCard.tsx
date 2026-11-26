@@ -29,6 +29,7 @@ export function SkillKeysCard({ keys }: { keys: Key[] }) {
             <li>So Claude can send results straight here, allow network access for code execution and add this site&apos;s domain. If you skip this, Claude gives you a file to bring in with <b>Prospecting → Import from Claude</b>.</li>
             <li>Ask Claude to find prospects. In Claude Code or Cowork, unzip the folder into your skills folder instead.</li>
           </ol>
+          <p className="text-xs text-slate-600"><b>To make your Claude usage go further:</b> pick Sonnet rather than Opus for prospecting, leave Research mode and extended thinking off, and do up to 10 businesses per chat. For more, start a new chat and say &ldquo;continue prospecting…&rdquo;: businesses already added are skipped.</p>
           <p className="text-xs text-slate-500">The skill acts as you: anyone with the .zip can add accounts to the CRM. Keep it to your own Claude account, and revoke the key below if it&apos;s ever shared.</p>
         </div>
       ) : (

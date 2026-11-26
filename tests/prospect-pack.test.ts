@@ -83,5 +83,18 @@ describe("skill zip and checker", () => {
     writeFileSync(packPath, JSON.stringify(example()));
     const out = execFileSync("python3", [path.join(__dirname, "../claude-skill/head-above-prospecting/scripts/check_pack.py"), packPath]).toString();
     expect(out).toContain("1 prospects checked: 0 to fix");
+    // Saving one prospect at a time builds the same pack, and refuses a phone the write-up doesn't show.
+    const add = path.join(__dirname, "../claude-skill/head-above-prospecting/scripts/add_prospect.py");
+    const one = (example() as { prospects: unknown[] }).prospects[0];
+    const built = path.join(dir, "built.json");
+    expect(execFileSync("python3", [add, built, "auto repair in North Van"], { input: JSON.stringify(one) }).toString()).toContain("ADDED: Lonsdale Auto Care. 1 waiting");
+    expect(parsePack(JSON.parse(readFileSync(built, "utf8"))).prospects[0]?.name).toBe("Lonsdale Auto Care");
+    let refused = "";
+    try {
+      execFileSync("python3", [add, built], { input: JSON.stringify({ ...(one as object), name: "Other", phone: "604-555-9999" }) });
+    } catch (e) {
+      refused = String((e as { stdout: Buffer }).stdout);
+    }
+    expect(refused).toContain("isn't in the write-up");
   });
 });
